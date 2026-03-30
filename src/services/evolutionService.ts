@@ -234,6 +234,7 @@ export async function assembleWebBook(optimalPopulation: WebPageGenotype[], topi
   // 1. Generate a detailed 10-chapter outline
   const truncatedData = optimalPopulation.slice(0, 4).map(p => ({
     title: p.title,
+    url: p.url,
     content: p.content.substring(0, 1000),
     definitions: p.definitions.slice(0, 4),
     subTopics: p.subTopics.slice(0, 3)
@@ -350,10 +351,17 @@ export async function assembleWebBook(optimalPopulation: WebPageGenotype[], topi
 
     const isMeaningful = (text: string) => {
       if (!text) return false;
-      // Filter out strings that are mostly digits or look like random IDs
-      if (/^\d+$/.test(text.replace(/\s/g, ''))) return false;
-      if (text.length > 50 && !text.includes(' ')) return false;
-      if (/^[a-zA-Z0-9]{15,}$/.test(text) && !/[aeiou]/i.test(text)) return false; // Random hex/alphanumeric
+      const clean = text.replace(/\s/g, '');
+      // Filter out strings that are mostly digits
+      if (/^\d+$/.test(clean)) return false;
+      // Filter out long sequences of the same character (repetitive noise)
+      if (/(.)\1{8,}/.test(clean)) return false;
+      // Filter out strings with too many digits (more than 10 consecutive digits)
+      if (/\d{10,}/.test(clean)) return false;
+      // Filter out very long strings without spaces (likely code or IDs)
+      if (text.length > 40 && !text.includes(' ')) return false;
+      // Filter out strings that look like random hex/alphanumeric (no vowels and long)
+      if (clean.length > 12 && !/[aeiou]/i.test(clean)) return false;
       return true;
     };
 
@@ -362,11 +370,11 @@ export async function assembleWebBook(optimalPopulation: WebPageGenotype[], topi
       content: chapterData?.content || "Content generation failed.",
       definitions: (chapterData?.definitions || [])
         .filter((d: any) => isMeaningful(d.term))
-        .map((d: any) => ({ ...d, sourceUrl: "Synthesized" })),
+        .map((d: any) => ({ ...d, sourceUrl: truncatedData[0]?.url || "Synthesized" })),
       subTopics: (chapterData?.subTopics || [])
         .filter((s: any) => isMeaningful(s.title))
-        .map((s: any) => ({ ...s, sourceUrl: "Synthesized" })),
-      sourceUrls: truncatedData.map(d => d.title),
+        .map((s: any) => ({ ...s, sourceUrl: truncatedData[0]?.url || "Synthesized" })),
+      sourceUrls: truncatedData.map(d => ({ title: d.title, url: d.url })),
       visualSeed: chapterOutline.visualSeed || "evolution"
     };
   });

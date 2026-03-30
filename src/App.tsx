@@ -487,7 +487,15 @@ export default function App() {
                 <Plus size={12}/> New Search
               </button>
             </div>
-            <form onSubmit={handleSearch} className="relative">
+            <form 
+              onSubmit={handleSearch} 
+              className="relative"
+              onMouseEnter={() => setIsHoveringInput(true)}
+              onMouseLeave={() => setIsHoveringInput(false)}
+              onFocus={() => setIsHoveringInput(true)}
+              onBlur={() => setIsHoveringInput(false)}
+              onClick={() => setIsHoveringInput(true)}
+            >
               <AnimatePresence>
                 {isOverflowing && isHoveringInput && query && (
                   <motion.div
@@ -518,13 +526,9 @@ export default function App() {
                 rows={1}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                onMouseEnter={() => setIsHoveringInput(true)}
-                onMouseLeave={() => setIsHoveringInput(false)}
-                onFocus={() => setIsHoveringInput(true)}
-                onBlur={() => setIsHoveringInput(false)}
                 placeholder="Enter search topic..."
-                className="w-full bg-[#F5F5F5] border border-[#141414] p-4 pr-14 focus:outline-none focus:ring-0 text-lg font-mono resize-none overflow-y-auto max-h-32"
-                style={{ height: 'auto', minHeight: '60px' }}
+                className="w-full bg-[#F5F5F5] border border-[#141414] p-4 pr-14 focus:outline-none focus:ring-0 text-base sm:text-lg font-mono resize-none overflow-y-auto max-h-32"
+                style={{ height: 'auto', minHeight: '64px' }}
                 disabled={state.status !== 'idle' && state.status !== 'complete'}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
@@ -783,29 +787,70 @@ export default function App() {
                                   {chapter.definitions
                                     .filter(def => {
                                       const term = def.term || "";
-                                      // Filter out mostly-digit strings or very long strings without spaces
-                                      if (/^\d+$/.test(term.replace(/\s/g, ''))) return false;
+                                      const clean = term.replace(/\s/g, '');
+                                      // Filter out mostly-digit strings
+                                      if (/^\d+$/.test(clean)) return false;
+                                      // Filter out long sequences of the same character
+                                      if (/(.)\1{8,}/.test(clean)) return false;
+                                      // Filter out strings with too many digits
+                                      if (/\d{10,}/.test(clean)) return false;
+                                      // Filter out very long strings without spaces
                                       if (term.length > 40 && !term.includes(' ')) return false;
+                                      // Filter out strings that look like random hex/alphanumeric
+                                      if (clean.length > 12 && !/[aeiou]/i.test(clean)) return false;
                                       return true;
                                     })
-                                    .map((def, j) => (
-                                    <div key={j} className="group">
-                                      <span className="font-mono text-[12px] font-bold block mb-3 uppercase text-blue-400 tracking-wider break-words">
-                                        {def.term}
-                                      </span>
-                                      <p className="text-sm leading-relaxed opacity-80 font-light italic border-l border-white/10 pl-4 break-words">
-                                        {def.description}
-                                      </p>
-                                    </div>
-                                  ))}
-                                </div>
-                                
-                                <div className="mt-20 pt-10 border-t border-white/10">
-                                  <div className="flex items-center gap-3 text-[9px] font-bold uppercase opacity-40 break-all">
-                                    <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse shrink-0" />
-                                    Source Verification: {chapter.sourceUrls[0]}
+                                    .map((def, j) => {
+                                      const words = (def.description || "").split(/\s+/);
+                                      const isLong = words.length > 100;
+                                      const displayDescription = isLong 
+                                        ? words.slice(0, 100).join(" ") 
+                                        : def.description;
+
+                                      return (
+                                        <div key={j} className="group">
+                                          <span className="font-mono text-[12px] font-bold block mb-3 uppercase text-blue-400 tracking-wider break-words">
+                                            {def.term}
+                                          </span>
+                                          <p className="text-sm leading-relaxed opacity-80 font-light italic border-l border-white/10 pl-4 break-words">
+                                            {displayDescription}
+                                            {isLong && (
+                                              <>
+                                                ...{" "}
+                                                <a 
+                                                  href={def.sourceUrl} 
+                                                  target="_blank" 
+                                                  rel="noopener noreferrer"
+                                                  className="text-blue-400 hover:underline font-bold not-italic"
+                                                >
+                                                  [Full Definition]
+                                                </a>
+                                              </>
+                                            )}
+                                          </p>
+                                        </div>
+                                      );
+                                    })}
                                   </div>
-                                </div>
+                                  
+                                  <div className="mt-20 pt-10 border-t border-white/10">
+                                    <div className="flex items-center gap-3 text-[9px] font-bold uppercase opacity-40 break-all">
+                                      <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse shrink-0" />
+                                      Source Verification:{" "}
+                                      {typeof chapter.sourceUrls[0] === 'object' ? (
+                                        <a 
+                                          href={chapter.sourceUrls[0].url} 
+                                          target="_blank" 
+                                          rel="noopener noreferrer"
+                                          className="hover:underline"
+                                        >
+                                          {chapter.sourceUrls[0].title}
+                                        </a>
+                                      ) : (
+                                        chapter.sourceUrls[0]
+                                      )}
+                                    </div>
+                                  </div>
                               </div>
                             </div>
                           </div>
@@ -933,7 +978,7 @@ export default function App() {
 
       <footer className="mt-20 border-t border-[#141414] p-10 text-center opacity-40 print:hidden">
         <p className="text-[10px] uppercase tracking-[0.5em]">Architecting an Evolutionary Web-Book Engine © 2026</p>
-        <p className="text-[9px] mt-2">Hock Chiye Er • Faculty of Computer Science and Information Technology • University of Malaya</p>
+        <p className="text-[9px] mt-2">Hock Chiye Er</p>
       </footer>
     </div>
   );
