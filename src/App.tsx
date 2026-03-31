@@ -4,6 +4,28 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import { initializeApp, type FirebaseApp } from "firebase/app";
+import {
+  getAuth,
+  onAuthStateChanged,
+  signInAnonymously,
+  type Auth,
+  type User,
+} from "firebase/auth";
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  getFirestore,
+  orderBy,
+  query as firestoreQuery,
+  serverTimestamp,
+  setDoc,
+  writeBatch,
+  type Firestore,
+} from "firebase/firestore";
 
 // Declare html2pdf as a global variable to avoid TypeScript errors
 // It is loaded via CDN in index.html to avoid module resolution issues
@@ -35,6 +57,247 @@ import {
 } from 'lucide-react';
 import { WebBook, WebPageGenotype, EvolutionState } from './types';
 import { buildChapterRenderPlan } from './utils/webBookRender';
+
+type PersistedSearchStatus = "started" | "complete" | "failed";
+
+interface PersistedSearchRecord {
+  query: string;
+  status: PersistedSearchStatus;
+  timestamp: number;
+  error: string | null;
+  webBook: WebBook | null;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+const FIREBASE_CONFIG = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+};
+
+let firebaseApp: FirebaseApp | null = null;
+let firebaseAuth: Auth | null = null;
+let firebaseDb: Firestore | null = null;
+let authInitPromise: Promise<User | null> | null = null;
+
+const isFirebaseConfigured = (): boolean => Boolean(
+  FIREBASE_CONFIG.apiKey &&
+  FIREBASE_CONFIG.authDomain &&
+  FIREBASE_CONFIG.projectId &&
+  FIREBASE_CONFIG.appId
+);
+
+const getFirebaseServices = (): { auth: Auth; db: Firestore } | null => {
+  if (!isFirebaseConfigured()) return null;
+
+  if (!firebaseApp) {
+    firebaseApp = initializeApp(FIREBASE_CONFIG);
+    firebaseAuth = getAuth(firebaseApp);
+    firebaseDb = getFirestore(firebaseApp);
+  }
+
+  return { auth: firebaseAuth!, db: firebaseDb! };
+};
+
+const waitForExistingUser = async (auth: Auth): Promise<User | null> => {
+  if (auth.currentUser) {
+    return auth.currentUser;
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    let unsubscribe = () => {};
+    let timer: number | undefined;
+
+    const finish = (user: User | null) => {
+      if (settled) return;
+      settled = true;
+      if (timer) {
+        clearTimeout(timer);
+      }
+      unsubscribe();
+      resolve(user);
+    };
+
+    unsubscribe = onAuthStateChanged(
+      auth,
+      (user) => finish(user),
+      () => finish(auth.currentUser)
+    );
+
+    timer = window.setTimeout(() => finish(auth.currentUser), 300);
+  });
+};
+
+const ensureAnonymousUser = async (): Promise<User | null> => {
+  const services = getFirebaseServices();
+  if (!services) return null;
+
+  if (!authInitPromise) {
+    authInitPromise = (async () => {
+      const existingUser = await waitForExistingUser(services.auth);
+      if (existingUser) {
+        return existingUser;
+      }
+
+      const credential = await signInAnonymously(services.auth);
+      return credential.user;
+    })().catch((error) => {
+      authInitPromise = null;
+      console.error("Firebase persistence auth failed", error);
+      return null;
+    });
+  }
+
+  return authInitPromise;
+};
+
+const getSearchesCollection = (db: Firestore, userId: string) =>
+  collection(db, "webbookUsers", userId, "searches");
+
+const normalizeWebBook = (raw: unknown, fallbackId: string): WebBook | null => {
+  if (!raw || typeof raw !== "object") return null;
+
+  const candidate = raw as Partial<WebBook>;
+  if (typeof candidate.topic !== "string" || !Array.isArray(candidate.chapters)) {
+    return null;
+  }
+
+  return {
+    id: typeof candidate.id === "string" ? candidate.id : fallbackId,
+    topic: candidate.topic,
+    timestamp: typeof candidate.timestamp === "number" ? candidate.timestamp : Date.now(),
+    chapters: candidate.chapters as WebBook["chapters"],
+  };
+};
+
+const updateSearchRecord = async (
+  searchId: string | null,
+  data: Partial<PersistedSearchRecord>
+): Promise<void> => {
+  if (!searchId) return;
+
+  const services = getFirebaseServices();
+  const user = await ensureAnonymousUser();
+  if (!services || !user) return;
+
+  await setDoc(
+    doc(getSearchesCollection(services.db, user.uid), searchId),
+    {
+      ...data,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+};
+
+const createPersistedSearch = async (queryText: string): Promise<string | null> => {
+  const services = getFirebaseServices();
+  const user = await ensureAnonymousUser();
+  if (!services || !user) return null;
+
+  const searchRef = await addDoc(getSearchesCollection(services.db, user.uid), {
+    query: queryText,
+    status: "started",
+    timestamp: Date.now(),
+    error: null,
+    webBook: null,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+
+  return searchRef.id;
+};
+
+const completePersistedSearch = async (
+  searchId: string | null,
+  queryText: string,
+  webBook: WebBook
+): Promise<void> => {
+  await updateSearchRecord(searchId, {
+    query: queryText,
+    status: "complete",
+    timestamp: webBook.timestamp,
+    error: null,
+    webBook,
+  });
+};
+
+const failPersistedSearch = async (
+  searchId: string | null,
+  queryText: string,
+  errorMessage: string
+): Promise<void> => {
+  await updateSearchRecord(searchId, {
+    query: queryText,
+    status: "failed",
+    timestamp: Date.now(),
+    error: errorMessage,
+    webBook: null,
+  });
+};
+
+const loadPersistedWebBooks = async (): Promise<WebBook[]> => {
+  const services = getFirebaseServices();
+  const user = await ensureAnonymousUser();
+  if (!services || !user) return [];
+
+  const snapshot = await getDocs(
+    firestoreQuery(getSearchesCollection(services.db, user.uid), orderBy("timestamp", "desc"))
+  );
+
+  return snapshot.docs
+    .map((searchDoc) => {
+      const data = searchDoc.data() as Partial<PersistedSearchRecord>;
+      if (data.status !== "complete" || !data.webBook) {
+        return null;
+      }
+
+      return normalizeWebBook(data.webBook, searchDoc.id);
+    })
+    .filter((webBook): webBook is WebBook => Boolean(webBook));
+};
+
+const deletePersistedSearch = async (searchId: string): Promise<void> => {
+  const services = getFirebaseServices();
+  const user = await ensureAnonymousUser();
+  if (!services || !user || !searchId) return;
+
+  await deleteDoc(doc(getSearchesCollection(services.db, user.uid), searchId));
+};
+
+const clearPersistedSearches = async (): Promise<void> => {
+  const services = getFirebaseServices();
+  const user = await ensureAnonymousUser();
+  if (!services || !user) return;
+
+  const snapshot = await getDocs(getSearchesCollection(services.db, user.uid));
+  if (snapshot.empty) return;
+
+  const batch = writeBatch(services.db);
+  snapshot.docs.forEach((searchDoc) => batch.delete(searchDoc.ref));
+  await batch.commit();
+};
+
+const mergeHistoryBooks = (...historyGroups: WebBook[][]): WebBook[] => {
+  const historyById = new Map<string, WebBook>();
+
+  historyGroups.flat().forEach((book) => {
+    if (!book?.id) return;
+
+    const existing = historyById.get(book.id);
+    if (!existing || book.timestamp >= existing.timestamp) {
+      historyById.set(book.id, book);
+    }
+  });
+
+  return Array.from(historyById.values()).sort((a, b) => b.timestamp - a.timestamp);
+};
 
 export default function App() {
   const [query, setQuery] = useState('');
@@ -71,11 +334,32 @@ export default function App() {
     const savedHistory = localStorage.getItem('webbook_history');
     if (savedHistory) {
       try {
-        setHistory(JSON.parse(savedHistory));
+        setHistory(mergeHistoryBooks(JSON.parse(savedHistory)));
       } catch (e) {
         console.error("Failed to parse history", e);
       }
     }
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const syncPersistedHistory = async () => {
+      try {
+        const persistedHistory = await loadPersistedWebBooks();
+        if (!isMounted || persistedHistory.length === 0) return;
+
+        setHistory(prev => mergeHistoryBooks(prev, persistedHistory));
+      } catch (e) {
+        console.error("Failed to load Firebase history", e);
+      }
+    };
+
+    void syncPersistedHistory();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   // Save history to localStorage
@@ -109,17 +393,26 @@ export default function App() {
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!query.trim()) return;
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) return;
 
     setState({ ...state, status: 'searching', generation: 0, population: [] });
     setWebBook(null);
     setError(null);
 
+    let persistedSearchId: string | null = null;
+
     try {
+      try {
+        persistedSearchId = await createPersistedSearch(trimmedQuery);
+      } catch (persistenceError) {
+        console.error("Failed to create persisted search record", persistenceError);
+      }
+
       const { searchAndExtract, evolve, assembleWebBook } = await import('./services/evolutionService');
       
       // 1. Targeted Crawling & Ingestion
-      const initialPopulation = await searchAndExtract(query);
+      const initialPopulation = await searchAndExtract(trimmedQuery);
       
       // 2. Evolutionary Processing Engine
       setState(s => ({ ...s, status: 'evolving', population: initialPopulation }));
@@ -127,10 +420,16 @@ export default function App() {
       
       // 3. Web-Book Assembly
       setState(s => ({ ...s, status: 'assembling', population: evolvedPopulation }));
-      const book = await assembleWebBook(evolvedPopulation, query);
+      const assembledBook = await assembleWebBook(evolvedPopulation, trimmedQuery);
+      const book = persistedSearchId
+        ? { ...assembledBook, id: persistedSearchId }
+        : assembledBook;
       
       setWebBook(book);
-      setHistory(prev => [book, ...prev]);
+      setHistory(prev => mergeHistoryBooks([book], prev));
+      void completePersistedSearch(persistedSearchId, trimmedQuery, book).catch((persistenceError) => {
+        console.error("Failed to persist completed WebBook", persistenceError);
+      });
       setState({
         status: 'complete',
         generation: 3,
@@ -143,6 +442,9 @@ export default function App() {
       if (message.includes("429") || message.includes("quota") || message.includes("RESOURCE_EXHAUSTED")) {
         message = "The AI engine is currently busy or has reached its rate limit. Please wait a minute and try again.";
       }
+      void failPersistedSearch(persistedSearchId, trimmedQuery, message).catch((persistenceError) => {
+        console.error("Failed to persist failed search", persistenceError);
+      });
       setError(message);
       setState({ ...state, status: 'idle' });
     }
@@ -150,11 +452,17 @@ export default function App() {
 
   const deleteHistoryItem = (id: string) => {
     setHistory(prev => prev.filter(item => item.id !== id));
+    void deletePersistedSearch(id).catch((e) => {
+      console.error("Failed to delete persisted history item", e);
+    });
   };
 
   const clearAllHistory = () => {
     if (window.confirm("Are you sure you want to delete all search history?")) {
       setHistory([]);
+      void clearPersistedSearches().catch((e) => {
+        console.error("Failed to clear persisted history", e);
+      });
     }
   };
 
