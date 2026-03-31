@@ -2,6 +2,8 @@
 
 An advanced AI-powered application that synthesizes comprehensive, authoritative "Web-Books" on any topic using an evolutionary content engine.
 
+👉 You can explore the live application built from this repository’s source code at: https://aistudio.google.com/apps/84d53490-d503-494c-bf74-c67f1af980a8?showPreview=true&showAssistant=true
+
 ## 🚀 Features
 
 - **Evolutionary Content Synthesis**: Uses a genetic algorithm-inspired approach to select, recombine, and mutate information from multiple AI-searched sources to create the most informative and authoritative content.
