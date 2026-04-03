@@ -188,14 +188,12 @@ export function calculateFitness(
   return (alpha * page.informativeScore) + (beta * page.authorityScore) - (gamma * redundancy);
 }
 
-export const EVOLUTION_WEIGHTS = { alpha: 0.5, beta: 0.3, gamma: 0.2 };
-
 export async function evolve(
   population: WebPageGenotype[], 
   generations: number = 3
 ): Promise<WebPageGenotype[]> {
   let currentPopulation = [...population];
-  const weights = EVOLUTION_WEIGHTS;
+  const weights = { alpha: 0.5, beta: 0.3, gamma: 0.2 };
 
   for (let g = 0; g < generations; g++) {
     // 1. Selection & Fitness Calculation

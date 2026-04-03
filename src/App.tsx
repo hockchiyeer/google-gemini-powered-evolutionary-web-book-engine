@@ -853,23 +853,14 @@ export default function App() {
         console.error("Failed to create persisted search record", persistenceError);
       }
 
-      const { searchAndExtract, evolve, assembleWebBook, EVOLUTION_WEIGHTS } = await import('./services/evolutionService');
+      const { searchAndExtract, evolve, assembleWebBook } = await import('./services/evolutionService');
       
       // 1. Targeted Crawling & Ingestion
       const { results: initialPopulation, artifacts: searchArtifacts } = await searchAndExtract(trimmedQuery);
-      
-      // Calculate initial best scores
-      const initialBest = initialPopulation.length > 0 
-        ? initialPopulation.reduce((prev, curr) => (prev.informativeScore + prev.authorityScore > curr.informativeScore + curr.authorityScore) ? prev : curr)
-        : null;
-
       setState(s => ({ 
         ...s, 
         status: 'evolving', 
         population: initialPopulation,
-        bestInformativeScore: initialBest?.informativeScore || 0,
-        bestAuthorityScore: initialBest?.authorityScore || 0,
-        bestRedundancyPenalty: 0,
         artifacts: {
           ...s.artifacts,
           rawSearchResults: searchArtifacts?.groundingChunks || []
@@ -878,16 +869,10 @@ export default function App() {
       
       // 2. Evolutionary Processing Engine
       const evolvedPopulation = await evolve(initialPopulation);
-      const bestEvolved = evolvedPopulation.reduce((prev, curr) => (prev.fitness > curr.fitness) ? prev : curr);
-
       setState(s => ({ 
         ...s, 
         status: 'assembling', 
         population: evolvedPopulation,
-        bestFitness: bestEvolved.fitness,
-        bestInformativeScore: bestEvolved.informativeScore,
-        bestAuthorityScore: bestEvolved.authorityScore,
-        bestRedundancyPenalty: 0,
         artifacts: {
           ...s.artifacts,
           evolvedPopulation: evolvedPopulation
@@ -910,10 +895,7 @@ export default function App() {
         status: 'complete',
         generation: 3,
         population: evolvedPopulation,
-        bestFitness: bestEvolved.fitness,
-        bestInformativeScore: bestEvolved.informativeScore,
-        bestAuthorityScore: bestEvolved.authorityScore,
-        bestRedundancyPenalty: 0,
+        bestFitness: Math.max(...evolvedPopulation.map((p: any) => p.fitness || 0)),
         artifacts: {
           ...s.artifacts,
           assemblyInput: evolvedPopulation.slice(0, 4), // What was sent to assembly
@@ -1646,56 +1628,15 @@ export default function App() {
             </div>
           </section>
 
-          {/* Legend: Fitness Function */}
-          <section className="p-4 border border-[#141414] border-dashed bg-[#141414]/[0.02]">
-            <h3 className="text-[10px] uppercase font-bold mb-3 flex items-center justify-between">
-              <span className="flex items-center gap-2"><Dna size={12}/> Fitness Function F(w)</span>
-              <span className="font-mono text-[9px] opacity-40">v2.5_EVO</span>
-            </h3>
-            <div className="space-y-3 font-mono text-[10px]">
-              <div className="flex justify-between items-end border-b border-[#141414] pb-1">
-                <span className="text-[11px] font-bold">F(w)</span>
-                <div className="flex flex-col items-end">
-                  <span className="text-[8px] opacity-40 uppercase tracking-tighter">Current Best</span>
-                  <span className="text-[14px] font-bold leading-none">{state.bestFitness.toFixed(4)}</span>
-                </div>
-              </div>
-              
-              <div className="space-y-1.5">
-                <div className="flex justify-between items-center group">
-                  <div className="flex flex-col">
-                    <span className="opacity-60">α I(w)</span>
-                    <span className="text-[8px] opacity-40">Informative (NLP)</span>
-                  </div>
-                  <span className="font-medium">{(0.5 * (state.bestInformativeScore || 0)).toFixed(4)}</span>
-                </div>
-                
-                <div className="flex justify-between items-center group">
-                  <div className="flex flex-col">
-                    <span className="opacity-60">β A(w)</span>
-                    <span className="text-[8px] opacity-40">Authority (Topo)</span>
-                  </div>
-                  <span className="font-medium">{(0.3 * (state.bestAuthorityScore || 0)).toFixed(4)}</span>
-                </div>
-                
-                <div className="flex justify-between items-center group">
-                  <div className="flex flex-col">
-                    <span className="opacity-60">γ R(w,S)</span>
-                    <span className="text-[8px] opacity-40">Redundancy (Overlap)</span>
-                  </div>
-                  <span className="font-medium text-red-600">-{ (0.2 * (state.bestRedundancyPenalty || 0)).toFixed(4) }</span>
-                </div>
-              </div>
-
-              <div className="pt-2 border-t border-[#141414]/10 flex justify-between items-center">
-                <span className="text-[8px] uppercase opacity-40">Algorithm Sequence</span>
-                <div className="flex gap-1">
-                  <div className={`w-1.5 h-1.5 rounded-full ${state.status === 'searching' ? 'bg-blue-500 animate-pulse' : 'bg-[#141414]/20'}`} />
-                  <div className={`w-1.5 h-1.5 rounded-full ${state.status === 'evolving' ? 'bg-purple-500 animate-pulse' : 'bg-[#141414]/20'}`} />
-                  <div className={`w-1.5 h-1.5 rounded-full ${state.status === 'assembling' ? 'bg-green-500 animate-pulse' : 'bg-[#141414]/20'}`} />
-                </div>
-              </div>
-            </div>
+          {/* Legend */}
+          <section className="p-4 border border-[#141414] border-dashed opacity-60">
+            <h3 className="text-[10px] uppercase font-bold mb-3 flex items-center gap-2"><Info size={12}/> Fitness Function F(w)</h3>
+            <p className="text-[10px] font-mono leading-relaxed">
+              F(w) = αI(w) + βA(w) − γR(w,S)<br/>
+              α: Informative Score (NLP)<br/>
+              β: Authority Score (Topology)<br/>
+              γ: Redundancy Penalty (Overlap)
+            </p>
           </section>
 
           {/* Artifacts Panel (Collapsible) */}
