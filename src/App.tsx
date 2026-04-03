@@ -96,220 +96,13 @@ type PdfLinkAnnotation = {
 const PDF_EXPORT_PAGE_WIDTH = 794;
 const PDF_EXPORT_PAGE_HEIGHT = 1123;
 const PDF_IMAGE_MAX_DIMENSION = 1600;
-const DOWNLOAD_URL_REVOKE_DELAY_MS = 30_000;
-const PREVIEW_URL_REVOKE_DELAY_MS = 180_000;
 
 const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
-const getPdfRenderScale = (pageCount: number, preferEmbeddedScale = false) => {
-  if (pageCount >= 12) return preferEmbeddedScale ? 1.2 : 1.35;
-  if (pageCount >= 8) return preferEmbeddedScale ? 1.35 : 1.5;
-  if (pageCount >= 5) return preferEmbeddedScale ? 1.55 : 1.7;
-  return preferEmbeddedScale ? 1.75 : 1.9;
-};
-
-const isEmbeddedApp = (): boolean => {
-  try {
-    return window.self !== window.top;
-  } catch {
-    return true;
-  }
-};
-
-const buildDownloadFileName = (topic: string, extension: string): string =>
-  `${topic.replace(/[^\w\s-]+/g, "").trim().replace(/\s+/g, "_") || "webbook"}.${extension}`;
-
-const formatSourceReference = (source: string | { title: string; url: string }): string =>
-  typeof source === "string" ? source : `${source.title} - ${source.url}`;
-
-const revokeObjectUrlLater = (url: string, delayMs: number): void => {
-  window.setTimeout(() => URL.revokeObjectURL(url), delayMs);
-};
-
-const triggerBlobDownload = (blob: Blob, fileName: string): void => {
-  const objectUrl = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = objectUrl;
-  anchor.download = fileName;
-  anchor.rel = "noopener";
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  revokeObjectUrlLater(objectUrl, DOWNLOAD_URL_REVOKE_DELAY_MS);
-};
-
-const openPendingExportWindow = (title: string, message: string): Window | null => {
-  const popup = window.open("", "_blank");
-  if (!popup) return null;
-
-  popup.document.write(`
-    <!doctype html>
-    <html lang="en">
-      <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>${title}</title>
-        <style>
-          body {
-            margin: 0;
-            min-height: 100vh;
-            display: grid;
-            place-items: center;
-            background: #f4f1eb;
-            color: #141414;
-            font-family: Arial, sans-serif;
-            padding: 32px;
-            box-sizing: border-box;
-          }
-          main {
-            max-width: 540px;
-            border: 1px solid #141414;
-            background: white;
-            padding: 28px;
-            box-shadow: 10px 10px 0 rgba(20, 20, 20, 0.12);
-          }
-          h1 {
-            margin: 0 0 12px;
-            font-size: 18px;
-            text-transform: uppercase;
-            letter-spacing: 0.12em;
-          }
-          p {
-            margin: 0;
-            line-height: 1.6;
-          }
-        </style>
-      </head>
-      <body>
-        <main>
-          <h1>${title}</h1>
-          <p>${message}</p>
-        </main>
-      </body>
-    </html>
-  `);
-  popup.document.close();
-
-  return popup;
-};
-
-const renderPdfPreviewWindow = (popup: Window, objectUrl: string, fileName: string): void => {
-  popup.document.write(`
-    <!doctype html>
-    <html lang="en">
-      <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>${fileName}</title>
-        <style>
-          body {
-            margin: 0;
-            font-family: Arial, sans-serif;
-            background: #111827;
-            color: white;
-          }
-          header {
-            padding: 16px 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 16px;
-            background: rgba(17, 24, 39, 0.96);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-            position: sticky;
-            top: 0;
-          }
-          h1 {
-            margin: 0;
-            font-size: 14px;
-            text-transform: uppercase;
-            letter-spacing: 0.12em;
-          }
-          a {
-            color: white;
-            border: 1px solid rgba(255, 255, 255, 0.4);
-            padding: 10px 14px;
-            text-decoration: none;
-            font-size: 12px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-          }
-          p {
-            margin: 0;
-            font-size: 12px;
-            opacity: 0.72;
-          }
-          iframe {
-            width: 100%;
-            height: calc(100vh - 73px);
-            border: 0;
-            background: white;
-          }
-        </style>
-      </head>
-      <body>
-        <header>
-          <div>
-            <h1>High-Resolution PDF Ready</h1>
-            <p>If the embedded preview stays blank, use the download button.</p>
-          </div>
-          <a href="${objectUrl}" download="${fileName}">Download PDF</a>
-        </header>
-        <iframe src="${objectUrl}" title="${fileName}"></iframe>
-      </body>
-    </html>
-  `);
-  popup.document.close();
-};
-
-const renderExportFailureWindow = (popup: Window, title: string, message: string): void => {
-  popup.document.write(`
-    <!doctype html>
-    <html lang="en">
-      <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>${title}</title>
-        <style>
-          body {
-            margin: 0;
-            min-height: 100vh;
-            display: grid;
-            place-items: center;
-            background: #fef2f2;
-            color: #7f1d1d;
-            font-family: Arial, sans-serif;
-            padding: 32px;
-            box-sizing: border-box;
-          }
-          main {
-            max-width: 560px;
-            border: 1px solid #ef4444;
-            background: white;
-            padding: 28px;
-            box-shadow: 10px 10px 0 rgba(239, 68, 68, 0.15);
-          }
-          h1 {
-            margin: 0 0 12px;
-            font-size: 18px;
-            text-transform: uppercase;
-            letter-spacing: 0.12em;
-          }
-          p {
-            margin: 0;
-            line-height: 1.6;
-          }
-        </style>
-      </head>
-      <body>
-        <main>
-          <h1>${title}</h1>
-          <p>${message}</p>
-        </main>
-      </body>
-    </html>
-  `);
-  popup.document.close();
+const getPdfRenderScale = (pageCount: number) => {
+  if (pageCount >= 12) return 1.35;
+  if (pageCount >= 8) return 1.5;
+  if (pageCount >= 5) return 1.7;
+  return 1.9;
 };
 
 const inlineImagesForExport = async (
@@ -975,12 +768,17 @@ export default function App() {
           text += `- ${sub.title}: ${sub.summary}\n`;
         });
         text += `\nSOURCES:\n`;
-        chapter.sourceUrls.forEach(url => text += `- ${formatSourceReference(url)}\n`);
+        chapter.sourceUrls.forEach(url => text += `- ${url}\n`);
         text += `\n\n`;
       });
 
       const blob = new Blob([text], { type: 'text/plain' });
-      triggerBlobDownload(blob, buildDownloadFileName(webBook.topic, 'txt'));
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${webBook.topic.replace(/\s+/g, '_')}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
       setIsExporting(false);
     }, 800);
   };
@@ -1027,7 +825,12 @@ export default function App() {
       `;
 
       const blob = new Blob([fullHtml], { type: 'text/html' });
-      triggerBlobDownload(blob, buildDownloadFileName(webBook.topic, 'html'));
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${webBook.topic.replace(/\s+/g, '_')}.html`;
+      a.click();
+      URL.revokeObjectURL(url);
       setIsExporting(false);
     }, 800);
   };
@@ -1133,8 +936,13 @@ export default function App() {
       const blob = new Blob(['\ufeff', sourceHTML], {
           type: 'application/msword'
       });
-
-      triggerBlobDownload(blob, buildDownloadFileName(webBook.topic, 'doc'));
+      
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${webBook.topic.replace(/\s+/g, '_')}.doc`;
+      a.click();
+      URL.revokeObjectURL(url);
     } catch (err) {
       console.error("Word export failed:", err);
     } finally {
@@ -1146,14 +954,6 @@ export default function App() {
     if (!webBook) return;
     const element = document.querySelector('.web-book-container') as HTMLElement | null;
     if (!element) return;
-
-    const shouldUsePreviewWindow = isEmbeddedApp();
-    const pendingPdfWindow = shouldUsePreviewWindow
-      ? openPendingExportWindow(
-          'Preparing High-Resolution PDF',
-          'The Web-book is rendering page by page. This tab will switch to a preview once the PDF is ready.'
-        )
-      : null;
 
     setIsExporting(true);
     setShowExportOptions(false);
@@ -1192,7 +992,7 @@ export default function App() {
       });
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = pdf.internal.pageSize.getHeight();
-      const renderScale = getPdfRenderScale(pages.length, shouldUsePreviewWindow);
+      const renderScale = getPdfRenderScale(pages.length);
 
       for (const [index, page] of pages.entries()) {
         if (index > 0) {
@@ -1235,25 +1035,9 @@ export default function App() {
         await wait(0);
       }
 
-      const pdfBlob = pdf.output('blob');
-      const fileName = buildDownloadFileName(webBook.topic, 'pdf');
-
-      if (shouldUsePreviewWindow && pendingPdfWindow && !pendingPdfWindow.closed) {
-        const objectUrl = URL.createObjectURL(pdfBlob);
-        renderPdfPreviewWindow(pendingPdfWindow, objectUrl, fileName);
-        revokeObjectUrlLater(objectUrl, PREVIEW_URL_REVOKE_DELAY_MS);
-      } else {
-        triggerBlobDownload(pdfBlob, fileName);
-      }
+      pdf.save(`${webBook.topic.replace(/\s+/g, '_')}.pdf`);
     } catch (err) {
       console.error('PDF Export failed:', err);
-      if (pendingPdfWindow && !pendingPdfWindow.closed) {
-        renderExportFailureWindow(
-          pendingPdfWindow,
-          'PDF Export Failed',
-          "The high-resolution export hit a browser limit before the PDF could finish rendering. Try the built-in 'Print / Save as PDF' option for a lighter export."
-        );
-      }
       alert("High-res PDF export still hit a browser limit before finishing. The exporter now renders one page at a time, but very large books or blocked remote images can still fail. Please use 'Print / Save as PDF' as the fallback if needed.");
     } finally {
       cleanup?.();

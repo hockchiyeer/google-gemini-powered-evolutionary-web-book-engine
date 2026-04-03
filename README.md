@@ -1,35 +1,48 @@
 # Evolutionary Web-Book Engine
 
-Evolutionary Web-Book Engine is a client-side React application that uses Google Gemini plus the Google Search tool to turn a user topic into a styled, multi-page "Web-book". The app searches for source material, scores and recombines candidate knowledge fragments, assembles a chapter set, and renders the result as an on-screen book that can also be exported in multiple formats.
+Evolutionary Web-Book Engine is a client-side React app that uses Google Gemini to search, extract, score, and synthesize Web knowledge into a styled multi-chapter "Web-book" for a user-supplied topic.
 
 👉 You can explore the live application built from this repository’s source code at: [https://aistudio.google.com/apps/84d53490-d503-494c-bf74-c67f1af980a8?showPreview=true&showAssistant=true](https://aistudio.google.com/apps/84d53490-d503-494c-bf74-c67f1af980a8?showPreview=true&showAssistant=true)
 
-
-This repository is set up for local Vite development and also includes Google AI Studio app metadata in `metadata.json`.
+The current repository is set up for local Vite development and also includes Google AI Studio app metadata (`metadata.json`) plus AI Studio-oriented environment variable notes in `.env.example`.
 
 ## What The Current App Does
 
-- Accepts a topic prompt and runs a Gemini-powered search/extraction pass.
-- Requests at least 5 relevant sources and captures grounding metadata for the in-app artifacts panel.
-- Builds an initial population of source summaries, definitions, and sub-topics.
-- Applies a lightweight evolutionary pass across 3 generations using informative value, authority, and redundancy-weighted fitness scoring.
-- Generates an 18-chapter candidate pool, writes all chapter candidates in parallel, filters low-quality output, then selects the top 10 chapters by priority score.
-- Renders a cover page, table of contents, chapter pages, glossary content, sub-topic analysis, and a closing page.
-- Keeps a collapsible technical artifacts view with raw search grounding, evolved population data, and assembly input/output.
-- Saves generated Web-books to `localStorage`, and can also sync them to Firebase Auth plus Cloud Firestore when Firebase variables are configured.
+- Accepts a topic query and runs a Gemini-powered search/extraction pass using the Google Search tool.
+- Builds a candidate "population" of source summaries, definitions, and sub-topics.
+- Scores and recombines those candidates across 3 evolutionary passes using informative value, authority, and redundancy penalty heuristics.
+- Asks Gemini to produce a fixed 10-chapter outline, then generates chapter content, glossary items, and sub-topic analysis for each chapter.
+- Filters out low-quality generated chapter content before the final book is assembled, so the rendered/exported book can contain fewer than 10 chapters.
+- Renders a cover page, table of contents, chapter pages, glossary sections, and source references in the browser.
+- Exposes a collapsible technical artifacts panel that shows captured search grounding, evolved population fitness, and assembly input/output trace data.
+- Stores history in `localStorage`, and also syncs it to Firebase Auth + Cloud Firestore when Firebase environment variables are configured.
 - Exports the current Web-book as high-resolution PDF, print-friendly PDF, Word-compatible `.doc`, standalone HTML, or plain text.
 
-## Current Architecture
+## Important Reality Checks
 
-- Frontend only: all checked-in application logic lives in `src/`.
-- UI: React 19 + TypeScript + Vite + Tailwind CSS 4 + Motion.
-- AI layer: `@google/genai` from the browser bundle.
-- Persistence: optional Firebase Web SDK with Anonymous Auth and Cloud Firestore.
-- Export stack: `html2canvas` + `jspdf` for high-resolution PDF, DOM-to-HTML export for `.html` and `.doc`, and browser print for lightweight PDF output.
+- This repo does not contain a custom web crawler or scraper. Search and extraction are delegated to Gemini through `@google/genai` and the `googleSearch` tool.
+- The outline request is currently fixed at 10 chapters, but the final book can contain fewer chapters because generated chapter content is discarded when it fails the repo's quality checks.
+- The "evolutionary" step is heuristic and lightweight: fitness scoring, top-half selection, and recombination are implemented; mutation is not meaningfully implemented in the current code.
+- The redundancy term exists in the fitness function, but `evolve()` currently calls `calculateFitness()` with an empty comparison set, so redundancy is not actively affecting selection right now.
+- Chapter images are loaded from `https://picsum.photos/...` using the chapter title or visual seed. They are decorative placeholders, not generated illustrations.
+- The current app issues Gemini requests from the frontend bundle. For public deployment, you may want to introduce a backend proxy instead of exposing a browser-usable API key.
+- High-resolution PDF export can fail for larger books in the browser because of memory/resource limits. The built-in "Print / Save as PDF" option is the more reliable fallback.
+- Word export currently downloads `.doc`, not `.docx`.
+- `package.json` still includes `express` and `dotenv`, but there is no checked-in backend/server implementation in the current repo.
 
-There is no checked-in backend server, API route, or proxy layer in this repo.
+## Tech Stack
 
-## Repo Layout
+- React 19
+- TypeScript 5
+- Vite 6
+- Tailwind CSS 4 via `@tailwindcss/vite`
+- Motion via `motion/react`
+- Google Gemini via `@google/genai`
+- Firebase Web SDK for optional persistence (Anonymous Auth + Cloud Firestore)
+- `lucide-react` for UI icons
+- `html2pdf.js` loaded from CDN in `index.html` for PDF export
+
+## Current Repo Structure
 
 ```text
 .
@@ -39,7 +52,6 @@ There is no checked-in backend server, API route, or proxy layer in this repo.
 |-- metadata.json
 |-- package-lock.json
 |-- package.json
-|-- README.md
 |-- tsconfig.json
 |-- vite.config.ts
 `-- src
@@ -53,61 +65,7 @@ There is no checked-in backend server, API route, or proxy layer in this repo.
         `-- webBookRender.ts
 ```
 
-## How The Pipeline Works Today
-
-1. Search and extraction
-   `src/services/evolutionService.ts` calls Gemini (`gemini-3-flash-preview`) with the `googleSearch` tool and asks for structured JSON containing source summaries, definitions, sub-topics, and scores.
-2. Population scoring
-   Each source is scored with `F(w) = alpha * informativeScore + beta * authorityScore - gamma * redundancy`.
-3. Evolution
-   The app runs 3 evolutionary passes, keeps the top half of the population, and recombines survivors into offspring.
-4. Chapter candidate generation
-   Gemini creates an 18-chapter candidate pool with focus text, key terms, sub-topic titles, image seeds, and a `priorityScore`.
-5. Chapter writing
-   The app generates content for all 18 chapter candidates in parallel, then drops candidates that fail the repo's text-quality heuristics.
-6. Final selection
-   The surviving chapters are sorted by `priorityScore`, the top 10 are kept, and then they are re-sorted into their original outline order for the final book.
-7. Render planning
-   `src/utils/webBookRender.ts` filters repeated or low-quality glossary items and sub-topics, then computes the final page numbers used by the on-screen layout and PDF link annotations.
-
-## Important Reality Checks
-
-- The app is browser-first. Gemini requests are made directly from the frontend bundle using `GEMINI_API_KEY`.
-- The "evolutionary" portion is heuristic, not a full evolutionary search engine. It implements scoring, selection, and recombination; mutation is effectively not implemented.
-- The redundancy term exists in the fitness formula, but `evolve()` currently calls `calculateFitness()` with an empty comparison set, so redundancy is not actively influencing selection yet.
-- The chapter candidate pool is 18 chapters, but the rendered book targets a final top 10 selection after filtering and ranking.
-- The final Web-book can contain fewer than 10 chapters when generated content is rejected by the text-quality filters.
-- Chapter imagery is loaded from `https://picsum.photos/...` using the chapter title or visual seed. These are decorative placeholder images, not AI-generated illustrations stored in the repo.
-- `package.json` still includes `express`, `dotenv`, and `@types/express`, but no server implementation is checked in.
-- `npm run lint` is TypeScript type checking only. There is no dedicated unit/integration test suite in this repository.
-
-## Export Notes
-
-- `PDF Document (High Res)` renders each page individually with `html2canvas` and builds the PDF with `jspdf`.
-- In embedded environments such as Google AI Studio previews, high-resolution PDF export now opens a dedicated preview tab/window once the PDF blob is ready instead of relying only on an iframe-scoped download.
-- `Print / Save as PDF` is the lightweight fallback and is still the most reliable option for very large books.
-- `Word (.doc)` exports HTML wrapped in a Word-compatible document shell. It does not produce `.docx`.
-- `HTML Webpage` exports the rendered book as a standalone HTML file.
-- `Plain Text` exports a text-only version of the current Web-book.
-
-## Persistence Notes
-
-- Local history is always stored in `localStorage` under `webbook_history`.
-- When Firebase is configured, the app signs users in anonymously and stores searches in Firestore under `webbookUsers/{uid}/searches`.
-- Local and Firebase-backed history are merged in the UI by Web-book ID and sorted by timestamp.
-
-## Tech Stack
-
-- React 19
-- TypeScript 5
-- Vite 6
-- Tailwind CSS 4 via `@tailwindcss/vite`
-- Motion via `motion/react`
-- Google Gemini via `@google/genai`
-- Firebase Web SDK
-- `html2canvas`
-- `jspdf`
-- `lucide-react`
+There is no checked-in backend server or API route in the current repo. The application logic lives entirely in `src/`.
 
 ## Setup
 
@@ -119,21 +77,40 @@ npm install
 
 2. Create a `.env` file from `.env.example`.
 
-3. Add at minimum:
+3. Provide at least:
 
 ```env
 GEMINI_API_KEY="your_gemini_api_key"
 ```
 
-4. Optionally add Firebase values from `.env.example` if you want shared cloud-backed history.
+4. Optionally enable persisted cloud history by setting the Firebase values from `.env.example` and enabling Anonymous Authentication plus Cloud Firestore in your Firebase project.
 
-5. Start the development server:
+5. Start the app:
 
 ```bash
 npm run dev
 ```
 
-The app runs on `http://localhost:3000`.
+The dev server runs on `http://localhost:3000`.
+
+## Available Scripts
+
+- `npm run dev` - starts the Vite dev server on port 3000
+- `npm run build` - creates a production build
+- `npm run preview` - previews the production build
+- `npm run lint` - runs TypeScript type checking via `tsc --noEmit`
+
+Note: `npm run clean` exists in `package.json`, but it is currently `rm -rf dist`, so it assumes a Unix-like shell and is not portable to a plain Windows shell.
+
+## How The Pipeline Currently Works
+
+1. Gemini search/extraction: `src/services/evolutionService.ts` asks Gemini (`gemini-3-flash-preview`) to identify at least 5 relevant sources, return structured JSON, and capture grounding metadata.
+2. Fitness scoring: each source is scored using informative score, authority score, and a redundancy penalty.
+3. Selection/recombination: the top half of the population survives and paired survivors produce hybrid offspring across 3 generations.
+4. Outline generation: Gemini produces a fixed 10-chapter outline for the requested topic.
+5. Chapter generation: Gemini writes each chapter, definitions, and sub-topic analysis in parallel, and chapters with non-meaningful content are dropped from the final book.
+6. Rendering and filtering: `src/utils/webBookRender.ts` removes low-quality or repetitive definitions/sub-topics and computes page layout for the on-screen/exported book.
+7. Traceability: `src/App.tsx` stores raw search grounding, evolved population data, and assembly input/output in `EvolutionState.artifacts` for the in-app artifacts panel.
 
 ## Environment Variables
 
@@ -141,7 +118,7 @@ Required:
 
 - `GEMINI_API_KEY`
 
-Optional Firebase variables:
+Optional:
 
 - `VITE_FIREBASE_API_KEY`
 - `VITE_FIREBASE_AUTH_DOMAIN`
@@ -151,7 +128,7 @@ Optional Firebase variables:
 - `VITE_FIREBASE_APP_ID`
 - `VITE_FIREBASE_MEASUREMENT_ID`
 
-Present in `.env.example` but not used by the checked-in source:
+Present in `.env.example` but not used by the current source:
 
 - `APP_URL`
 
@@ -159,31 +136,6 @@ Supported by `vite.config.ts` for AI Studio editing workflows:
 
 - `DISABLE_HMR`
 
-## Available Scripts
-
-- `npm run dev` starts the Vite dev server on port 3000 and binds to `0.0.0.0`
-- `npm run build` creates a production build
-- `npm run preview` previews the production build
-- `npm run lint` runs `tsc --noEmit`
-- `npm run clean` removes `dist` via `rm -rf dist`
-
-Note: `npm run clean` assumes a Unix-like shell and is not portable to a plain Windows shell.
-
-## Google AI Studio Metadata
-
-`metadata.json` currently declares:
-
-- App name: `Evolutionary Web-Book Engine`
-- A short app description for AI Studio
-- No extra `requestFramePermissions`
-
-## Known Constraints
-
-- Large books can still hit browser memory or rendering limits during high-resolution PDF export.
-- Remote image availability can affect export quality because chapter images are fetched from `picsum.photos`.
-- Public deployment should ideally use a backend proxy instead of exposing a browser-usable Gemini API key.
-- Production builds currently emit a large chunk warning from Vite because most of the app ships in a small number of large bundles.
-
 ## License
 
-See [LICENSE.txt](LICENSE.txt).
+MIT. See `LICENSE.txt`.
