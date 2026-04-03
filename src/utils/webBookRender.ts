@@ -47,6 +47,13 @@ export interface ChapterRenderPlan {
   renderableSubTopics: Chapter["subTopics"];
 }
 
+export interface NormalizedSourceLink {
+  title: string;
+  url: string;
+  hostname: string;
+  isSearchResultsPage: boolean;
+}
+
 export function isMeaningfulText(text?: string | null, description = ""): boolean {
   if (!text) return false;
 
@@ -176,4 +183,61 @@ export function buildChapterRenderPlan(chapters: Chapter[]): ChapterRenderPlan[]
       renderableSubTopics,
     };
   });
+}
+
+function buildReadableSourceTitle(url: URL): string {
+  const hostname = url.hostname.replace(/^www\./, "");
+  return hostname.split(".")[0]?.replace(/[-_]/g, " ") || hostname;
+}
+
+function isSearchResultsPage(url: URL): boolean {
+  const hostname = url.hostname.replace(/^www\./, "");
+  return (
+    ((hostname === "google.com" || hostname.endsWith(".google.com")) && url.pathname === "/search") ||
+    (hostname === "duckduckgo.com" && (url.pathname === "/" || url.pathname === "/html/" || url.pathname === "/html"))
+  );
+}
+
+export function normalizeSourceLink(source: Chapter["sourceUrls"][number]): NormalizedSourceLink | null {
+  const rawUrl = typeof source === "string" ? source : source.url;
+  if (!rawUrl) return null;
+
+  try {
+    const url = new URL(rawUrl);
+    if (!/^https?:$/.test(url.protocol)) {
+      return null;
+    }
+
+    const title = typeof source === "string"
+      ? buildReadableSourceTitle(url)
+      : (source.title?.trim() || buildReadableSourceTitle(url));
+
+    return {
+      title,
+      url: url.toString(),
+      hostname: url.hostname.replace(/^www\./, ""),
+      isSearchResultsPage: isSearchResultsPage(url),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function getChapterSourceLinks(
+  chapter: Chapter,
+  options: { includeSearchResults?: boolean; maxItems?: number } = {}
+): NormalizedSourceLink[] {
+  const { includeSearchResults = true, maxItems = Number.POSITIVE_INFINITY } = options;
+  const links: NormalizedSourceLink[] = [];
+
+  chapter.sourceUrls.forEach((source) => {
+    const normalized = normalizeSourceLink(source);
+    if (!normalized) return;
+    if (!includeSearchResults && normalized.isSearchResultsPage) return;
+    if (links.some((existing) => existing.url === normalized.url)) return;
+
+    links.push(normalized);
+  });
+
+  return links.slice(0, maxItems);
 }

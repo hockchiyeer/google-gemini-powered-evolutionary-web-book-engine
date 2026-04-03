@@ -1,141 +1,241 @@
 # Evolutionary Web-Book Engine
 
-Evolutionary Web-Book Engine is a client-side React app that uses Google Gemini to search, extract, score, and synthesize Web knowledge into a styled multi-chapter "Web-book" for a user-supplied topic.
+Evolutionary Web-Book Engine is a React + Vite application that uses Google Gemini first, with a server-assisted Google Search / DuckDuckGo fallback, to search, extract, score, and synthesize Web knowledge into a styled multi-chapter Web-book for a user-supplied topic.
 
 👉 You can explore the live application built from this repository’s source code at: [https://aistudio.google.com/apps/84d53490-d503-494c-bf74-c67f1af980a8?showPreview=true&showAssistant=true](https://aistudio.google.com/apps/84d53490-d503-494c-bf74-c67f1af980a8?showPreview=true&showAssistant=true)
 
-The current repository is set up for local Vite development and also includes Google AI Studio app metadata (`metadata.json`) plus AI Studio-oriented environment variable notes in `.env.example`.
+This repository now includes:
 
-## What The Current App Does
+- a modular React frontend under `src/`
+- a Vite middleware fallback route under `server/`
+- Gemini-first generation with automatic search fallback
+- deduplication for fallback-derived summaries, chapters, and source evidence
+- export to PDF, print, Word, HTML, and plain text
 
-- Accepts a topic query and runs a Gemini-powered search/extraction pass using the Google Search tool.
-- Builds a candidate "population" of source summaries, definitions, and sub-topics.
-- Scores and recombines those candidates across 3 evolutionary passes using informative value, authority, and redundancy penalty heuristics.
-- Asks Gemini to produce a fixed 10-chapter outline, then generates chapter content, glossary items, and sub-topic analysis for each chapter.
-- Filters out low-quality generated chapter content before the final book is assembled, so the rendered/exported book can contain fewer than 10 chapters.
-- Renders a cover page, table of contents, chapter pages, glossary sections, and source references in the browser.
-- Exposes a collapsible technical artifacts panel that shows captured search grounding, evolved population fitness, and assembly input/output trace data.
-- Stores history in `localStorage`, and also syncs it to Firebase Auth + Cloud Firestore when Firebase environment variables are configured.
-- Exports the current Web-book as high-resolution PDF, print-friendly PDF, Word-compatible `.doc`, standalone HTML, or plain text.
+## What The App Does
 
-## Important Reality Checks
+- Accepts a topic query and generates a structured Web-book around that topic.
+- Uses Google Gemini first for search extraction and chapter assembly.
+- Falls back when Gemini is unavailable, misconfigured, rate-limited, or quota-limited.
+- Builds fallback content from live search evidence instead of hardcoded placeholder text.
+- Tries Google Search AI Overview / Google snippets first, then falls back to DuckDuckGo HTML search snippets if Google blocks automated extraction.
+- Deduplicates repeated fallback snippets, repeated chapter text, and repeated cross-chapter content.
+- Renders a cover page, table of contents, chapter spreads, glossary sections, source links, and detailed reading links.
+- Preserves search history in `localStorage`.
+- Optionally syncs completed books to Firebase using Anonymous Auth + Cloud Firestore.
+- Exposes a technical artifacts panel for raw search results, evolved population, and assembly trace data.
 
-- This repo does not contain a custom web crawler or scraper. Search and extraction are delegated to Gemini through `@google/genai` and the `googleSearch` tool.
-- The outline request is currently fixed at 10 chapters, but the final book can contain fewer chapters because generated chapter content is discarded when it fails the repo's quality checks.
-- The "evolutionary" step is heuristic and lightweight: fitness scoring, top-half selection, and recombination are implemented; mutation is not meaningfully implemented in the current code.
-- The redundancy term exists in the fitness function, but `evolve()` currently calls `calculateFitness()` with an empty comparison set, so redundancy is not actively affecting selection right now.
-- Chapter images are loaded from `https://picsum.photos/...` using the chapter title or visual seed. They are decorative placeholders, not generated illustrations.
-- The current app issues Gemini requests from the frontend bundle. For public deployment, you may want to introduce a backend proxy instead of exposing a browser-usable API key.
-- High-resolution PDF export can fail for larger books in the browser because of memory/resource limits. The built-in "Print / Save as PDF" option is the more reliable fallback.
-- Word export currently downloads `.doc`, not `.docx`.
-- `package.json` still includes `express` and `dotenv`, but there is no checked-in backend/server implementation in the current repo.
+## Current Architecture
 
-## Tech Stack
+### Frontend
 
-- React 19
-- TypeScript 5
-- Vite 6
-- Tailwind CSS 4 via `@tailwindcss/vite`
-- Motion via `motion/react`
-- Google Gemini via `@google/genai`
-- Firebase Web SDK for optional persistence (Anonymous Auth + Cloud Firestore)
-- `lucide-react` for UI icons
-- `html2pdf.js` loaded from CDN in `index.html` for PDF export
+- `src/App.tsx` is now a thin page-level orchestrator.
+- `src/hooks/useWebBookEngine.ts` manages the search/evolution/assembly flow and UI state.
+- `src/components/` contains the header, sidebar, history drawer, and Web-book viewer.
+- `src/services/` contains the evolution pipeline, fallback client, history persistence, and export logic.
+- `src/utils/webBookRender.ts` handles content filtering, render planning, and source-link normalization.
 
-## Current Repo Structure
+### Fallback Route
+
+- `server/googleSearchFallback.ts` adds a Vite middleware route at `/api/search-fallback`.
+- The fallback route is used when Gemini fails due to:
+  - missing API key
+  - invalid API key
+  - quota or rate limit
+  - service unavailability
+- Fallback output is synthesized from live search results and is deduplicated before it reaches the UI.
+
+## Search And Assembly Pipeline
+
+1. Search and extract with Gemini in `src/services/evolutionService.ts`.
+2. If Gemini fails for a known recoverable reason, request `/api/search-fallback`.
+3. The fallback route attempts:
+   - Google Search AI Overview extraction
+   - Google Search snippet extraction
+   - DuckDuckGo HTML snippet extraction as an alternate provider
+4. Build a candidate population of source pages.
+5. Score and recombine that population across 3 lightweight evolutionary passes.
+6. Assemble the final Web-book.
+7. Render the book with source verification links and external article links.
+8. Export the result if needed.
+
+## Repo Structure
 
 ```text
 .
 |-- .env.example
 |-- index.html
-|-- LICENSE.txt
 |-- metadata.json
-|-- package-lock.json
 |-- package.json
 |-- tsconfig.json
 |-- vite.config.ts
+|-- server
+|   `-- googleSearchFallback.ts
 `-- src
     |-- App.tsx
     |-- index.css
     |-- main.tsx
     |-- types.ts
+    |-- components
+    |   |-- AppHeader.tsx
+    |   |-- ControlSidebar.tsx
+    |   |-- HistoryDrawer.tsx
+    |   `-- WebBookViewer.tsx
+    |-- hooks
+    |   `-- useWebBookEngine.ts
     |-- services
-    |   `-- evolutionService.ts
+    |   |-- evolutionService.ts
+    |   |-- exportService.ts
+    |   |-- googleSearchFallbackClient.ts
+    |   `-- historyService.ts
     `-- utils
         `-- webBookRender.ts
 ```
 
-There is no checked-in backend server or API route in the current repo. The application logic lives entirely in `src/`.
+## Local Development
 
-## Setup
+### Requirements
 
-1. Install dependencies:
+- Node.js 18+ recommended
+- npm
+
+### Install
 
 ```bash
 npm install
 ```
 
-2. Create a `.env` file from `.env.example`.
+### Environment
 
-3. Provide at least:
+Create `.env` from `.env.example`.
+
+Recommended:
 
 ```env
 GEMINI_API_KEY="your_gemini_api_key"
 ```
 
-4. Optionally enable persisted cloud history by setting the Firebase values from `.env.example` and enabling Anonymous Authentication plus Cloud Firestore in your Firebase project.
+Optional Firebase configuration:
 
-5. Start the app:
+```env
+VITE_FIREBASE_API_KEY="..."
+VITE_FIREBASE_AUTH_DOMAIN="..."
+VITE_FIREBASE_PROJECT_ID="..."
+VITE_FIREBASE_STORAGE_BUCKET="..."
+VITE_FIREBASE_MESSAGING_SENDER_ID="..."
+VITE_FIREBASE_APP_ID="..."
+VITE_FIREBASE_MEASUREMENT_ID="..."
+```
+
+Notes:
+
+- `GEMINI_API_KEY` is recommended, but the app can still fall back to search-based synthesis when Gemini is unavailable.
+- `APP_URL` is present in `.env.example` for AI Studio style hosting metadata, but it is not required for normal local development.
+- `DISABLE_HMR=true` can be used in environments where hot reload causes instability.
+
+### Start The Dev Server
 
 ```bash
 npm run dev
 ```
 
-The dev server runs on `http://localhost:3000`.
+The app is configured to run on:
+
+```text
+http://localhost:3000
+```
+
+`vite.config.ts` uses `strictPort: true`, so the dev server will fail instead of silently moving to a different port.
+
+Important:
+
+- Use `npm run dev`
+- Do not use `npx run dev`
+
+`npx run dev` installs the unrelated `run` package and does not execute the Vite script from `package.json`.
 
 ## Available Scripts
 
-- `npm run dev` - starts the Vite dev server on port 3000
-- `npm run build` - creates a production build
-- `npm run preview` - previews the production build
-- `npm run lint` - runs TypeScript type checking via `tsc --noEmit`
+- `npm run dev` - start the Vite dev server on port 3000
+- `npm run build` - create a production build
+- `npm run preview` - preview the built app
+- `npm run lint` - run TypeScript type checking with `tsc --noEmit`
+- `npm run clean` - remove `dist` using `rm -rf dist`
 
-Note: `npm run clean` exists in `package.json`, but it is currently `rm -rf dist`, so it assumes a Unix-like shell and is not portable to a plain Windows shell.
+Note: `npm run clean` is not Windows-native because it uses `rm -rf`.
 
-## How The Pipeline Currently Works
+## Export Formats
 
-1. Gemini search/extraction: `src/services/evolutionService.ts` asks Gemini (`gemini-3-flash-preview`) to identify at least 5 relevant sources, return structured JSON, and capture grounding metadata.
-2. Fitness scoring: each source is scored using informative score, authority score, and a redundancy penalty.
-3. Selection/recombination: the top half of the population survives and paired survivors produce hybrid offspring across 3 generations.
-4. Outline generation: Gemini produces a fixed 10-chapter outline for the requested topic.
-5. Chapter generation: Gemini writes each chapter, definitions, and sub-topic analysis in parallel, and chapters with non-meaningful content are dropped from the final book.
-6. Rendering and filtering: `src/utils/webBookRender.ts` removes low-quality or repetitive definitions/sub-topics and computes page layout for the on-screen/exported book.
-7. Traceability: `src/App.tsx` stores raw search grounding, evolved population data, and assembly input/output in `EvolutionState.artifacts` for the in-app artifacts panel.
+The current Web-book can be exported as:
 
-## Environment Variables
+- high-resolution PDF
+- print / save as PDF
+- Word `.doc`
+- standalone HTML
+- plain text
 
-Required:
+Current export behavior:
 
-- `GEMINI_API_KEY`
+- PDF export keeps internal chapter jumps and external article links clickable.
+- HTML export preserves the rendered Web-book layout and links.
+- Word export produces `.doc`, not `.docx`.
+- Large PDF exports can still hit browser memory limits. The print flow is the safer fallback for very large books.
 
-Optional:
+## Search Fallback Behavior
 
-- `VITE_FIREBASE_API_KEY`
-- `VITE_FIREBASE_AUTH_DOMAIN`
-- `VITE_FIREBASE_PROJECT_ID`
-- `VITE_FIREBASE_STORAGE_BUCKET`
-- `VITE_FIREBASE_MESSAGING_SENDER_ID`
-- `VITE_FIREBASE_APP_ID`
-- `VITE_FIREBASE_MEASUREMENT_ID`
+When Gemini cannot be used, the app switches to search-based synthesis:
 
-Present in `.env.example` but not used by the current source:
+- Google Search AI Overview extraction when available
+- Google Search snippets when AI Overview is not extractable
+- DuckDuckGo HTML snippets when Google blocks automated extraction
 
-- `APP_URL`
+Fallback content is then deduplicated at multiple stages:
 
-Supported by `vite.config.ts` for AI Studio editing workflows:
+- result snippet deduplication in `server/googleSearchFallback.ts`
+- fallback population deduplication in `src/services/evolutionService.ts`
+- cross-chapter sentence deduplication during fallback book assembly
+- synthesis-chapter filtering so it does not simply repeat standalone source chapters
 
-- `DISABLE_HMR`
+## History And Persistence
+
+- Local history is always stored in `localStorage`.
+- If Firebase config is provided, the app also:
+  - signs in anonymously
+  - stores started / completed / failed searches
+  - syncs completed books from Firestore
+
+Firebase support is implemented in `src/services/historyService.ts`.
+
+## Deployment Notes
+
+This repo is not purely static anymore.
+
+The fallback endpoint lives in Vite middleware:
+
+```text
+/api/search-fallback
+```
+
+That means:
+
+- `npm run dev` supports the fallback route
+- `npm run preview` supports the fallback route
+- a plain static hosting deployment of only the built `dist/` assets will not provide that route by itself
+
+If you deploy beyond local Vite dev/preview, recreate the fallback route in a real backend or edge/serverless function.
+
+## Known Limitations
+
+- The evolutionary stage is still lightweight. It uses scoring, survivor selection, and recombination, but it is not a full genetic algorithm implementation.
+- `calculateFitness()` supports redundancy penalty, but the current `evolve()` loop still evaluates pages against an empty comparison set during that stage.
+- Decorative chapter images come from `picsum.photos`; they are placeholders, not topic-aware generated illustrations.
+- `package.json` is still named `react-example` even though the app and repo are Evolutionary Web-Book Engine.
+- `express` and `dotenv` are present in dependencies, but the checked-in fallback route is implemented as Vite middleware rather than a standalone Express server.
+
+## AI Studio Metadata
+
+The repo includes `metadata.json` and `.env.example` notes that are useful for Google AI Studio style app packaging, but the project is fully runnable as a normal local Vite app.
 
 ## License
 
-MIT. See `LICENSE.txt`.
+See [LICENSE.txt](LICENSE.txt).
