@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ChevronRight, Clock, History, Trash2, X } from 'lucide-react';
 import type { WebBook } from '../types';
@@ -19,6 +20,9 @@ export function HistoryDrawer({
   onDelete,
   onClearAll,
 }: HistoryDrawerProps) {
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [confirmClearAll, setConfirmClearAll] = useState(false);
+
   return (
     <AnimatePresence>
       {showHistory && (
@@ -63,18 +67,40 @@ export function HistoryDrawer({
                       <span className="text-[9px] uppercase font-mono opacity-50">
                         {new Date(item.timestamp).toLocaleDateString()} - {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
-                      <button
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          if (window.confirm('Are you sure you want to delete this Web-book from your history?')) {
-                            onDelete(item.id);
-                          }
-                        }}
-                        title="Delete this book from history"
-                        className="text-red-600 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-50 rounded"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      {confirmDeleteId === item.id ? (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onDelete(item.id);
+                              setConfirmDeleteId(null);
+                            }}
+                            className="text-[9px] uppercase font-bold text-red-600 hover:underline"
+                          >
+                            Confirm
+                          </button>
+                          <button
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setConfirmDeleteId(null);
+                            }}
+                            className="text-[9px] uppercase font-bold opacity-60 hover:underline"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setConfirmDeleteId(item.id);
+                          }}
+                          title="Delete this book from history"
+                          className="text-red-600 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-50 rounded"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
                     </div>
                     <h3 className="font-serif italic font-bold text-lg leading-tight mb-3">{item.topic}</h3>
                     <div className="flex justify-between items-center gap-3">
@@ -94,17 +120,33 @@ export function HistoryDrawer({
 
             {history.length > 0 && (
               <div className="p-6 border-t border-[#141414] bg-white">
-                <button
-                  onClick={() => {
-                    if (window.confirm('Are you sure you want to permanently delete all archived Web-books?')) {
-                      onClearAll();
-                    }
-                  }}
-                  title="Permanently delete all archived Web-books"
-                  className="w-full py-3 border border-red-600 text-red-600 text-[11px] uppercase font-bold tracking-widest hover:bg-red-600 hover:text-white transition-all"
-                >
-                  Clear All History
-                </button>
+                {confirmClearAll ? (
+                  <div className="w-full flex gap-2">
+                    <button
+                      onClick={() => {
+                        onClearAll();
+                        setConfirmClearAll(false);
+                      }}
+                      className="flex-1 py-3 bg-red-600 text-white text-[11px] uppercase font-bold tracking-widest hover:bg-red-700 transition-all"
+                    >
+                      Confirm Delete All
+                    </button>
+                    <button
+                      onClick={() => setConfirmClearAll(false)}
+                      className="flex-1 py-3 border border-[#141414] text-[#141414] text-[11px] uppercase font-bold tracking-widest hover:bg-[#F5F5F5] transition-all"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setConfirmClearAll(true)}
+                    title="Permanently delete all archived Web-books"
+                    className="w-full py-3 border border-red-600 text-red-600 text-[11px] uppercase font-bold tracking-widest hover:bg-red-600 hover:text-white transition-all"
+                  >
+                    Clear All History
+                  </button>
+                )}
               </div>
             )}
           </motion.div>

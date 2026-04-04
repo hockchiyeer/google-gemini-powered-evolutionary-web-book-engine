@@ -44,7 +44,7 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
           <div className="absolute top-10 left-10 w-80 h-80 border border-white rounded-full" />
           <div className="absolute bottom-10 right-10 w-96 h-96 border border-white rounded-full" />
         </div>
-        <div className="absolute bottom-12 left-1/2 -translate-x-1/2 text-[10px] font-mono opacity-40">PAGE 1</div>
+        <div className="absolute bottom-12 left-1/2 -translate-x-1/2 text-[10px] font-mono opacity-40 print:hidden">PAGE 1</div>
       </section>
 
       <section id="page-2" data-pdf-page-number="2" data-pdf-page-kind="toc" className="web-book-page p-12 md:p-20 bg-[#FAFAFA] min-h-[1000px] md:min-h-[1123px] flex flex-col relative border border-[#141414] shadow-[12px_12px_0px_0px_rgba(20,20,20,0.12)] print:shadow-none print:border-none print:block print:min-h-0 print:h-auto print:page-break-after-always">
@@ -59,7 +59,7 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
             </a>
           ))}
         </div>
-        <div className="mt-auto pt-12 flex justify-center text-[10px] font-mono opacity-40">PAGE 2</div>
+        <div className="mt-auto pt-12 flex justify-center text-[10px] font-mono opacity-40 print:hidden">PAGE 2</div>
       </section>
 
       <div className="space-y-8">
@@ -71,8 +71,7 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
           return (
             <React.Fragment key={chapter.title + titlePageNumber}>
               <section id={`page-${titlePageNumber}`} data-pdf-page-number={String(titlePageNumber)} data-pdf-page-kind="chapter" className="web-book-page p-10 md:p-16 bg-white border border-[#141414] shadow-[12px_12px_0px_0px_rgba(20,20,20,0.12)] min-h-[1000px] md:min-h-[1123px] flex flex-col relative print:shadow-none print:border-none print:block print:min-h-0 print:h-auto print:page-break-after-always">
-                <div id={`chapter-${index}`} className="absolute top-0 left-0" aria-hidden="true" />
-                <div className="flex items-center justify-between gap-4 mb-12 border-b border-[#141414]/10 pb-6">
+                <div id={`chapter-${index}`} className="flex items-center justify-between gap-4 mb-12 border-b border-[#141414]/10 pb-6">
                   <div className="flex items-center gap-4 min-w-0">
                     <span className="w-10 h-10 bg-[#141414] text-white flex items-center justify-center font-mono text-sm">0{index + 1}</span>
                     <h3 className="text-3xl md:text-4xl font-serif italic font-bold tracking-tight break-words">{chapter.title}</h3>
@@ -104,7 +103,7 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                   </p>
 
                   {externalSourceLinks.length > 0 && (
-                    <div className="mt-12 border border-[#141414] bg-[#F7F4EE] p-6">
+                    <div className="mt-12 border border-[#141414] bg-[#F7F4EE] p-6 print:break-inside-avoid">
                       <div className="text-[10px] uppercase font-bold tracking-[0.28em] text-[#141414]/60 mb-5">Detailed Reading</div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {externalSourceLinks.map((sourceLink, sourceIndex) => (
@@ -130,7 +129,7 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                   )}
                 </div>
 
-                <div className="mt-auto pt-12 flex justify-between items-center border-t border-[#141414]/5 text-[10px] font-mono opacity-40">
+                <div className="mt-auto pt-12 flex justify-between items-center border-t border-[#141414]/5 text-[10px] font-mono opacity-40 print:hidden">
                   <span className="break-words">{webBook.topic}</span>
                   <span>PAGE {titlePageNumber}</span>
                 </div>
@@ -149,7 +148,7 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                             const subTopicSource = normalizeSourceLink({ title: subTopic.title, url: subTopic.sourceUrl });
 
                             return (
-                              <div key={subTopic.title + subTopicIndex} className="relative pl-8 group">
+                              <div key={subTopic.title + subTopicIndex} className="relative pl-8 group print:break-inside-avoid">
                                 <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-[#141414]/10 group-hover:bg-[#141414] transition-colors" />
                                 <h5 className="font-bold text-xl mb-3">{subTopic.title}</h5>
                                 <p className="text-base text-gray-600 leading-relaxed font-light">{subTopic.summary}</p>
@@ -184,7 +183,7 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                             const definitionSource = normalizeSourceLink({ title: definition.term, url: definition.sourceUrl });
 
                             return (
-                              <div key={definition.term + definitionIndex} className="group">
+                              <div key={definition.term + definitionIndex} className="group print:break-inside-avoid">
                                 <span className="font-mono text-[12px] font-bold block mb-3 uppercase text-blue-400 tracking-wider break-words">
                                   {definition.term}
                                 </span>
@@ -244,7 +243,7 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                     )}
                   </div>
 
-                  <div className="mt-auto pt-12 flex justify-between items-center border-t border-[#141414]/5 text-[10px] font-mono opacity-40">
+                  <div className="mt-auto pt-12 flex justify-between items-center border-t border-[#141414]/5 text-[10px] font-mono opacity-40 print:hidden">
                     <span>Evolutionary Node {index + 1}.{chapter.visualSeed?.length || 0}</span>
                     <span>PAGE {analysisPageNumber}</span>
                   </div>
@@ -275,7 +274,7 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
             Back to Top
           </a>
         </div>
-        <div className="text-[10px] font-mono opacity-40">PAGE {finalDocumentPageNumber}</div>
+        <div className="text-[10px] font-mono opacity-40 print:hidden">PAGE {finalDocumentPageNumber}</div>
       </section>
     </div>
   );

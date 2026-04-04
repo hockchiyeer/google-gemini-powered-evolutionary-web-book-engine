@@ -60,6 +60,13 @@ export function ControlSidebar({
   }, [isHoveringInput, query]);
 
   useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = '82px';
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+    }
+  }, [query]);
+
+  useEffect(() => {
     if (textareaRef.current && query) {
       const element = textareaRef.current;
       const canvas = document.createElement('canvas');
@@ -137,12 +144,11 @@ export function ControlSidebar({
 
           <textarea
             ref={textareaRef}
-            rows={1}
+            rows={2}
             value={query}
             onChange={(event) => onQueryChange(event.target.value)}
             placeholder="Enter search topic..."
-            className="w-full bg-[#F5F5F5] border border-[#141414] p-4 pr-14 focus:outline-none focus:ring-0 text-base sm:text-lg font-mono resize-none overflow-y-auto max-h-32"
-            style={{ height: 'auto', minHeight: '72px' }}
+            className="w-full bg-[#F5F5F5] border border-[#141414] p-4 pr-14 focus:outline-none focus:ring-0 text-base sm:text-lg font-mono resize-none overflow-y-auto max-h-[160px] min-h-[82px]"
             disabled={isBusy}
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey) {
@@ -154,7 +160,7 @@ export function ControlSidebar({
           <button
             type="submit"
             title="Execute evolutionary synthesis pipeline"
-            className="absolute right-4 top-1/2 -translate-y-1/2 w-8 h-8 bg-[#141414] text-[#E4E3E0] flex items-center justify-center hover:bg-opacity-90 transition-colors disabled:opacity-50 shadow-[2px_2px_0px_0px_rgba(0,0,0,0.2)]"
+            className="absolute right-4 top-4 w-8 h-8 bg-[#141414] text-[#E4E3E0] flex items-center justify-center hover:bg-opacity-90 transition-colors disabled:opacity-50 shadow-[2px_2px_0px_0px_rgba(0,0,0,0.2)]"
             disabled={isBusy}
           >
             {isBusy ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}

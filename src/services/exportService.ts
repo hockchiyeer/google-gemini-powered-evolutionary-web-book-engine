@@ -561,6 +561,10 @@ export async function printWebBook(webBook: WebBook): Promise<void> {
       <body>
         ${htmlContent}
         <script>
+          // Explicitly set the DOM title at runtime. Chromium engines sometimes
+          // ignore the head <title> tag when printing from a blob/blank popup.
+          document.title = ${JSON.stringify(webBook.topic)};
+          
           window.onload = () => {
             setTimeout(() => {
               window.print();
