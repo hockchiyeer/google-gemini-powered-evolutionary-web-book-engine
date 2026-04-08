@@ -40,20 +40,6 @@ function getWebBookElement(): HTMLElement {
   return element;
 }
 
-function getWebBookPages(element: HTMLElement = getWebBookElement()): HTMLElement[] {
-  const pages = Array.from(element.querySelectorAll<HTMLElement>('[data-pdf-page-number]'));
-  if (pages.length === 0) {
-    throw new Error('No paged content found for export.');
-  }
-  return pages;
-}
-
-function getPrintableWebBookMarkup(): string {
-  return getWebBookPages()
-    .map((page) => page.outerHTML)
-    .join('');
-}
-
 function formatSourceLink(source: string | { title: string; url: string }): string {
   return typeof source === 'string' ? source : `${source.title} - ${source.url}`;
 }
@@ -320,20 +306,8 @@ export async function exportWebBookToHtml(webBook: WebBook): Promise<void> {
         .web-book-page { background: white; border: 1px solid #141414; box-shadow: 12px 12px 0 rgba(20, 20, 20, 0.12); overflow: hidden; }
         @media print {
           body { background: white; padding: 0; overflow: visible !important; }
-          .web-book-container { display: block !important; max-width: none; gap: 0; overflow: visible !important; }
-          [data-pdf-page-stack] { display: block !important; }
-          [data-pdf-page-stack] > * { margin-top: 0 !important; margin-bottom: 0 !important; }
-          [data-pdf-page-stack] > :not([hidden]) ~ :not([hidden]) { margin-top: 0 !important; }
-          .web-book-page {
-            display: block !important;
-            width: 100% !important;
-            box-shadow: none;
-            break-inside: avoid-page;
-            page-break-inside: avoid;
-            break-after: page;
-            page-break-after: always;
-            overflow: visible !important;
-          }
+          .web-book-container { max-width: none; gap: 0; overflow: visible !important; }
+          .web-book-page { box-shadow: none; break-after: page; page-break-after: always; overflow: visible !important; }
           .web-book-page:last-child { break-after: auto; page-break-after: auto; }
         }
       </style>
@@ -543,7 +517,7 @@ export async function exportWebBookToPdf(webBook: WebBook): Promise<void> {
 }
 
 export async function printWebBook(webBook: WebBook): Promise<void> {
-  const htmlContent = getPrintableWebBookMarkup();
+  const htmlContent = getWebBookElement().outerHTML;
   const printWindow = window.open('', '_blank');
   if (!printWindow) {
     alert('Please allow popups to use the print feature.');
@@ -562,28 +536,22 @@ export async function printWebBook(webBook: WebBook): Promise<void> {
           body { font-family: 'Inter', sans-serif; background: white; padding: 24px 0; margin: 0; }
           .font-serif { font-family: 'Playfair Display', serif; }
           .print\\:hidden { display: none !important; }
-          .web-book-print-root { width: 100%; max-width: 800px; margin: 0 auto; }
-          .web-book-page { background: white; width: 100%; display: block; position: relative; box-sizing: border-box; overflow: hidden; }
+          .web-book-container { width: 100%; max-width: 800px; margin: 0 auto; display: flex; flex-direction: column; gap: 0; }
+          .web-book-page { background: white; width: 100%; min-height: 100vh; display: flex; flex-direction: column; position: relative; box-sizing: border-box; }
           @media print {
             body { padding: 0; margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; overflow: visible !important; }
             .no-print { display: none; }
-            .web-book-print-root { width: 100% !important; max-width: none !important; margin: 0 !important; }
             .web-book-page {
-              display: block !important;
-              width: 100% !important;
-              margin: 0 !important;
-              break-inside: avoid-page;
-              page-break-inside: avoid;
               break-after: page;
               page-break-after: always;
               border: none !important;
               box-shadow: none !important;
+              margin: 0 !important;
               padding: 1.5cm !important;
-              min-height: 297mm !important;
-              height: 297mm !important;
-              max-height: 297mm !important;
+              min-height: auto !important;
+              height: auto !important;
               box-sizing: border-box !important;
-              overflow: hidden !important;
+              overflow: visible !important;
             }
             .web-book-page:last-child { break-after: auto; page-break-after: auto; }
             @page { size: A4; margin: 0; }
@@ -591,12 +559,8 @@ export async function printWebBook(webBook: WebBook): Promise<void> {
         </style>
       </head>
       <body>
-        <main id="top" class="web-book-print-root">${htmlContent}</main>
+        ${htmlContent}
         <script>
-          // Explicitly set the DOM title at runtime. Chromium engines sometimes
-          // ignore the head <title> tag when printing from a blob/blank popup.
-          document.title = ${JSON.stringify(webBook.topic)};
-          
           window.onload = () => {
             setTimeout(() => {
               window.print();
