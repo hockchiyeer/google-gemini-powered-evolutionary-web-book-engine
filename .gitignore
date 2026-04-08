@@ -6,3 +6,15 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Cypress test results artefacts
+test-results/
+
+# Large media files
+*.mp4
+*.tiff
+*.avi
+*.flv
+*.mov
+*.wmv
+*.project
