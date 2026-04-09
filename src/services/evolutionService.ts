@@ -511,18 +511,6 @@ async function safeFetchSearchFallback(query: string, label: string): Promise<Se
   }
 }
 
-function buildFallbackDiagnosticsSuffix(error: unknown): string {
-  const diagnostic = formatGeminiError(error).replace(/\s+/g, ' ').trim();
-  if (!diagnostic || diagnostic === 'Unknown Gemini API error') {
-    return '';
-  }
-
-  const compactDiagnostic = diagnostic.length > 320
-    ? `${diagnostic.slice(0, 317)}...`
-    : diagnostic;
-  return `Fallback diagnostics: ${compactDiagnostic}`;
-}
-
 function countWords(text: string): number {
   return text.split(/\s+/).filter(Boolean).length;
 }
@@ -546,16 +534,14 @@ function buildIncompleteGeminiFallbackNotice(hasLiveFallback: boolean): string {
   return 'Gemini returned an incomplete chapter set, so the Web-book was rebuilt from the current evidence pool only.';
 }
 
-function buildEmptySearchEvidenceNotice(query: string, fallbackError?: unknown): Error {
-  const diagnosticsSuffix = buildFallbackDiagnosticsSuffix(fallbackError);
+function buildEmptySearchEvidenceNotice(query: string): Error {
   return new Error(
     `Gemini search returned no usable external sources for "${query}", and live fallback search could not be reached. ` +
-    `The app needs either Gemini search evidence or the /api/search-fallback route to continue.${diagnosticsSuffix ? ` ${diagnosticsSuffix}` : ''}`
+    'The app needs either Gemini search evidence or the /api/search-fallback route to continue.'
   );
 }
 
-function buildUnavailableFallbackSearchError(query: string, reason: SearchFallbackReason, fallbackError?: unknown): Error {
-  const diagnosticsSuffix = buildFallbackDiagnosticsSuffix(fallbackError);
+function buildUnavailableFallbackSearchError(query: string, reason: SearchFallbackReason): Error {
   return new Error(
     `${{
       missing_api_key: 'Gemini API key is missing',
@@ -563,7 +549,7 @@ function buildUnavailableFallbackSearchError(query: string, reason: SearchFallba
       quota_or_rate_limit: 'Gemini API quota or rate limit was reached',
       service_unavailable: 'Gemini API is temporarily unavailable',
       network_unreachable: `Gemini API was unreachable after ${GEMINI_RECONNECT_ATTEMPTS} reconnection attempts`,
-    }[reason]}; live fallback search (Google + DuckDuckGo) was unavailable, so no external evidence could be gathered for "${query}".${diagnosticsSuffix ? ` ${diagnosticsSuffix}` : ''}`
+    }[reason]}; live fallback search (Google + DuckDuckGo) was unavailable, so no external evidence could be gathered for "${query}".`
   );
 }
 
@@ -1099,7 +1085,7 @@ async function enrichGeminiSearchResult(query: string, geminiResult: SearchAndEx
   } catch (error) {
     console.warn('Gemini enrichment with live search evidence was unavailable', error);
     if (!geminiHasUsableEvidence) {
-      throw buildEmptySearchEvidenceNotice(query, error);
+      throw buildEmptySearchEvidenceNotice(query);
     }
     return {
       ...geminiResult,
@@ -1216,15 +1202,7 @@ export async function searchAndExtract(query: string): Promise<SearchAndExtractR
       throw error;
     }
 
-    let fallbackPayload: SearchFallbackPayload | undefined;
-    let fallbackFetchError: unknown;
-    try {
-      fallbackPayload = await fetchGoogleSearchFallback(query);
-    } catch (searchRecoveryError) {
-      fallbackFetchError = searchRecoveryError;
-      console.error('Gemini search recovery fallback search fetch failed', searchRecoveryError);
-    }
-
+    const fallbackPayload = await safeFetchSearchFallback(query, 'Gemini search recovery');
     if (fallbackPayload) {
       return {
         results: buildFallbackPopulation(fallbackPayload),
@@ -1240,7 +1218,7 @@ export async function searchAndExtract(query: string): Promise<SearchAndExtractR
       };
     }
 
-    throw buildUnavailableFallbackSearchError(query, fallbackReason, fallbackFetchError);
+    throw buildUnavailableFallbackSearchError(query, fallbackReason);
   }
 }
 

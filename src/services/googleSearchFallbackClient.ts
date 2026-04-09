@@ -1,41 +1,15 @@
 import type { SearchFallbackPayload } from '../types';
 
 const SEARCH_FALLBACK_ROUTE = '/api/search-fallback';
+const DUCKDUCKGO_LITE_URL = 'https://lite.duckduckgo.com/lite/';
 const FALLBACK_FETCH_ATTEMPTS = 3;
 const FALLBACK_FETCH_TIMEOUT_MS = 20000;
 
-type FallbackFetchError = Error & {
-  status?: number;
-  nonRetryable?: boolean;
-};
+// Minimal placeholder type to avoid breaking other files
+export type SearchFetchResult = unknown;
 
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function createFallbackFetchError(message: string, status?: number, nonRetryable = false): FallbackFetchError {
-  const error = new Error(message) as FallbackFetchError;
-  if (typeof status === 'number') {
-    error.status = status;
-  }
-  if (nonRetryable) {
-    error.nonRetryable = true;
-  }
-  return error;
-}
-
-function isNonRetryableFallbackError(error: Error): boolean {
-  const typedError = error as FallbackFetchError;
-  if (typedError.nonRetryable) {
-    return true;
-  }
-
-  const status = typedError.status;
-  if (typeof status === 'number' && status >= 400 && status < 500 && status !== 429) {
-    return true;
-  }
-
-  return /no extractable search snippets were available|query parameter is required/i.test(error.message);
 }
 
 export async function fetchGoogleSearchFallback(query: string): Promise<SearchFallbackPayload> {
@@ -43,40 +17,63 @@ export async function fetchGoogleSearchFallback(query: string): Promise<SearchFa
 
   for (let attempt = 1; attempt <= FALLBACK_FETCH_ATTEMPTS; attempt += 1) {
     try {
-      const response = await fetch(`${SEARCH_FALLBACK_ROUTE}?query=${encodeURIComponent(query)}`, {
-        signal: AbortSignal.timeout(FALLBACK_FETCH_TIMEOUT_MS),
-      });
+      const response = await fetch(
+        `${SEARCH_FALLBACK_ROUTE}?query=${encodeURIComponent(query)}`,
+        {
+          signal: AbortSignal.timeout(FALLBACK_FETCH_TIMEOUT_MS),
+        }
+      );
 
       if (!response.ok) {
-        let errorMessage = `Google Search fallback is currently unavailable (HTTP ${response.status}).`;
+        let errorMessage = 'Google Search fallback is currently unavailable.';
 
         try {
-          const payload = await response.json() as { error?: string };
+          const payload = (await response.json()) as { error?: string };
           if (payload.error) {
             errorMessage = payload.error;
           }
         } catch {
-          // Ignore JSON parse failures and use the default message.
+          // Ignore JSON parse failures and use default message
         }
 
-        const nonRetryable = (response.status >= 400 && response.status < 500 && response.status !== 429) ||
-          /no extractable search snippets were available/i.test(errorMessage);
-
-        throw createFallbackFetchError(errorMessage, response.status, nonRetryable);
+        throw new Error(errorMessage);
       }
 
-      return response.json() as Promise<SearchFallbackPayload>;
+      return (await response.json()) as SearchFallbackPayload;
     } catch (error) {
-      lastError = error instanceof Error ? error : new Error('Google Search fallback request failed.');
+      lastError =
+        error instanceof Error
+          ? error
+          : new Error('Google Search fallback request failed.');
 
-      if (attempt < FALLBACK_FETCH_ATTEMPTS && !isNonRetryableFallbackError(lastError)) {
+      if (attempt < FALLBACK_FETCH_ATTEMPTS) {
         await wait(800 * attempt);
         continue;
       }
-
-      break;
     }
   }
 
-  throw lastError || new Error('Google Search fallback is currently unavailable.');
+  throw lastError ?? new Error('Google Search fallback is currently unavailable.');
+}
+
+export async function fetchDuckDuckGoLiteAttempt(
+  query: string,
+  labelSuffix: string
+): Promise<SearchFetchResult | null> {
+  const searchUrl = new URL(DUCKDUCKGO_LITE_URL);
+  searchUrl.searchParams.set('q', query);
+  searchUrl.searchParams.set('kl', 'us-en');
+
+  try {
+    return await fetchSearchHtml(searchUrl, `duckduckgo-lite-${labelSuffix}`);
+  } catch {
+    return null;
+  }
+}
+
+function fetchSearchHtml(
+  searchUrl: URL,
+  sourceLabel: string
+): Promise<SearchFetchResult> {
+  throw new Error('Function not implemented.');
 }

@@ -394,7 +394,7 @@ function isSearchResultsPage(url: URL): boolean {
   const hostname = url.hostname.replace(/^www\./, "");
   return (
     ((hostname === "google.com" || hostname.endsWith(".google.com")) && url.pathname === "/search") ||
-    (hostname === "duckduckgo.com" && (url.pathname === "/" || url.pathname === "/html/" || url.pathname === "/html"))
+    (hostname === "duckduckgo.com" && (url.pathname === "/" || url.pathname === "/html/" || url.pathname === "/html" || url.pathname === "/lite/" || url.pathname === "/lite"))
   );
 }
 

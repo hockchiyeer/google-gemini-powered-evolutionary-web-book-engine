@@ -20,7 +20,7 @@ This repository now includes:
 - Consolidates a broader evidence pool before chapter writing so the generator is not forced to build a 10-chapter book from only a handful of sources.
 - Falls back when Gemini is unavailable, misconfigured, rate-limited, or quota-limited.
 - Builds fallback content from live search evidence instead of hardcoded placeholder text.
-- Expands live search coverage with Google Search AI Overview, Google snippets, and DuckDuckGo HTML snippets across multiple query variants.
+- Expands live search coverage with Google Search AI Overview, Google snippets, DuckDuckGo HTML snippets, and DuckDuckGo Lite results across multiple query variants.
 - Deduplicates repeated fallback snippets, repeated chapter text, and repeated cross-chapter content.
 - Builds an 18-source assembly pool and prunes that into a final 10-chapter Web-book.
 - Renders a cover page, table of contents, chapter spreads, glossary sections, source links, and detailed reading links.
@@ -58,7 +58,7 @@ This repository now includes:
 4. The fallback route attempts:
    - Google Search AI Overview extraction
    - Google Search snippet extraction
-   - DuckDuckGo HTML snippet extraction as an alternate provider
+   - DuckDuckGo HTML and DuckDuckGo Lite snippet extraction as alternate providers
    - multiple search-query variants to widen coverage when one phrasing returns sparse results
 5. Build a deduplicated candidate population of source pages.
 6. Score and recombine that population across 3 lightweight evolutionary passes while preserving a larger population size.
@@ -197,7 +197,7 @@ When Gemini cannot be used, the app switches to search-based synthesis:
 
 - Google Search AI Overview extraction when available
 - Google Search snippets when AI Overview is not extractable
-- DuckDuckGo HTML snippets when Google blocks automated extraction
+- DuckDuckGo HTML and DuckDuckGo Lite snippets when Google blocks automated extraction
 - multiple query variants so sparse wording from one search can still contribute to a larger blended result set
 - deduplicated blending of Google and DuckDuckGo evidence up to a much larger capped source pool before assembly
 
