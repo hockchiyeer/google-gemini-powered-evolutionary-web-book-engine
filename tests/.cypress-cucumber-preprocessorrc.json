@@ -5,15 +5,15 @@
   ],
   "html": {
     "enabled": true,
-    "output": "test-results/cucumber-report.html"
+    "output": "test-results/chromeReport/cucumber-report.html"
   },
   "messages": {
     "enabled": true,
-    "output": "test-results/cucumber-messages.ndjson"
+    "output": "test-results/chromeReport/cucumber-messages.ndjson"
   },
   "json": {
     "enabled": true,
-    "output": "test-results/cucumber-report.json"
+    "output": "test-results/chromeReport/cucumber-report.json"
   },
   "omitFiltered": true,
   "filterSpecs": true

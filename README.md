@@ -171,8 +171,64 @@ Important:
 - `npm run preview` - preview the built app
 - `npm run lint` - run TypeScript type checking with `tsc --noEmit`
 - `npm run clean` - remove `dist` using `rm -rf dist`
+- `npm run test:local` - run the Cypress suite against the local app and generate both HTML reports
+- `npm run test:qa` - run the Cypress suite against QA and generate both HTML reports
+- `npm run test:prod` - run the Cypress suite against PROD and generate both HTML reports
+- `npm run report:generate` - generate both the Mochawesome HTML report and the Multiple Cucumber HTML report from the latest Cypress artifacts
 
 Note: `npm run clean` is not Windows-native because it uses `rm -rf`.
+
+## Test Reports
+
+Cypress report artifacts are written under `test-results/chromeReport/`.
+
+After a Cypress run, or by running the generator directly:
+
+```bash
+npm run report:generate
+```
+
+This produces:
+
+- Mochawesome HTML report at `test-results/chromeReport/report.html`
+- Multiple Cucumber HTML report at `test-results/chromeReport/multiple-cucumber-html-report/index.html`
+
+## Cypress Folder Structure
+
+```text
+tests/
+|-- cypress.config.cjs
+|-- cypress.env.config.cjs
+|-- .cypress-cucumber-preprocessorrc.json
+|-- scripts/
+|   `-- generate-cucumber-report.cjs
+`-- cypress/
+    |-- features/
+    |   `-- *.feature
+    |-- common/
+    |   |-- given.js
+    |   |-- when.js
+    |   `-- then.js
+    |-- fixtures/
+    |   `-- *.json
+    |-- pageObjects/
+    |   |-- index.js
+    |   `-- webBookEngine.js
+    |-- support/
+    |   |-- e2e.js
+    |   `-- commands.js
+    `-- e2e/
+        |-- common/
+        |-- features/
+        `-- pageObjects/
+```
+
+- `tests/cypress/features/` holds the active Gherkin feature files matched by `tests/cypress.config.cjs`.
+- `tests/cypress/common/` holds shared Cucumber step definitions.
+- `tests/cypress/fixtures/` stores stubbed API payloads and test data.
+- `tests/cypress/pageObjects/` contains the selector maps used by the custom commands.
+- `tests/cypress/support/` bootstraps Cypress and registers reusable commands.
+- `tests/cypress/e2e/` is a mirrored legacy Cypress tree that is still present in the repository.
 
 ## Export Formats
 
