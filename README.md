@@ -139,7 +139,9 @@ VITE_FIREBASE_MEASUREMENT_ID="..."
 
 Notes:
 
-- `VITE_GEMINI_API_KEY` is the safest option for browser-hosted deployments. `GEMINI_API_KEY` is also supported when your host injects runtime environment values for the app.
+- `VITE_GEMINI_API_KEY` is the simplest option for regular browser-hosted deployments.
+- `GEMINI_API_KEY` works for local or server-backed runs that inject a real value at build time.
+- Google AI Studio shared apps should keep the literal `process.env.GEMINI_API_KEY` placeholder available in the client bundle so AI Studio can proxy Gemini calls securely.
 - Gemini is recommended, but the app can still fall back to search-based synthesis when Gemini is unavailable.
 - `APP_URL` is present in `.env.example` for AI Studio style hosting metadata, but it is not required for normal local development.
 - `DISABLE_HMR=true` can be used in environments where hot reload causes instability.

@@ -28,6 +28,7 @@ export interface SearchAndExtractResult {
 
 const GEMINI_MODEL = 'gemini-3-flash-preview';
 const FALLBACK_SOURCE_URL = 'https://www.google.com/search';
+const AI_STUDIO_GEMINI_API_KEY_PLACEHOLDER = 'process.env.GEMINI_API_KEY';
 export const CONSOLIDATED_SOURCE_POOL_SIZE = 48;
 export const ASSEMBLY_SOURCE_POOL_SIZE = 18;
 export const FINAL_WEBBOOK_CHAPTER_COUNT = 10;
@@ -158,12 +159,31 @@ function resolveGeminiApiKey(): string | undefined {
     GEMINI_API_KEY?: string;
   };
 
-  return (
-    import.meta.env.VITE_GEMINI_API_KEY ||
-    globalScope.__APP_ENV__?.GEMINI_API_KEY ||
-    globalScope.GEMINI_API_KEY ||
-    globalScope.process?.env?.GEMINI_API_KEY
-  );
+  // Keep this direct reference in the client bundle so Google AI Studio can
+  // recognize its placeholder and proxy Gemini requests without exposing a key.
+  const aiStudioProcessEnvApiKey = process.env.GEMINI_API_KEY;
+  const candidates = [
+    import.meta.env.VITE_GEMINI_API_KEY,
+    globalScope.__APP_ENV__?.GEMINI_API_KEY,
+    globalScope.GEMINI_API_KEY,
+    aiStudioProcessEnvApiKey,
+    globalScope.process?.env?.GEMINI_API_KEY,
+  ];
+
+  for (const candidate of candidates) {
+    const normalized = typeof candidate === 'string' ? candidate.trim() : '';
+    if (!normalized || normalized === 'undefined' || normalized === 'null') {
+      continue;
+    }
+
+    if (normalized === AI_STUDIO_GEMINI_API_KEY_PLACEHOLDER) {
+      return normalized;
+    }
+
+    return normalized;
+  }
+
+  return undefined;
 }
 
 function wait(ms: number): Promise<void> {
