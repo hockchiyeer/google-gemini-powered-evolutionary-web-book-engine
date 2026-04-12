@@ -307,9 +307,16 @@ This repo is not purely static anymore.
 The endpoints live in Vite middleware:
 
 ```text
+/api/search
+/api/evolve
 /api/search-fallback
 /__pdf
 ```
+
+Notes:
+
+- `/api/search` and `/api/evolve` are legacy compatibility routes for older AI Studio-hosted clients that still expect the earlier server contract.
+- `/api/search-fallback` remains the primary live search fallback route used by the current checked-in frontend.
 
 That means:
 
@@ -319,6 +326,22 @@ That means:
 - a plain static hosting deployment of only the built `dist/` assets will not provide that route by itself
 
 If you deploy beyond local Vite dev/preview, recreate the fallback route in a real backend or edge/serverless function.
+
+### Google AI Studio Upload Package
+
+This repository can generate a lean source archive for upload and handoff workflows:
+
+```bash
+npm run package:aistudio
+```
+
+That writes:
+
+```text
+artifacts/evolutionary-web-book-engine-google-ai-studio-upload.zip
+```
+
+The package keeps the runnable app files at the root of the zip and excludes local-only folders such as `.git/`, `node_modules/`, `dist/`, `test-results/`, and `tests/`.
 
 ### Google AI Studio Hosting Notes
 
@@ -331,7 +354,9 @@ When this app is hosted inside Google AI Studio, several console messages can ap
 Important runtime check:
 
 - Current source from this repo uses direct Gemini browser calls plus `/api/search-fallback`.
-- If the hosted app console shows requests to `/api/search` or `/api/evolve`, the deployed AI Studio app is not running the current source tree from this repository. That indicates a stale deployment or an older generated wrapper, not the current implementation under `src/services/evolutionService.ts`.
+- Some AI Studio-hosted clients may still call `/api/search` or `/api/evolve`. The server now includes compatibility middleware for those legacy routes so older hosted wrappers can still function.
+- If the hosted app console shows `/api/search` or `/api/evolve` and the request still fails after redeploy, that usually means the host is still serving an older wrapper or an incomplete deployment.
+- Google AI Studio Build mode currently documents export-out workflows, but not importing a local app zip back into AI Studio as an editable project.
 
 ## Known Limitations
 

@@ -1,7 +1,16 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Plugin } from 'vite';
-import type { SearchFallbackPayload, SearchFallbackProvider, SearchFallbackResult } from '../src/types';
+import { getRenderableDefinitions, getRenderableSubTopics } from '../src/utils/webBookRender.ts';
+import type {
+  SearchArtifact,
+  SearchFallbackPayload,
+  SearchFallbackProvider,
+  SearchFallbackResult,
+  WebPageGenotype,
+} from '../src/types.ts';
 
+const SEARCH_ROUTE = '/api/search';
+const EVOLVE_ROUTE = '/api/evolve';
 const SEARCH_FALLBACK_ROUTE = '/api/search-fallback';
 const GOOGLE_SEARCH_URL = 'https://www.google.com/search';
 const DUCKDUCKGO_SEARCH_URL = 'https://html.duckduckgo.com/html/';
@@ -78,12 +87,16 @@ const NAVIGATION_NOISE = [
   'translate this page',
 ];
 
+const LEGACY_EVOLUTION_WEIGHTS = { alpha: 0.5, beta: 0.3, gamma: 0.2 };
+
 interface SearchFetchResult {
   label: string;
   url: string;
   status: number;
   html: string;
 }
+
+type RequestPayload = Record<string, unknown>;
 
 function decodeHtmlEntities(input: string): string {
   return input.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g, (entity, value: string) => {
@@ -838,13 +851,390 @@ export async function buildGoogleSearchFallbackPayload(query: string): Promise<S
 
   throw new Error(`No extractable search snippets were available. ${diagnostics.join(' | ')}`);
 }
+
+function buildSearchUrl(query: string): string {
+  const searchUrl = new URL(GOOGLE_SEARCH_URL);
+  searchUrl.searchParams.set('q', query);
+  return searchUrl.toString();
+}
+
+function deriveConceptLabel(title: string, fallbackQuery: string): string {
+  const firstSegment = title.split(/[-:|]/)[0]?.trim();
+  if (firstSegment && firstSegment.length >= 4) {
+    return firstSegment;
+  }
+
+  return fallbackQuery;
+}
+
+function scoreDomainAuthority(url: string): number {
+  try {
+    const hostname = new URL(url).hostname.replace(/^www\./, '');
+    if (hostname.endsWith('.gov')) return 0.96;
+    if (hostname.endsWith('.edu')) return 0.92;
+    if (hostname.includes('wikipedia.org')) return 0.88;
+    if (hostname.endsWith('.org')) return 0.82;
+    if (hostname.includes('reuters.com') || hostname.includes('apnews.com') || hostname.includes('bbc.com')) return 0.84;
+    return 0.72;
+  } catch {
+    return 0.65;
+  }
+}
+
+function scoreInformativeText(text: string): number {
+  const wordCount = text.split(/\s+/).filter(Boolean).length;
+  const sentenceCount = text.split(/[.!?]+/).filter((segment) => segment.trim().length > 0).length;
+  return Math.min(0.98, 0.35 + Math.min(wordCount / 180, 0.38) + Math.min(sentenceCount / 10, 0.25));
+}
+
+function mapFallbackArtifacts(payload: SearchFallbackPayload): SearchArtifact[] {
+  return payload.results.map((result) => ({
+    web: {
+      title: result.title,
+      uri: result.url,
+    },
+    snippet: result.snippet,
+  }));
+}
+
+function buildFallbackPopulation(payload: SearchFallbackPayload): WebPageGenotype[] {
+  const searchUrl = buildSearchUrl(payload.query);
+  const distinctResults = selectDistinctSearchResults(payload.results, MAX_RESULTS - 1);
+
+  const overviewPage: WebPageGenotype = {
+    id: `fallback-overview-${payload.extractedAt}`,
+    url: searchUrl,
+    title: payload.source === 'google-ai-overview'
+      ? `${payload.query} - Google AI Overview`
+      : `${payload.query} - Google Search Summary`,
+    content: sanitizeFallbackSnippet(payload.summary),
+    definitions: getRenderableDefinitions([
+      {
+        term: payload.query,
+        description: payload.summary,
+        sourceUrl: searchUrl,
+      },
+      ...distinctResults.slice(0, 6).map((result) => ({
+        term: deriveConceptLabel(result.title, payload.query),
+        description: result.snippet,
+        sourceUrl: result.url,
+      })),
+    ], 8),
+    subTopics: getRenderableSubTopics(
+      distinctResults.slice(0, 8).map((result) => ({
+        title: result.title,
+        summary: result.snippet,
+        sourceUrl: result.url,
+      }))
+    ).slice(0, 8),
+    informativeScore: scoreInformativeText(payload.summary),
+    authorityScore: 0.82,
+    fitness: 0,
+  };
+
+  const sourcePages = distinctResults.map((result, index) => ({
+    id: `fallback-source-${index}-${payload.extractedAt}`,
+    url: result.url,
+    title: result.title,
+    content: sanitizeFallbackSnippet(result.excerpt || result.snippet),
+    definitions: getRenderableDefinitions([
+      {
+        term: deriveConceptLabel(result.title, payload.query),
+        description: result.snippet,
+        sourceUrl: result.url,
+      },
+    ], 4),
+    subTopics: getRenderableSubTopics([
+      {
+        title: result.title,
+        summary: result.snippet,
+        sourceUrl: result.url,
+      },
+    ]).slice(0, 4),
+    informativeScore: scoreInformativeText(result.snippet),
+    authorityScore: scoreDomainAuthority(result.url),
+    fitness: 0,
+  }));
+
+  return [overviewPage, ...sourcePages];
+}
+
+function calculateFitness(page: WebPageGenotype, optimalSet: WebPageGenotype[]): number {
+  const currentTerms = new Set(
+    optimalSet.flatMap((candidate) => (candidate.definitions || []).map((definition) => (definition.term || '').toLowerCase()))
+  );
+  const pageTerms = (page.definitions || []).map((definition) => (definition.term || '').toLowerCase());
+  const overlap = pageTerms.filter((term) => term && currentTerms.has(term)).length;
+  const redundancy = overlap / Math.max(pageTerms.length, 1);
+
+  return (
+    (LEGACY_EVOLUTION_WEIGHTS.alpha * page.informativeScore)
+    + (LEGACY_EVOLUTION_WEIGHTS.beta * page.authorityScore)
+    - (LEGACY_EVOLUTION_WEIGHTS.gamma * redundancy)
+  );
+}
+
+function evolvePopulation(population: WebPageGenotype[], generations = 3): WebPageGenotype[] {
+  const dedupedPopulation = population.filter((page, index) => (
+    Boolean(page?.title?.trim())
+    && Boolean(page?.content?.trim())
+    && population.findIndex((candidate) => candidate.url === page.url) === index
+  ));
+
+  let currentPopulation = dedupedPopulation.map((page) => ({
+    ...page,
+    definitions: Array.isArray(page.definitions) ? page.definitions : [],
+    subTopics: Array.isArray(page.subTopics) ? page.subTopics : [],
+    fitness: Number.isFinite(page.fitness) ? page.fitness : 0,
+  }));
+  const targetPopulationSize = currentPopulation.length;
+
+  if (targetPopulationSize <= 2) {
+    return currentPopulation;
+  }
+
+  for (let generation = 0; generation < generations; generation += 1) {
+    currentPopulation.forEach((page) => {
+      page.fitness = calculateFitness(page, []);
+    });
+
+    currentPopulation.sort((left, right) => right.fitness - left.fitness);
+    const survivors = currentPopulation.slice(0, Math.max(2, Math.ceil(targetPopulationSize / 2)));
+    const nextPopulation = survivors.map((page) => ({ ...page }));
+    let offspringIndex = 0;
+
+    while (nextPopulation.length < targetPopulationSize && survivors.length > 0) {
+      const parentA = survivors[offspringIndex % survivors.length];
+      const parentB = survivors[(offspringIndex + generation + 1) % survivors.length] || parentA;
+
+      nextPopulation.push({
+        id: `legacy-offspring-${generation}-${offspringIndex}`,
+        url: 'hybrid-source',
+        title: `Synthesized: ${parentA.title} & ${parentB.title}`,
+        content: `${parentA.content.substring(0, 500)} ${parentB.content.substring(0, 500)}`.trim(),
+        definitions: getRenderableDefinitions([
+          ...(parentA.definitions || []).slice(0, 4),
+          ...(parentB.definitions || []).slice(0, 4),
+        ], 8),
+        subTopics: getRenderableSubTopics([
+          ...(parentA.subTopics || []).slice(0, 4),
+          ...(parentB.subTopics || []).slice(0, 4),
+        ]).slice(0, 8),
+        informativeScore: (parentA.informativeScore + parentB.informativeScore) / 2,
+        authorityScore: (parentA.authorityScore + parentB.authorityScore) / 2,
+        fitness: 0,
+      });
+
+      offspringIndex += 1;
+    }
+
+    currentPopulation = nextPopulation.slice(0, targetPopulationSize);
+  }
+
+  currentPopulation.forEach((page) => {
+    page.fitness = calculateFitness(page, []);
+  });
+  currentPopulation.sort((left, right) => right.fitness - left.fitness);
+
+  return currentPopulation;
+}
+
 function sendJson(response: ServerResponse, statusCode: number, payload: unknown): void {
   response.statusCode = statusCode;
   response.setHeader('content-type', 'application/json; charset=utf-8');
   response.end(JSON.stringify(payload));
 }
 
-function createFallbackMiddleware() {
+async function readRequestBody(request: IncomingMessage): Promise<string> {
+  const chunks: Buffer[] = [];
+
+  for await (const chunk of request) {
+    if (typeof chunk === 'string') {
+      chunks.push(Buffer.from(chunk));
+      continue;
+    }
+
+    chunks.push(Buffer.from(chunk));
+  }
+
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+export function parseRequestPayload(rawBody: string): RequestPayload {
+  if (!rawBody.trim()) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(rawBody) as unknown;
+    if (Array.isArray(parsed)) {
+      return {
+        // Older legacy clients can post the evolve population as a bare JSON array.
+        population: parsed,
+      };
+    }
+
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? parsed as RequestPayload
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function extractQuery(requestUrl: URL, payload: RequestPayload): string {
+  const candidates = [
+    requestUrl.searchParams.get('query'),
+    typeof payload.query === 'string' ? payload.query : undefined,
+    typeof payload.topic === 'string' ? payload.topic : undefined,
+    typeof payload.searchQuery === 'string' ? payload.searchQuery : undefined,
+    typeof payload.prompt === 'string' ? payload.prompt : undefined,
+  ];
+
+  for (const candidate of candidates) {
+    const normalized = candidate?.trim();
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return '';
+}
+
+function normalizePopulationPayload(payload: RequestPayload): WebPageGenotype[] {
+  const candidateList = Array.isArray(payload.population)
+    ? payload.population
+    : Array.isArray(payload.results)
+      ? payload.results
+      : Array.isArray(payload.pages)
+        ? payload.pages
+        : [];
+
+  return candidateList.flatMap((candidate, index) => {
+    if (!candidate || typeof candidate !== 'object') {
+      return [];
+    }
+
+    const page = candidate as Partial<WebPageGenotype>;
+    if (typeof page.title !== 'string' || typeof page.content !== 'string' || typeof page.url !== 'string') {
+      return [];
+    }
+
+    return [{
+      id: typeof page.id === 'string' && page.id.trim() ? page.id : `legacy-page-${index}`,
+      url: page.url,
+      title: page.title,
+      content: page.content,
+      definitions: Array.isArray(page.definitions) ? page.definitions : [],
+      subTopics: Array.isArray(page.subTopics) ? page.subTopics : [],
+      informativeScore: Number.isFinite(page.informativeScore) ? page.informativeScore : scoreInformativeText(page.content),
+      authorityScore: Number.isFinite(page.authorityScore) ? page.authorityScore : scoreDomainAuthority(page.url),
+      fitness: Number.isFinite(page.fitness) ? page.fitness : 0,
+    }];
+  });
+}
+
+async function handleSearchFallbackRequest(request: IncomingMessage, response: ServerResponse, requestUrl: URL): Promise<void> {
+  if (request.method !== 'GET' && request.method !== 'POST') {
+    sendJson(response, 405, { error: 'Method not allowed' });
+    return;
+  }
+
+  const payload = request.method === 'POST'
+    ? parseRequestPayload(await readRequestBody(request))
+    : {};
+  const query = extractQuery(requestUrl, payload);
+
+  if (!query) {
+    sendJson(response, 400, { error: 'Query is required' });
+    return;
+  }
+
+  try {
+    const fallbackPayload = await buildGoogleSearchFallbackPayload(query);
+    sendJson(response, 200, fallbackPayload);
+  } catch (error) {
+    console.error('Google search fallback failed', error);
+    const message = error instanceof Error ? error.message : 'Unable to extract search fallback results at the moment.';
+    sendJson(response, 502, { error: message });
+  }
+}
+
+async function handleLegacySearchRequest(request: IncomingMessage, response: ServerResponse, requestUrl: URL): Promise<void> {
+  if (request.method !== 'GET' && request.method !== 'POST') {
+    sendJson(response, 405, { error: 'Method not allowed' });
+    return;
+  }
+
+  const payload = request.method === 'POST'
+    ? parseRequestPayload(await readRequestBody(request))
+    : {};
+  const query = extractQuery(requestUrl, payload);
+
+  if (!query) {
+    sendJson(response, 400, { error: 'Query is required' });
+    return;
+  }
+
+  try {
+    const fallbackPayload = await buildGoogleSearchFallbackPayload(query);
+    const population = buildFallbackPopulation(fallbackPayload);
+    const groundingChunks = mapFallbackArtifacts(fallbackPayload);
+
+    sendJson(response, 200, {
+      query,
+      results: population,
+      population,
+      artifacts: {
+        groundingChunks,
+        searchSummary: fallbackPayload.summary,
+      },
+      rawSearchResults: groundingChunks,
+      searchSummary: fallbackPayload.summary,
+      sourceMode: 'search-fallback',
+      fallbackSource: fallbackPayload.source,
+      fallbackPayload,
+      generationNote: 'Legacy /api/search route is being served by the live fallback search compatibility layer.',
+    });
+  } catch (error) {
+    console.error('Legacy /api/search compatibility route failed', error);
+    const message = error instanceof Error ? error.message : 'Search compatibility route failed.';
+    sendJson(response, 502, { error: message });
+  }
+}
+
+async function handleLegacyEvolveRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  if (request.method !== 'POST') {
+    sendJson(response, 405, { error: 'Method not allowed' });
+    return;
+  }
+
+  const payload = parseRequestPayload(await readRequestBody(request));
+  const population = normalizePopulationPayload(payload);
+
+  if (population.length === 0) {
+    sendJson(response, 400, { error: 'Population is required' });
+    return;
+  }
+
+  const generationsValue = payload.generations ?? payload.generationCount;
+  const generations = typeof generationsValue === 'number' && Number.isFinite(generationsValue)
+    ? Math.max(1, Math.min(6, Math.floor(generationsValue)))
+    : 3;
+  const evolvedPopulation = evolvePopulation(population, generations);
+
+  sendJson(response, 200, {
+    results: evolvedPopulation,
+    population: evolvedPopulation,
+    generation: generations,
+    bestFitness: evolvedPopulation[0]?.fitness || 0,
+    artifacts: {
+      evolvedPopulation,
+    },
+  });
+}
+
+function createApiCompatibilityMiddleware() {
   return async (request: IncomingMessage, response: ServerResponse, next: (error?: unknown) => void) => {
     if (!request.url) {
       next();
@@ -852,37 +1242,40 @@ function createFallbackMiddleware() {
     }
 
     const requestUrl = new URL(request.url, 'http://localhost');
-    if (requestUrl.pathname !== SEARCH_FALLBACK_ROUTE) {
+    if (
+      requestUrl.pathname !== SEARCH_FALLBACK_ROUTE
+      && requestUrl.pathname !== SEARCH_ROUTE
+      && requestUrl.pathname !== EVOLVE_ROUTE
+    ) {
       next();
       return;
     }
 
-    if (request.method !== 'GET') {
-      sendJson(response, 405, { error: 'Method not allowed' });
-      return;
-    }
-
-    const query = requestUrl.searchParams.get('query')?.trim();
-    if (!query) {
-      sendJson(response, 400, { error: 'Query is required' });
-      return;
-    }
-
     try {
-      const payload = await buildGoogleSearchFallbackPayload(query);
-      sendJson(response, 200, payload);
+      if (requestUrl.pathname === SEARCH_FALLBACK_ROUTE) {
+        await handleSearchFallbackRequest(request, response, requestUrl);
+        return;
+      }
+
+      if (requestUrl.pathname === SEARCH_ROUTE) {
+        await handleLegacySearchRequest(request, response, requestUrl);
+        return;
+      }
+
+      if (requestUrl.pathname === EVOLVE_ROUTE) {
+        await handleLegacyEvolveRequest(request, response);
+        return;
+      }
+
+      next();
     } catch (error) {
-      console.error('Google search fallback failed', error);
-      const message = error instanceof Error ? error.message : 'Unable to extract search fallback results at the moment.';
-      sendJson(response, 502, {
-        error: message,
-      });
+      next(error);
     }
   };
 }
 
 export function googleSearchFallbackPlugin(): Plugin {
-  const middleware = createFallbackMiddleware();
+  const middleware = createApiCompatibilityMiddleware();
 
   return {
     name: 'google-search-fallback',
@@ -894,7 +1287,3 @@ export function googleSearchFallbackPlugin(): Plugin {
     },
   };
 }
-
-
-
-

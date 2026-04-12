@@ -50,6 +50,34 @@ export default defineConfig(({ mode }) => {
       googleSearchFallbackPlugin(),
       {
         name: 'pdf-bridge',
+        configurePreviewServer(server) {
+          server.middlewares.use('/__pdf', async (req, res) => {
+            if (req.method !== 'POST') {
+              res.statusCode = 405;
+              return res.end();
+            }
+            try {
+              let body = '';
+              req.on('data', (chunk) => {
+                body += chunk;
+              });
+              req.on('end', async () => {
+                const { html, fileName } = JSON.parse(body);
+                const pdfBuffer = await generatePdf(html);
+                res.setHeader('Content-Type', 'application/pdf');
+                res.setHeader(
+                  'Content-Disposition',
+                  `attachment; filename="${fileName || 'webbook'}.pdf"`
+                );
+                res.end(pdfBuffer);
+              });
+            } catch (err) {
+              console.error(err);
+              res.statusCode = 500;
+              res.end('PDF generation failed');
+            }
+          });
+        },
         configureServer(server) {
           server.middlewares.use('/__pdf', async (req, res) => {
             if (req.method !== 'POST') {

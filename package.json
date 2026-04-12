@@ -1,12 +1,17 @@
 {
-  "name": "react-example",
+  "name": "evolutionary-web-book-engine",
   "private": true,
   "version": "0.0.0",
+  "description": "Gemini-first evolutionary web-book engine with live search fallback and export tooling.",
   "type": "module",
+  "engines": {
+    "node": ">=18.18"
+  },
   "scripts": {
     "dev": "vite --configLoader native --port=3000 --host=0.0.0.0",
     "dev:test": "vite --configLoader native --port=3001 --host=0.0.0.0",
     "start": "node ./scripts/start-preview.mjs",
+    "package:aistudio": "node ./scripts/package-google-ai-studio.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
@@ -16,6 +21,7 @@
     "cy:run:qa": "node tests/scripts/run-cypress-with-reports.cjs --environment QA --headed",
     "cy:run:prod": "node tests/scripts/run-cypress-with-reports.cjs --environment PROD --headed",
     "test:local": "node tests/scripts/run-local-cypress.cjs",
+    "test:unit": "node --experimental-strip-types tests/server/googleSearchFallback.test.ts",
     "test:qa": "npm run cy:run:qa",
     "test:prod": "npm run cy:run:prod",
     "report:merge": "mochawesome-merge test-results/chromeReport/mochawesome-json/*.json > test-results/chromeReport/mochawesome.json",

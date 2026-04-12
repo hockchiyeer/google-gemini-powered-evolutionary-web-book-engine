@@ -1,4 +1,4 @@
-import { Chapter, WebBookSourceMode } from "../types";
+import type { Chapter, WebBookSourceMode } from "../types.ts";
 
 const POISON_KEYWORDS = [
   "copyright",
