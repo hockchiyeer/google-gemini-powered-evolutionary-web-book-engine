@@ -20,7 +20,15 @@ import {
   writeBatch,
   type Firestore,
 } from 'firebase/firestore';
-import type { SearchFallbackReason, SearchFallbackSource, WebBook, WebBookSourceMode } from '../types';
+import {
+  isSearchFallbackReason,
+  isSearchFallbackSource,
+  isWebBookSourceMode,
+  type SearchFallbackReason,
+  type SearchFallbackSource,
+  type WebBook,
+  type WebBookSourceMode,
+} from '../types';
 
 const LOCAL_HISTORY_KEY = 'webbook_history';
 
@@ -150,19 +158,15 @@ function normalizeWebBook(raw: unknown, fallbackId: string): WebBook | null {
 }
 
 function normalizeSourceMode(value: unknown): WebBookSourceMode | undefined {
-  return value === 'search-fallback' || value === 'gemini' ? value : undefined;
+  return isWebBookSourceMode(value) ? value : undefined;
 }
 
 function normalizeFallbackSource(value: unknown): SearchFallbackSource | undefined {
-  return value === 'google-ai-overview' || value === 'google-search-snippets' || value === 'alternate-search-snippets'
-    ? value
-    : undefined;
+  return isSearchFallbackSource(value) ? value : undefined;
 }
 
 function normalizeFallbackReason(value: unknown): SearchFallbackReason | undefined {
-  return value === 'missing_api_key' || value === 'invalid_api_key' || value === 'quota_or_rate_limit' || value === 'service_unavailable'
-    ? value
-    : undefined;
+  return isSearchFallbackReason(value) ? value : undefined;
 }
 
 async function updateSearchRecord(searchId: string | null, data: Partial<PersistedSearchRecord>): Promise<void> {

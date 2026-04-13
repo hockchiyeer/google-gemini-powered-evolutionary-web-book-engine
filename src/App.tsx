@@ -32,12 +32,15 @@ export default function App() {
     history,
     error,
     notice,
+    fallbackMode,
+    setFallbackMode,
     runSearch,
     startNewSearch,
     viewHistoryItem,
     deleteHistoryItem,
     clearAllHistory,
   } = useWebBookEngine();
+  const isBusy = state.status !== 'idle' && state.status !== 'complete';
 
   const runExport = async (action: () => Promise<void>) => {
     setIsExporting(true);
@@ -52,6 +55,7 @@ export default function App() {
     <div className="min-h-screen bg-[#E4E3E0] text-[#141414] font-sans selection:bg-[#141414] selection:text-[#E4E3E0]">
       <AppHeader
         webBook={webBook}
+        isBusy={isBusy}
         isExporting={isExporting}
         onNewSearch={startNewSearch}
         onToggleHistory={() => setShowHistory(true)}
@@ -69,6 +73,8 @@ export default function App() {
           state={state}
           error={error}
           notice={notice}
+          fallbackMode={fallbackMode}
+          onFallbackModeChange={setFallbackMode}
           showArtifacts={showArtifacts}
           onToggleArtifacts={() => setShowArtifacts((previousState) => !previousState)}
           onSearch={runSearch}

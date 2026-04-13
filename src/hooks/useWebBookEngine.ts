@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import type { EvolutionState, WebBook } from '../types';
+import { useEffect, useRef, useState } from 'react';
+import type { EvolutionState, SearchFallbackMode, WebBook } from '../types';
 import { ASSEMBLY_SOURCE_POOL_SIZE, assembleWebBook, evolve, searchAndExtract } from '../services/evolutionService';
 import {
   clearPersistedSearches,
@@ -21,13 +21,28 @@ const INITIAL_STATE: EvolutionState = {
   artifacts: {},
 };
 
+const CANCELLED_SEARCH_ERROR_NAME = 'CancelledSearchError';
+const CANCELLED_SEARCH_MESSAGE = 'Search cancelled by user.';
+
+function createCancelledSearchError(): Error {
+  const error = new Error(CANCELLED_SEARCH_MESSAGE);
+  error.name = CANCELLED_SEARCH_ERROR_NAME;
+  return error;
+}
+
+function isCancelledSearchError(error: unknown): boolean {
+  return error instanceof Error && error.name === CANCELLED_SEARCH_ERROR_NAME;
+}
+
 export function useWebBookEngine() {
+  const activeRunIdRef = useRef(0);
   const [query, setQuery] = useState('');
   const [state, setState] = useState<EvolutionState>(INITIAL_STATE);
   const [webBook, setWebBook] = useState<WebBook | null>(null);
   const [history, setHistory] = useState<WebBook[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [fallbackMode, setFallbackMode] = useState<SearchFallbackMode>('google_duckduckgo');
 
   useEffect(() => {
     setHistory(loadLocalHistoryBooks());
@@ -57,7 +72,16 @@ export function useWebBookEngine() {
     saveLocalHistoryBooks(history);
   }, [history]);
 
+  const beginRun = (): number => {
+    const nextRunId = activeRunIdRef.current + 1;
+    activeRunIdRef.current = nextRunId;
+    return nextRunId;
+  };
+
+  const isActiveRun = (runId: number): boolean => activeRunIdRef.current === runId;
+
   const startNewSearch = () => {
+    beginRun();
     setQuery('');
     setWebBook(null);
     setError(null);
@@ -68,6 +92,13 @@ export function useWebBookEngine() {
   const runSearch = async () => {
     const trimmedQuery = query.trim();
     if (!trimmedQuery) return;
+    const runId = beginRun();
+
+    const ensureActiveRun = () => {
+      if (!isActiveRun(runId)) {
+        throw createCancelledSearchError();
+      }
+    };
 
     setState({ ...INITIAL_STATE, status: 'searching' });
     setWebBook(null);
@@ -79,11 +110,13 @@ export function useWebBookEngine() {
     try {
       try {
         persistedSearchId = await createPersistedSearch(trimmedQuery);
+        ensureActiveRun();
       } catch (persistenceError) {
         console.error('Failed to create persisted search record', persistenceError);
       }
 
-      const searchResult = await searchAndExtract(trimmedQuery);
+      const searchResult = await searchAndExtract(trimmedQuery, { mode: fallbackMode });
+      ensureActiveRun();
       const initialPopulation = searchResult.results;
       if (initialPopulation.length === 0) {
         throw new Error(
@@ -114,6 +147,7 @@ export function useWebBookEngine() {
       }));
 
       const evolvedPopulation = await evolve(initialPopulation);
+      ensureActiveRun();
       if (evolvedPopulation.length === 0) {
         throw new Error(
           `No usable source pages remained after evolution for "${trimmedQuery}", so the WebBook could not be assembled.`
@@ -137,7 +171,8 @@ export function useWebBookEngine() {
         },
       }));
 
-      const assembledBook = await assembleWebBook(evolvedPopulation, trimmedQuery, searchResult);
+      const assembledBook = await assembleWebBook(evolvedPopulation, trimmedQuery, searchResult, { mode: fallbackMode });
+      ensureActiveRun();
       const book = persistedSearchId ? { ...assembledBook, id: persistedSearchId } : assembledBook;
 
       setWebBook(book);
@@ -164,9 +199,21 @@ export function useWebBookEngine() {
         },
       }));
     } catch (runtimeError: any) {
+      if (!isActiveRun(runId) || isCancelledSearchError(runtimeError)) {
+        if (persistedSearchId) {
+          void failPersistedSearch(persistedSearchId, trimmedQuery, CANCELLED_SEARCH_MESSAGE).catch((persistenceError) => {
+            console.error('Failed to persist cancelled search', persistenceError);
+          });
+        }
+        return;
+      }
+
       console.error('Evolution error:', runtimeError);
       let message = runtimeError?.message || 'An unexpected error occurred during evolution.';
-      if (message.includes('429') || message.includes('quota') || message.includes('RESOURCE_EXHAUSTED')) {
+      const isRawGeminiRateLimit =
+        (message.includes('429') || message.includes('quota') || message.includes('RESOURCE_EXHAUSTED')) &&
+        !message.includes('no external evidence could be gathered');
+      if (isRawGeminiRateLimit) {
         message = 'The AI engine is currently busy or has reached its rate limit. Please wait a minute and try again.';
       }
 
@@ -228,6 +275,8 @@ export function useWebBookEngine() {
     history,
     error,
     notice,
+    fallbackMode,
+    setFallbackMode,
     runSearch,
     startNewSearch,
     viewHistoryItem,
@@ -235,5 +284,3 @@ export function useWebBookEngine() {
     clearAllHistory,
   };
 }
-
-

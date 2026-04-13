@@ -14,6 +14,7 @@ import type { WebBook } from '../types';
 
 interface AppHeaderProps {
   webBook: WebBook | null;
+  isBusy: boolean;
   isExporting: boolean;
   onNewSearch: () => void;
   onToggleHistory: () => void;
@@ -26,6 +27,7 @@ interface AppHeaderProps {
 
 export function AppHeader({
   webBook,
+  isBusy,
   isExporting,
   onNewSearch,
   onToggleHistory,
@@ -93,8 +95,9 @@ export function AppHeader({
             <div className="flex items-center gap-2 md:gap-3 border-r border-[#141414]/10 pr-2 md:pr-4 mr-2 md:mr-4">
               <button
                 onClick={onNewSearch}
+                disabled={isBusy}
                 title="Clear current book and start a new evolutionary search"
-                className="px-3 md:px-4 py-2 border border-[#141414] text-[9px] md:text-[10px] uppercase font-bold tracking-widest hover:bg-[#141414] hover:text-white transition-all active:scale-95"
+                className="px-3 md:px-4 py-2 border border-[#141414] text-[9px] md:text-[10px] uppercase font-bold tracking-widest hover:bg-[#141414] hover:text-white transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-inherit"
               >
                 New Search
               </button>

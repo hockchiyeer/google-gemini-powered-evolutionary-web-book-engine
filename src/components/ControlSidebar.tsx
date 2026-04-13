@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   AlertCircle,
+  ChevronDown,
   Cpu,
   Dna,
   Info,
@@ -11,9 +12,30 @@ import {
   Search,
   X,
 } from 'lucide-react';
-import type { EvolutionState, WebPageGenotype } from '../types';
+import type { EvolutionState, SearchFallbackMode, WebPageGenotype } from '../types';
 
 const QUERY_PREVIEW_LINE_THRESHOLD = 4;
+const FALLBACK_MODE_OPTIONS: Array<{
+  value: SearchFallbackMode;
+  label: string;
+}> = [
+  {
+    value: 'google_duckduckgo',
+    label: 'Google + DuckDuckGo',
+  },
+  {
+    value: 'google',
+    label: 'Google only',
+  },
+  {
+    value: 'duckduckgo',
+    label: 'DuckDuckGo only',
+  },
+  {
+    value: 'off',
+    label: 'Off',
+  },
+];
 
 function getRenderedTextareaLineCount(element: HTMLTextAreaElement): number {
   const style = window.getComputedStyle(element);
@@ -39,6 +61,8 @@ interface ControlSidebarProps {
   state: EvolutionState;
   error: string | null;
   notice: string | null;
+  fallbackMode: SearchFallbackMode;
+  onFallbackModeChange: (mode: SearchFallbackMode) => void;
   showArtifacts: boolean;
   onToggleArtifacts: () => void;
   onSearch: () => Promise<void>;
@@ -51,6 +75,8 @@ export function ControlSidebar({
   state,
   error,
   notice,
+  fallbackMode,
+  onFallbackModeChange,
   showArtifacts,
   onToggleArtifacts,
   onSearch,
@@ -157,8 +183,9 @@ export function ControlSidebar({
           <h2 className="font-serif italic text-sm uppercase opacity-50">Targeted Ingestion</h2>
           <button
             onClick={onStartNewSearch}
+            disabled={isBusy}
             title="Reset engine and start a new search"
-            className="text-[10px] uppercase font-bold flex items-center gap-1 hover:underline"
+            className="text-[10px] uppercase font-bold flex items-center gap-1 hover:underline disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
           >
             <Plus size={12} /> New Search
           </button>
@@ -224,6 +251,34 @@ export function ControlSidebar({
         <p className="mt-3 text-[10px] opacity-60 leading-relaxed">
           Initiates a multi-tiered pipeline: Targeted Crawling - NLP Extraction - Evolutionary Processing - Assembly.
         </p>
+
+        <div className="mt-4">
+          <div className="flex items-center gap-3">
+            <label htmlFor="fallback-mode" className="shrink-0 text-[10px] uppercase font-bold tracking-[0.18em] opacity-60">
+              Fallback
+            </label>
+            <div className="relative flex-1">
+              <select
+                id="fallback-mode"
+                value={fallbackMode}
+                onChange={(event) => onFallbackModeChange(event.target.value as SearchFallbackMode)}
+                disabled={isBusy}
+                title="Choose how live fallback search should behave when Gemini needs recovery"
+                className="w-full appearance-none bg-[#F5F5F5] border border-[#141414] px-3 py-2 pr-9 text-[11px] font-mono focus:outline-none disabled:opacity-50"
+              >
+                {FALLBACK_MODE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none opacity-60" />
+            </div>
+          </div>
+          <p className="mt-2 text-[10px] opacity-45 leading-relaxed">
+            Used only if Gemini needs recovery or supplemental search evidence.
+          </p>
+        </div>
       </section>
 
       <section className="bg-white border border-[#141414] p-6 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">

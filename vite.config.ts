@@ -33,11 +33,54 @@ function isAiStudioHostedApp(appUrl: string | undefined): boolean {
   }
 }
 
+function serverFileRestartPlugin() {
+  let isRestarting = false;
+  const watchedRoots = [
+    path.resolve(__dirname, 'server'),
+    path.resolve(__dirname, 'vite.config.ts'),
+  ];
+
+  const shouldRestartForFile = (file: string): boolean => {
+    const normalizedFile = path.resolve(file);
+    return watchedRoots.some((root) => (
+      normalizedFile === root || normalizedFile.startsWith(`${root}${path.sep}`)
+    ));
+  };
+
+  return {
+    name: 'server-file-restart',
+    apply: 'serve' as const,
+    configureServer(server: any) {
+      const restartIfNeeded = async (file: string) => {
+        if (isRestarting || !shouldRestartForFile(file) || typeof server.restart !== 'function') {
+          return;
+        }
+
+        isRestarting = true;
+        try {
+          console.log(`[server-file-restart] Restarting Vite dev server due to change in ${path.relative(__dirname, file)}`);
+          await server.restart();
+        } catch (error) {
+          console.error('[server-file-restart] Failed to restart Vite dev server', error);
+        } finally {
+          isRestarting = false;
+        }
+      };
+
+      server.watcher.on('add', restartIfNeeded);
+      server.watcher.on('change', restartIfNeeded);
+      server.watcher.on('unlink', restartIfNeeded);
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
   const geminiApiKey = typeof env.GEMINI_API_KEY === 'string' && env.GEMINI_API_KEY.trim().length > 0
-    ? env.GEMINI_API_KEY
-    : 'process.env.GEMINI_API_KEY';
+    ? env.GEMINI_API_KEY.trim()
+    : typeof env.VITE_GEMINI_API_KEY === 'string' && env.VITE_GEMINI_API_KEY.trim().length > 0
+      ? env.VITE_GEMINI_API_KEY.trim()
+      : 'process.env.GEMINI_API_KEY';
   const previewPort = resolvePort(process.env.PORT || env.PORT, 3000);
   const disableHmr = process.env.DISABLE_HMR === 'true'
     || env.DISABLE_HMR === 'true'
@@ -45,6 +88,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [
+      serverFileRestartPlugin(),
       react(),
       tailwindcss(),
       googleSearchFallbackPlugin(),

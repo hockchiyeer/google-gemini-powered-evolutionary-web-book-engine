@@ -1,31 +1,49 @@
-import type { SearchFallbackPayload } from '../types';
+import type { SearchFallbackMode, SearchFallbackOptions, SearchFallbackPayload } from '../types';
 
 const SEARCH_FALLBACK_ROUTE = '/api/search-fallback';
-const DUCKDUCKGO_LITE_URL = 'https://lite.duckduckgo.com/lite/';
 const FALLBACK_FETCH_ATTEMPTS = 3;
 const FALLBACK_FETCH_TIMEOUT_MS = 20000;
-
-// Minimal placeholder type to avoid breaking other files
-export type SearchFetchResult = unknown;
 
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function fetchGoogleSearchFallback(query: string): Promise<SearchFallbackPayload> {
+function buildFallbackModeLabel(mode: SearchFallbackMode): string {
+  switch (mode) {
+    case 'off':
+      return 'Fallback search';
+    case 'duckduckgo':
+      return 'DuckDuckGo fallback search';
+    case 'google':
+      return 'Google Search fallback';
+    default:
+      return 'Google Search + DuckDuckGo fallback search';
+  }
+}
+
+export async function fetchGoogleSearchFallback(
+  query: string,
+  options: SearchFallbackOptions = { mode: 'google_duckduckgo' }
+): Promise<SearchFallbackPayload> {
   let lastError: Error | null = null;
+  const modeLabel = buildFallbackModeLabel(options.mode);
+
+  if (options.mode === 'off') {
+    throw new Error('Fallback search is disabled for this request.');
+  }
 
   for (let attempt = 1; attempt <= FALLBACK_FETCH_ATTEMPTS; attempt += 1) {
     try {
-      const response = await fetch(
-        `${SEARCH_FALLBACK_ROUTE}?query=${encodeURIComponent(query)}`,
-        {
-          signal: AbortSignal.timeout(FALLBACK_FETCH_TIMEOUT_MS),
-        }
-      );
+      const requestUrl = new URL(SEARCH_FALLBACK_ROUTE, window.location.origin);
+      requestUrl.searchParams.set('query', query);
+      requestUrl.searchParams.set('mode', options.mode);
+
+      const response = await fetch(requestUrl.toString(), {
+        signal: AbortSignal.timeout(FALLBACK_FETCH_TIMEOUT_MS),
+      });
 
       if (!response.ok) {
-        let errorMessage = 'Google Search fallback is currently unavailable.';
+        let errorMessage = `${modeLabel} is currently unavailable.`;
 
         try {
           const payload = (await response.json()) as { error?: string };
@@ -33,7 +51,7 @@ export async function fetchGoogleSearchFallback(query: string): Promise<SearchFa
             errorMessage = payload.error;
           }
         } catch {
-          // Ignore JSON parse failures and use default message
+          // Ignore JSON parse failures and use the default message.
         }
 
         throw new Error(errorMessage);
@@ -44,7 +62,7 @@ export async function fetchGoogleSearchFallback(query: string): Promise<SearchFa
       lastError =
         error instanceof Error
           ? error
-          : new Error('Google Search fallback request failed.');
+          : new Error(`${modeLabel} request failed.`);
 
       if (attempt < FALLBACK_FETCH_ATTEMPTS) {
         await wait(800 * attempt);
@@ -53,27 +71,5 @@ export async function fetchGoogleSearchFallback(query: string): Promise<SearchFa
     }
   }
 
-  throw lastError ?? new Error('Google Search fallback is currently unavailable.');
-}
-
-export async function fetchDuckDuckGoLiteAttempt(
-  query: string,
-  labelSuffix: string
-): Promise<SearchFetchResult | null> {
-  const searchUrl = new URL(DUCKDUCKGO_LITE_URL);
-  searchUrl.searchParams.set('q', query);
-  searchUrl.searchParams.set('kl', 'us-en');
-
-  try {
-    return await fetchSearchHtml(searchUrl, `duckduckgo-lite-${labelSuffix}`);
-  } catch {
-    return null;
-  }
-}
-
-function fetchSearchHtml(
-  searchUrl: URL,
-  sourceLabel: string
-): Promise<SearchFetchResult> {
-  throw new Error('Function not implemented.');
+  throw lastError ?? new Error(`${modeLabel} is currently unavailable.`);
 }

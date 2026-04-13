@@ -1,6 +1,7 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import type {
   SearchArtifact,
+  SearchFallbackOptions,
   SearchFallbackPayload,
   SearchFallbackProvider,
   SearchFallbackReason,
@@ -12,6 +13,15 @@ import type {
 } from '../types';
 import { fetchGoogleSearchFallback } from './googleSearchFallbackClient';
 import { getRenderableDefinitions, getRenderableSubTopics, isMeaningfulText } from '../utils/webBookRender';
+import {
+  buildFallbackOverviewTitle,
+  buildFallbackSearchUrl as buildSearchUrl,
+  deriveConceptLabel,
+  hasDuckDuckGoFallbackEvidence as hasDuckDuckGoFallbackEvidenceForPayload,
+  mapFallbackArtifacts,
+  scoreDomainAuthority,
+  scoreInformativeText,
+} from './searchFallbackShared';
 
 export interface SearchAndExtractResult {
   results: WebPageGenotype[];
@@ -26,8 +36,8 @@ export interface SearchAndExtractResult {
   fallbackPayload?: SearchFallbackPayload;
 }
 
-const GEMINI_MODEL = 'gemini-3-flash-preview';
-const FALLBACK_SOURCE_URL = 'https://www.google.com/search';
+const GEMINI_MODEL = 'gemini-2.0-flash';
+const GEMINI_MODEL_LITE = 'gemini-2.0-flash-lite';
 const AI_STUDIO_GEMINI_API_KEY_PLACEHOLDER = 'process.env.GEMINI_API_KEY';
 export const CONSOLIDATED_SOURCE_POOL_SIZE = 48;
 export const ASSEMBLY_SOURCE_POOL_SIZE = 18;
@@ -94,6 +104,13 @@ const GEMINI_SERVICE_PATTERNS = [
 const GEMINI_INCOMPLETE_OUTPUT_PATTERNS = [
   /\bgemini\b.{0,50}\b(?:returned|produced|generated|assembled)\b.{0,50}\b(?:no|zero|empty)\b.{0,50}\b(?:renderable\s+)?chapters?\b/i,
   /\bgemini\b.{0,50}\b(?:web[-\s]?book|chapter set|assembly)\b.{0,50}\b(?:empty|incomplete)\b/i,
+];
+const GEMINI_NOT_FOUND_PATTERNS = [
+  /\b404\b/,
+  /\bnot[_\s-]*found\b/i,
+  /\bmodel[_\s-]*not[_\s-]*found\b/i,
+  /\bno model found\b/i,
+  /\bmodel.*?is not supported\b/i,
 ];
 const FALLBACK_STOPWORDS = new Set([
   'about',
@@ -283,6 +300,17 @@ function isGeminiRetryableError(error: unknown): boolean {
   const status = (error as any)?.status;
   const code = (error as any)?.code;
 
+  // Fail fast for auth, quota, and model-not-found errors — do not retry, trigger fallback immediately.
+  if (
+    status === 400 || status === 401 || status === 403 || status === 404 || status === 429 ||
+    code === 400 || code === 401 || code === 403 || code === 404 || code === 429 ||
+    matchesAnyPattern(errorMessage, GEMINI_INVALID_KEY_PATTERNS) ||
+    matchesAnyPattern(errorMessage, GEMINI_RATE_LIMIT_PATTERNS) ||
+    matchesAnyPattern(errorMessage, GEMINI_NOT_FOUND_PATTERNS)
+  ) {
+    return false;
+  }
+
   return (
     matchesAnyPattern(errorMessage, GEMINI_NETWORK_PATTERNS) ||
     matchesAnyPattern(errorMessage, GEMINI_SERVICE_PATTERNS) ||
@@ -436,6 +464,10 @@ function classifyGeminiError(error: unknown): SearchFallbackReason | null {
   if (matchesAnyPattern(message, GEMINI_RATE_LIMIT_PATTERNS) || status === 429) {
     return 'quota_or_rate_limit';
   }
+  // Treat model-not-found (404) as a service error so it triggers fallback gracefully.
+  if (matchesAnyPattern(message, GEMINI_NOT_FOUND_PATTERNS) || status === 404) {
+    return 'service_unavailable';
+  }
   if (matchesAnyPattern(message, GEMINI_NETWORK_PATTERNS) || status === 408 || status === 504) {
     return 'network_unreachable';
   }
@@ -478,34 +510,8 @@ function buildFallbackNotice(
   return `${reasonText}; ${searchNote} to synthesize this Web-book from live search results.`;
 }
 
-function getDuckDuckGoFallbackResultCount(payload?: SearchFallbackPayload): number {
-  if (!payload) {
-    return 0;
-  }
-
-  const diagnostic = payload.diagnostics?.find((entry) => entry.startsWith('duckduckgo-results:'));
-  if (!diagnostic) {
-    return payload.provider === 'duckduckgo' ? payload.results.length : 0;
-  }
-
-  const count = Number.parseInt(diagnostic.split(':')[1] || '0', 10);
-  return Number.isFinite(count) ? count : 0;
-}
-
 function hasDuckDuckGoFallbackEvidence(payload?: SearchFallbackPayload): boolean {
-  return getDuckDuckGoFallbackResultCount(payload) > 0;
-}
-
-function buildFallbackOverviewTitle(payload: SearchFallbackPayload): string {
-  if (payload.source === 'google-ai-overview') {
-    return hasDuckDuckGoFallbackEvidence(payload)
-      ? `${payload.query} - Google AI Overview + DuckDuckGo Cross-Check`
-      : `${payload.query} - Google AI Overview`;
-  }
-
-  return hasDuckDuckGoFallbackEvidence(payload)
-    ? `${payload.query} - Google + DuckDuckGo Search Summary`
-    : `${payload.query} - Google Search Summary`;
+  return Boolean(payload && hasDuckDuckGoFallbackEvidenceForPayload(payload));
 }
 
 function buildFallbackNoticeFromPayload(
@@ -518,13 +524,13 @@ function buildFallbackNoticeFromPayload(
     : baseNotice;
 }
 
-function buildSearchUrl(query: string): string {
-  return `${FALLBACK_SOURCE_URL}?q=${encodeURIComponent(query)}`;
-}
-
-async function safeFetchSearchFallback(query: string, label: string): Promise<SearchFallbackPayload | undefined> {
+async function safeFetchSearchFallback(
+  query: string,
+  label: string,
+  options?: SearchFallbackOptions
+): Promise<SearchFallbackPayload | undefined> {
   try {
-    return await fetchGoogleSearchFallback(query);
+    return await fetchGoogleSearchFallback(query, options);
   } catch (error) {
     console.error(`${label} fallback search fetch failed`, error);
     return undefined;
@@ -561,15 +567,29 @@ function buildEmptySearchEvidenceNotice(query: string): Error {
   );
 }
 
-function buildUnavailableFallbackSearchError(query: string, reason: SearchFallbackReason): Error {
+function buildUnavailableFallbackSearchError(
+  query: string,
+  reason: SearchFallbackReason,
+  mode: SearchFallbackOptions['mode'] = 'google_duckduckgo'
+): Error {
+  const reasonText = {
+    missing_api_key: 'Gemini API key is missing',
+    invalid_api_key: 'Gemini API key is invalid or rejected',
+    quota_or_rate_limit: 'Gemini API quota or rate limit was reached',
+    service_unavailable: 'Gemini API is temporarily unavailable',
+    network_unreachable: `Gemini API was unreachable after ${GEMINI_RECONNECT_ATTEMPTS} reconnection attempts`,
+  }[reason];
+
+  const fallbackLabel = mode === 'google'
+    ? 'Google Search fallback'
+    : mode === 'duckduckgo'
+      ? 'DuckDuckGo fallback search'
+      : mode === 'off'
+        ? 'fallback search (disabled)'
+        : 'live fallback search (Google + DuckDuckGo)';
+
   return new Error(
-    `${{
-      missing_api_key: 'Gemini API key is missing',
-      invalid_api_key: 'Gemini API key is invalid or rejected',
-      quota_or_rate_limit: 'Gemini API quota or rate limit was reached',
-      service_unavailable: 'Gemini API is temporarily unavailable',
-      network_unreachable: `Gemini API was unreachable after ${GEMINI_RECONNECT_ATTEMPTS} reconnection attempts`,
-    }[reason]}; live fallback search (Google + DuckDuckGo) was unavailable, so no external evidence could be gathered for "${query}".`
+    `${reasonText}; ${fallbackLabel} was unavailable, so no external evidence could be gathered for "${query}".`
   );
 }
 
@@ -589,26 +609,6 @@ function getSourceDomain(url: string): string {
   } catch {
     return url === 'hybrid-source' ? 'synthetic-source' : 'unknown-source';
   }
-}
-
-function scoreDomainAuthority(url: string): number {
-  try {
-    const hostname = new URL(url).hostname.replace(/^www\./, '');
-    if (hostname.endsWith('.gov')) return 0.96;
-    if (hostname.endsWith('.edu')) return 0.92;
-    if (hostname.includes('wikipedia.org')) return 0.88;
-    if (hostname.endsWith('.org')) return 0.82;
-    if (hostname.includes('reuters.com') || hostname.includes('apnews.com') || hostname.includes('bbc.com')) return 0.84;
-    return 0.72;
-  } catch {
-    return 0.65;
-  }
-}
-
-function scoreInformativeText(text: string): number {
-  const wordCount = text.split(/\s+/).filter(Boolean).length;
-  const sentenceCount = text.split(/[.!?]+/).filter((segment) => segment.trim().length > 0).length;
-  return Math.min(0.98, 0.35 + Math.min(wordCount / 180, 0.38) + Math.min(sentenceCount / 10, 0.25));
 }
 
 function scorePopulationCandidate(page: WebPageGenotype): number {
@@ -696,14 +696,6 @@ function balanceItemsByDomain<T>(
   }
 
   return selected.slice(0, maxItems);
-}
-
-function deriveConceptLabel(title: string, fallbackQuery: string): string {
-  const firstSegment = title.split(/[-:|]/)[0]?.trim();
-  if (firstSegment && firstSegment.length >= 4) {
-    return firstSegment;
-  }
-  return fallbackQuery;
 }
 
 function splitSentences(text: string): string[] {
@@ -988,18 +980,8 @@ function mergeSearchArtifacts(primary: SearchArtifact[], supplemental: SearchArt
   return merged;
 }
 
-function mapFallbackArtifacts(payload: SearchFallbackPayload): SearchArtifact[] {
-  return payload.results.map((result) => ({
-    web: {
-      title: result.title,
-      uri: result.url,
-    },
-    snippet: result.snippet,
-  }));
-}
-
 function buildFallbackPopulation(payload: SearchFallbackPayload): WebPageGenotype[] {
-  const searchUrl = buildSearchUrl(payload.query);
+  const searchUrl = buildSearchUrl(payload.query, payload.provider);
   const distinctResults = selectDistinctFallbackResults(payload.results, CONSOLIDATED_SOURCE_POOL_SIZE - 1);
   const overviewDefinitions = getRenderableDefinitions([
     {
@@ -1066,12 +1048,28 @@ function buildFallbackPopulation(payload: SearchFallbackPayload): WebPageGenotyp
   return [overviewPage, ...sourcePages];
 }
 
-async function enrichGeminiSearchResult(query: string, geminiResult: SearchAndExtractResult): Promise<SearchAndExtractResult> {
+async function enrichGeminiSearchResult(
+  query: string,
+  geminiResult: SearchAndExtractResult,
+  options: SearchFallbackOptions = { mode: 'google_duckduckgo' }
+): Promise<SearchAndExtractResult> {
   const distinctGeminiResults = selectDistinctPopulationPages(geminiResult.results, CONSOLIDATED_SOURCE_POOL_SIZE);
   const geminiHasUsableEvidence = hasUsableSearchEvidence(distinctGeminiResults);
 
+  // When fallback is disabled, skip live-search enrichment entirely and return
+  // the Gemini result as-is (or throw if Gemini itself had no usable evidence).
+  if (options.mode === 'off') {
+    if (!geminiHasUsableEvidence) {
+      throw buildEmptySearchEvidenceNotice(query);
+    }
+    return {
+      ...geminiResult,
+      results: distinctGeminiResults,
+    };
+  }
+
   try {
-    const fallbackPayload = await fetchGoogleSearchFallback(query);
+    const fallbackPayload = await fetchGoogleSearchFallback(query, options);
     const fallbackPopulation = buildFallbackPopulation(fallbackPayload);
     const enrichedResults = selectDistinctPopulationPages(
       [...distinctGeminiResults, ...fallbackPopulation],
@@ -1121,23 +1119,67 @@ async function enrichGeminiSearchResult(query: string, geminiResult: SearchAndEx
   }
 }
 
+/**
+ * Two-phase Gemini search extraction.
+ *
+ * IMPORTANT: The Gemini API does NOT allow combining `googleSearch` grounding with
+ * `responseMimeType: 'application/json'` or `responseSchema` in the same request.
+ * These features are mutually exclusive and the combination returns an API error.
+ *
+ * Phase 1 — grounding call: uses `tools: [{ googleSearch: {} }]` with NO responseSchema.
+ *            Returns plain text with grounded citations from live Google Search.
+ * Phase 2 — extraction call: takes the grounded plain text as input and returns
+ *            structured JSON using `responseMimeType` + `responseSchema` (no grounding tool).
+ */
 async function searchAndExtractWithGemini(query: string): Promise<SearchAndExtractResult> {
   const ai = getAI();
 
-  const response = await withRetry(() => ai.models.generateContent({
+  // ── Phase 1: Google Search grounding (plain-text only — no JSON schema here) ──
+  const groundingResponse = await withRetry(() => ai.models.generateContent({
     model: GEMINI_MODEL,
     contents: `Search for comprehensive information about "${query}".
-    Identify 16-24 distinct high-quality web pages or sources that collectively cover the topic from foundational, practical, historical, policy, comparative, and advanced perspectives.
-    Diversify the evidence base across multiple credible domains. Avoid over-concentrating on one publisher or hostname, cap any single domain at two results unless the topic genuinely requires more, and prefer a plural mix of academic, government, nonprofit, standards, industry, and reputable journalism sources when relevant.
-    For each source, extract:
-    1. A list of key definitions found on the page.
-    2. A list of salient sub-topics discussed.
-    3. A summary of the content.
-    4. An assessment of its "Informative Value" (0-1) based on depth of definitions.
-    5. An assessment of its "Authority" (0-1) based on source credibility.`,
+    Identify 16-24 distinct high-quality web pages or sources covering the topic from foundational,
+    practical, historical, policy, comparative, and advanced perspectives.
+    Diversify across multiple credible domains — cap any single domain at two results and prefer
+    academic, government, nonprofit, standards, industry, and reputable journalism sources.
+    For each source report: its URL, title, a content summary (3+ sentences), key definitions,
+    salient sub-topics, an informative value score (0-1), and an authority score (0-1).`,
     config: {
-      systemInstruction: 'You are a precise data extractor. Extract only real, meaningful definitions and sub-topics from the search results. Do not generate placeholder text, random numbers, or gibberish. Favor plural, credible, domain-diverse sources and avoid near-duplicate pages from the same publisher unless they add unique evidence. If no meaningful definitions are found for a source, return an empty array for that source\'s definitions.',
+      systemInstruction: 'You are a precise research assistant. Use Google Search to find real, credible, domain-diverse sources. Report only what the search reveals — do not fabricate URLs, statistics, or definitions.',
+      // googleSearch grounding MUST NOT be combined with responseSchema or responseMimeType.
       tools: [{ googleSearch: {} }],
+      maxOutputTokens: 8192,
+    },
+  }), GEMINI_RECONNECT_ATTEMPTS, GEMINI_RETRY_INITIAL_DELAY_MS, 'Gemini search grounding');
+
+  const groundedText = (groundingResponse.text || '').trim();
+  const rawGroundingChunks = (
+    groundingResponse.candidates?.[0]?.groundingMetadata as { groundingChunks?: SearchArtifact[] } | undefined
+  )?.groundingChunks || [];
+
+  if (!groundedText) {
+    return {
+      results: [],
+      artifacts: { groundingChunks: rawGroundingChunks },
+      sourceMode: 'gemini',
+    };
+  }
+
+  // ── Phase 2: Structured JSON extraction from grounded text (no grounding tool) ─
+  const extractionResponse = await withRetry(() => ai.models.generateContent({
+    model: GEMINI_MODEL_LITE,
+    contents: `Extract structured source data from the following research text about "${query}".
+
+Research text:
+${groundedText.substring(0, 12000)}
+
+Return a JSON array of source objects. For each source identified in the research text, produce an
+object with: url (string), title (string), content (string — 3+ sentence summary), definitions
+(array of {term, description}), subTopics (array of {title, summary}), informativeScore
+(number 0-1), authorityScore (number 0-1). Include 10-24 sources. If a URL is not clearly stated,
+infer a plausible canonical URL from the domain context in the text.`,
+    config: {
+      systemInstruction: 'You are a precise data extractor. Output valid JSON only. Extract only real, meaningful definitions and sub-topics from the provided research text. Do not generate placeholder text, random numbers, or gibberish. If no meaningful definitions are found for a source, return an empty array.',
       responseMimeType: 'application/json',
       maxOutputTokens: 14000,
       responseSchema: {
@@ -1179,8 +1221,7 @@ async function searchAndExtractWithGemini(query: string): Promise<SearchAndExtra
     },
   }), GEMINI_RECONNECT_ATTEMPTS, GEMINI_RETRY_INITIAL_DELAY_MS, 'Gemini search extraction');
 
-  const rawText = (response.text || '').trim();
-  const rawGroundingChunks = (response.candidates?.[0]?.groundingMetadata as { groundingChunks?: SearchArtifact[] } | undefined)?.groundingChunks || [];
+  const rawText = (extractionResponse.text || '').trim();
   if (!rawText) {
     return {
       results: [],
@@ -1219,17 +1260,27 @@ async function searchAndExtractWithGemini(query: string): Promise<SearchAndExtra
   };
 }
 
-export async function searchAndExtract(query: string): Promise<SearchAndExtractResult> {
+
+export async function searchAndExtract(
+  query: string,
+  options: SearchFallbackOptions = { mode: 'google_duckduckgo' }
+): Promise<SearchAndExtractResult> {
   try {
     const geminiResult = await searchAndExtractWithGemini(query);
-    return await enrichGeminiSearchResult(query, geminiResult);
+    return await enrichGeminiSearchResult(query, geminiResult, options);
   } catch (error) {
     const fallbackReason = classifyGeminiError(error);
     if (!fallbackReason) {
       throw error;
     }
 
-    const fallbackPayload = await safeFetchSearchFallback(query, 'Gemini search recovery');
+    // When fallback is disabled ('off'), surface the Gemini error directly
+    // without attempting any fallback search pipeline.
+    if (options.mode === 'off') {
+      throw buildUnavailableFallbackSearchError(query, fallbackReason, options.mode);
+    }
+
+    const fallbackPayload = await safeFetchSearchFallback(query, 'Gemini search recovery', options);
     if (fallbackPayload) {
       return {
         results: buildFallbackPopulation(fallbackPayload),
@@ -1245,7 +1296,7 @@ export async function searchAndExtract(query: string): Promise<SearchAndExtractR
       };
     }
 
-    throw buildUnavailableFallbackSearchError(query, fallbackReason);
+    throw buildUnavailableFallbackSearchError(query, fallbackReason, options.mode);
   }
 }
 
@@ -2138,7 +2189,8 @@ function buildSupplementalFallbackChapters(
   topic: string,
   results: SearchFallbackResult[],
   seenSentences: string[],
-  maxChapters: number
+  maxChapters: number,
+  searchUrl: string
 ): WebBook['chapters'] {
   const chapters: WebBook['chapters'] = [];
   const chunkSize = 4;
@@ -2167,7 +2219,7 @@ function buildSupplementalFallbackChapters(
         {
           term: topic,
           description: content,
-          sourceUrl: buildSearchUrl(topic),
+          sourceUrl: searchUrl,
         },
         ...chunk.map((result) => ({
           term: deriveConceptLabel(result.title, topic),
@@ -2253,7 +2305,7 @@ function createFallbackWebBook(
   generationNote: string | undefined
 ): WebBook {
   const rawSummary = sanitizeFallbackSnippet(fallbackPayload?.summary || buildSearchSummaryFromPopulation(optimalPopulation, topic));
-  const searchUrl = buildSearchUrl(topic);
+  const searchUrl = buildSearchUrl(topic, fallbackPayload?.provider || 'google');
   const distinctFallbackResults = fallbackPayload
     ? selectDistinctFallbackResults(fallbackPayload.results, CONSOLIDATED_SOURCE_POOL_SIZE)
     : [];
@@ -2362,7 +2414,8 @@ function createFallbackWebBook(
     topic,
     uncoveredResults,
     seenChapterSentences,
-    Math.max(0, ASSEMBLY_SOURCE_POOL_SIZE - chapterPool.length)
+    Math.max(0, ASSEMBLY_SOURCE_POOL_SIZE - chapterPool.length),
+    searchUrl
   );
   const finalChapters = dedupeFallbackChapters(
     [...chapterPool, ...supplementalChapters].slice(0, FINAL_WEBBOOK_CHAPTER_COUNT)
@@ -2399,7 +2452,8 @@ function applyBookMetadata(book: WebBook, context?: Partial<SearchAndExtractResu
 export async function assembleWebBook(
   optimalPopulation: WebPageGenotype[],
   topic: string,
-  context?: SearchAndExtractResult
+  context?: SearchAndExtractResult,
+  options: SearchFallbackOptions = { mode: 'google_duckduckgo' }
 ): Promise<WebBook> {
   if (context?.sourceMode === 'search-fallback') {
     return createFallbackWebBook(
@@ -2423,10 +2477,11 @@ export async function assembleWebBook(
     }
 
     let fallbackPayload = context?.fallbackPayload;
-    if (!fallbackPayload) {
+    if (!fallbackPayload && options.mode !== 'off') {
       fallbackPayload = await safeFetchSearchFallback(
         topic,
-        incompleteGeminiOutput ? 'Gemini assembly completeness recovery' : 'Gemini assembly recovery'
+        incompleteGeminiOutput ? 'Gemini assembly completeness recovery' : 'Gemini assembly recovery',
+        options
       );
     }
 

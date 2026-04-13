@@ -2,22 +2,38 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Plugin } from 'vite';
 import { getRenderableDefinitions, getRenderableSubTopics } from '../src/utils/webBookRender.ts';
 import type {
-  SearchArtifact,
+  SearchFallbackMode,
   SearchFallbackPayload,
-  SearchFallbackProvider,
   SearchFallbackResult,
   WebPageGenotype,
+  SearchFallbackProvider,
 } from '../src/types.ts';
+import { isSearchFallbackMode } from '../src/types.ts';
+import {
+  buildFallbackOverviewTitle,
+  buildFallbackSearchUrl as buildSearchUrl,
+  deriveConceptLabel,
+  hasDuckDuckGoFallbackEvidence,
+  mapFallbackArtifacts,
+  scoreDomainAuthority,
+  scoreInformativeText,
+} from '../src/services/searchFallbackShared.ts';
 
 const SEARCH_ROUTE = '/api/search';
 const EVOLVE_ROUTE = '/api/evolve';
 const SEARCH_FALLBACK_ROUTE = '/api/search-fallback';
 const GOOGLE_SEARCH_URL = 'https://www.google.com/search';
 const DUCKDUCKGO_SEARCH_URL = 'https://html.duckduckgo.com/html/';
+const DUCKDUCKGO_LITE_URL = 'https://lite.duckduckgo.com/lite/';
 const DUCKDUCKGO_INSTANT_ANSWER_URL = 'https://api.duckduckgo.com/';
+// Escalate to Lite endpoint when standard HTML yields fewer than this many results.
+const DUCKDUCKGO_LITE_ESCALATION_THRESHOLD = 4;
 const MAX_RESULTS = 48;
 const MAX_RESULTS_PER_DOCUMENT = 12;
 const MAX_SUMMARY_LENGTH = 2200;
+const GOOGLE_QUERY_VARIANT_LIMIT = 2;
+const GOOGLE_RESULT_TARGET = 8;
+const GOOGLE_VARIANT_DELAY_MS = 350;
 const SEARCH_QUERY_VARIANTS = [
   '',
   'overview',
@@ -134,6 +150,10 @@ function decodeHtmlEntities(input: string): string {
 
 function collapseWhitespace(input: string): string {
   return input.replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function buildSearchQueryVariants(query: string): string[] {
@@ -690,13 +710,31 @@ async function fetchGoogleAttempts(query: string, labelSuffix: string): Promise<
   const webOnlyUrl = new URL(desktopUrl.toString());
   webOnlyUrl.searchParams.set('udm', '14');
 
-  const attempts = await Promise.allSettled([
-    fetchSearchHtml(desktopUrl, `google-desktop-${labelSuffix}`),
-    fetchSearchHtml(basicUrl, `google-basic-${labelSuffix}`),
-    fetchSearchHtml(webOnlyUrl, `google-web-${labelSuffix}`),
-  ]);
+  const attempts: SearchFetchResult[] = [];
+  const searchTargets: Array<{ url: URL; label: string }> = [
+    { url: desktopUrl, label: `google-desktop-${labelSuffix}` },
+    { url: basicUrl, label: `google-basic-${labelSuffix}` },
+    { url: webOnlyUrl, label: `google-web-${labelSuffix}` },
+  ];
 
-  return attempts.flatMap((attempt) => attempt.status === 'fulfilled' ? [attempt.value] : []);
+  for (const [index, target] of searchTargets.entries()) {
+    try {
+      const attempt = await fetchSearchHtml(target.url, target.label);
+      attempts.push(attempt);
+
+      if (isBlockedGoogleAttempt(attempt)) {
+        break;
+      }
+    } catch {
+      // Ignore per-endpoint failures and continue to the next Google surface.
+    }
+
+    if (index < searchTargets.length - 1) {
+      await wait(140);
+    }
+  }
+
+  return attempts;
 }
 async function fetchDuckDuckGoAttempt(query: string, labelSuffix: string): Promise<SearchFetchResult | null> {
   const searchUrl = new URL(DUCKDUCKGO_SEARCH_URL);
@@ -708,6 +746,118 @@ async function fetchDuckDuckGoAttempt(query: string, labelSuffix: string): Promi
   } catch {
     return null;
   }
+}
+
+/**
+ * Fetch from DuckDuckGo Lite (lite.duckduckgo.com/lite/).
+ *
+ * The Lite endpoint returns an intentionally minimal HTML table-based page
+ * specifically designed for low-bandwidth / restricted clients. It is issued
+ * as a POST form request and is significantly less likely to trigger bot-detection
+ * or 429-blocking compared to html.duckduckgo.com, making it an ideal silent
+ * escalation step when the standard HTML endpoint is blocked or yields few results.
+ */
+async function fetchDuckDuckGoLiteAttempt(query: string, labelSuffix: string): Promise<SearchFetchResult | null> {
+  const body = new URLSearchParams();
+  body.set('q', query);
+  body.set('kl', 'us-en');
+
+  try {
+    const response = await fetch(DUCKDUCKGO_LITE_URL, {
+      method: 'POST',
+      headers: {
+        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'accept-language': 'en-US,en;q=0.9',
+        'cache-control': 'no-cache',
+        'content-type': 'application/x-www-form-urlencoded',
+        'user-agent': DEFAULT_HEADERS['user-agent'],
+      },
+      body: body.toString(),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    return {
+      label: `duckduckgo-lite-${labelSuffix}`,
+      url: response.url || DUCKDUCKGO_LITE_URL,
+      status: response.status,
+      html: await response.text(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+interface DuckDuckGoEvidence {
+  attempts: SearchFetchResult[];
+  liteAttempts: SearchFetchResult[];
+  instantAnswer: { status: number; results: SearchFallbackResult[] } | null;
+  results: SearchFallbackResult[];
+  diagnostics: string[];
+}
+
+/**
+ * Collect DuckDuckGo search evidence across three tiers in order of bot-resistance:
+ *   Tier 1: html.duckduckgo.com/html/   (GET, rich HTML)
+ *   Tier 2: lite.duckduckgo.com/lite/   (POST form, minimal HTML — escalated when Tier 1 is thin)
+ *   Tier 3: api.duckduckgo.com          (JSON Instant Answer — fallback when both HTML tiers fail)
+ *
+ * Results from all successful tiers are merged and deduplicated.
+ */
+async function collectDuckDuckGoEvidence(queryVariants: string[]): Promise<DuckDuckGoEvidence> {
+  // Tier 1: standard HTML endpoint
+  const htmlAttemptResults = await Promise.all(
+    queryVariants.map((variant, index) => fetchDuckDuckGoAttempt(variant, `q${index + 1}`))
+  );
+  const attempts = htmlAttemptResults.filter((a): a is SearchFetchResult => Boolean(a));
+  const htmlResults = selectDistinctSearchResults(
+    attempts.flatMap((a) => extractSearchResultsFromDuckDuckGoHtml(a.html)),
+    MAX_RESULTS
+  );
+
+  // Tier 2: Lite endpoint — escalate when HTML results are sparse or zero
+  let liteAttempts: SearchFetchResult[] = [];
+  let liteResults: SearchFallbackResult[] = [];
+  if (htmlResults.length < DUCKDUCKGO_LITE_ESCALATION_THRESHOLD) {
+    const liteAttemptResults = await Promise.all(
+      queryVariants.map((variant, index) => fetchDuckDuckGoLiteAttempt(variant, `q${index + 1}`))
+    );
+    liteAttempts = liteAttemptResults.filter((a): a is SearchFetchResult => Boolean(a));
+    liteResults = selectDistinctSearchResults(
+      liteAttempts.flatMap((a) => extractSearchResultsFromDuckDuckGoHtml(a.html)),
+      MAX_RESULTS
+    );
+  }
+
+  let mergedResults = selectDistinctSearchResults([...htmlResults, ...liteResults], MAX_RESULTS);
+
+  // Tier 3: Instant Answer JSON API — last resort when both HTML tiers yield nothing
+  let instantAnswer: DuckDuckGoEvidence['instantAnswer'] = null;
+  if (mergedResults.length === 0) {
+    instantAnswer = await fetchDuckDuckGoInstantAnswer(queryVariants[0] || '');
+    if (instantAnswer && instantAnswer.results.length > 0) {
+      mergedResults = selectDistinctSearchResults(
+        [...mergedResults, ...instantAnswer.results],
+        MAX_RESULTS
+      );
+    }
+  }
+
+  const diagnostics: string[] = [];
+  if (attempts.length > 0) {
+    diagnostics.push(...buildDiagnostics(attempts, htmlResults.length, 'duckduckgo'));
+  } else {
+    diagnostics.push('duckduckgo-html:fetch-failed');
+  }
+  if (liteAttempts.length > 0) {
+    diagnostics.push(...liteAttempts.map((a) => `duckduckgo-lite-${a.label.split('-').pop()}:${a.status}`));
+    diagnostics.push(`duckduckgo-lite-results:${liteResults.length}`);
+  }
+  if (instantAnswer) {
+    diagnostics.push(`duckduckgo-instant:${instantAnswer.status}`);
+    diagnostics.push(`duckduckgo-instant-results:${instantAnswer.results.length}`);
+  }
+
+  return { attempts, liteAttempts, instantAnswer, results: mergedResults, diagnostics };
 }
 
 async function fetchDuckDuckGoInstantAnswer(query: string): Promise<{ status: number; results: SearchFallbackResult[] } | null> {
@@ -748,165 +898,175 @@ function buildDiagnostics(fetches: SearchFetchResult[], resultsCount: number, pr
   return diagnostics;
 }
 
-export async function buildGoogleSearchFallbackPayload(query: string): Promise<SearchFallbackPayload> {
-  const queryVariants = buildSearchQueryVariants(query);
-  const googleAttemptGroups = await Promise.all(
-    queryVariants.map((variant, index) => fetchGoogleAttempts(variant, `q${index + 1}`))
-  );
-  const googleAttempts = googleAttemptGroups.flat();
-  const aiOverview = googleAttemptGroups[0]?.flatMap((attempt) => extractAiOverview(attempt.html)) || [];
-  const googleResults = selectDistinctSearchResults(googleAttempts
-    .flatMap((attempt) => extractSearchResultsFromGoogleHtml(attempt.html))
-    .reduce<SearchFallbackResult[]>((accumulator, result) => {
-      if (accumulator.some((item) => item.url === result.url) || accumulator.length >= MAX_RESULTS) {
-        return accumulator;
-      }
+function normalizeFallbackMode(candidate: unknown): SearchFallbackMode | null {
+  return isSearchFallbackMode(candidate) ? candidate : null;
+}
 
-      accumulator.push(result);
-      return accumulator;
-    }, []));
+function isBlockedGoogleAttempt(attempt: SearchFetchResult): boolean {
+  return attempt.status === 429 || isGoogleBlockedPage(attempt.html);
+}
 
-  let duckDuckGoAttempts: SearchFetchResult[] = [];
-  let alternateResults: SearchFallbackResult[] = [];
+async function collectGoogleSearchEvidence(queryVariants: string[]): Promise<{
+  attempts: SearchFetchResult[];
+  aiOverview: string[];
+  results: SearchFallbackResult[];
+  allBlocked: boolean;
+}> {
+  const attempts: SearchFetchResult[] = [];
+  let aiOverview: string[] = [];
+  let results: SearchFallbackResult[] = [];
+  const limitedVariants = queryVariants.slice(0, GOOGLE_QUERY_VARIANT_LIMIT);
 
-  const duckDuckGoAttemptResults = await Promise.all(
-    queryVariants.map((variant, index) => fetchDuckDuckGoAttempt(variant, `q${index + 1}`))
-  );
-  duckDuckGoAttempts = duckDuckGoAttemptResults.filter((attempt): attempt is SearchFetchResult => Boolean(attempt));
-  alternateResults = selectDistinctSearchResults(
-    duckDuckGoAttempts.flatMap((attempt) => extractSearchResultsFromDuckDuckGoHtml(attempt.html)),
-    MAX_RESULTS
-  );
-  const duckDuckGoInstantAnswer = alternateResults.length > 0
-    ? null
-    : await fetchDuckDuckGoInstantAnswer(query);
-  if (duckDuckGoInstantAnswer && duckDuckGoInstantAnswer.results.length > 0) {
-    alternateResults = selectDistinctSearchResults(
-      [...alternateResults, ...duckDuckGoInstantAnswer.results],
+  for (const [index, variant] of limitedVariants.entries()) {
+    const variantAttempts = await fetchGoogleAttempts(variant, `q${index + 1}`);
+    attempts.push(...variantAttempts);
+
+    if (aiOverview.length === 0) {
+      aiOverview = variantAttempts.flatMap((attempt) => extractAiOverview(attempt.html));
+    }
+
+    const variantResults = selectDistinctSearchResults(
+      variantAttempts.flatMap((attempt) => extractSearchResultsFromGoogleHtml(attempt.html)),
       MAX_RESULTS
+    );
+    results = selectDistinctSearchResults([...results, ...variantResults], MAX_RESULTS);
+
+    const variantFullyBlocked = variantAttempts.length > 0 && variantAttempts.every(isBlockedGoogleAttempt);
+    if (aiOverview.length > 0 || results.length >= GOOGLE_RESULT_TARGET || variantFullyBlocked) {
+      break;
+    }
+
+    if (index < limitedVariants.length - 1) {
+      await wait(GOOGLE_VARIANT_DELAY_MS);
+    }
+  }
+
+  return {
+    attempts,
+    aiOverview,
+    results,
+    allBlocked: attempts.length > 0 && attempts.every(isBlockedGoogleAttempt),
+  };
+}
+
+export async function buildGoogleSearchFallbackPayload(
+  query: string,
+  mode: SearchFallbackMode = 'google_duckduckgo'
+): Promise<SearchFallbackPayload> {
+  if (mode === 'off') {
+    throw new Error('Fallback search is disabled for this request.');
+  }
+
+  const queryVariants = buildSearchQueryVariants(query);
+  const googleEvidence = mode === 'duckduckgo'
+    ? null
+    : await collectGoogleSearchEvidence(queryVariants);
+  if (mode === 'duckduckgo') {
+    const ddgEvidence = await collectDuckDuckGoEvidence(queryVariants);
+    const { results: alternateResults, diagnostics } = ddgEvidence;
+
+    if (alternateResults.length > 0) {
+      return {
+        query,
+        mode,
+        source: 'alternate-search-snippets',
+        provider: 'duckduckgo',
+        summary: buildSummary(query, [], alternateResults),
+        aiOverview: [],
+        results: alternateResults,
+        extractedAt: Date.now(),
+        diagnostics,
+      };
+    }
+
+    throw new Error(`No extractable search snippets were available. ${diagnostics.join(' | ')}`);
+  }
+
+  const googleAttempts = googleEvidence?.attempts || [];
+  const aiOverview = googleEvidence?.aiOverview || [];
+  const googleResults = googleEvidence?.results || [];
+
+  if (mode === 'google_duckduckgo') {
+    const ddgEvidence = await collectDuckDuckGoEvidence(queryVariants);
+    const { attempts: duckDuckGoAttempts, diagnostics: ddgDiagnostics } = ddgEvidence;
+    const alternateResults = ddgEvidence.results;
+
+    const blendedResults = selectDistinctSearchResults(
+      interleaveSearchResults(googleResults, alternateResults),
+      MAX_RESULTS
+    );
+
+    if (aiOverview.length > 0 || googleResults.length > 0) {
+      const diagnostics = buildDiagnostics(googleAttempts, googleResults.length, 'google');
+      diagnostics.push(...ddgDiagnostics);
+
+      return {
+        query,
+        mode,
+        source: aiOverview.length > 0 ? 'google-ai-overview' : 'google-search-snippets',
+        provider: 'google',
+        summary: buildSummary(query, aiOverview, blendedResults),
+        aiOverview,
+        results: blendedResults,
+        extractedAt: Date.now(),
+        diagnostics,
+      };
+    }
+
+    if (alternateResults.length > 0) {
+      const diagnostics = buildDiagnostics(googleAttempts, googleResults.length, 'google');
+      diagnostics.push(...ddgDiagnostics);
+
+      return {
+        query,
+        mode,
+        source: 'alternate-search-snippets',
+        provider: 'duckduckgo',
+        summary: buildSummary(query, [], alternateResults),
+        aiOverview: [],
+        results: alternateResults,
+        extractedAt: Date.now(),
+        diagnostics,
+      };
+    }
+
+    const diagnostics = buildDiagnostics(googleAttempts, googleResults.length, 'google');
+    diagnostics.push(...ddgDiagnostics);
+
+    throw new Error(`No extractable search snippets were available. ${diagnostics.join(' | ')}`);
+  }
+
+  if (aiOverview.length > 0 || googleResults.length > 0) {
+    return {
+      query,
+      mode,
+      source: aiOverview.length > 0 ? 'google-ai-overview' : 'google-search-snippets',
+      provider: 'google',
+      summary: buildSummary(query, aiOverview, googleResults),
+      aiOverview,
+      results: googleResults,
+      extractedAt: Date.now(),
+      diagnostics: buildDiagnostics(googleAttempts, googleResults.length, 'google'),
+    };
+  }
+
+  if (googleEvidence?.allBlocked) {
+    throw new Error(
+      `Google Search blocked automated extraction with 429 responses. ${buildDiagnostics(googleAttempts, googleResults.length, 'google').join(' | ')}`
     );
   }
 
-  const blendedResults = selectDistinctSearchResults(
-    interleaveSearchResults(googleResults, alternateResults),
-    MAX_RESULTS
-  );
-
-  if (aiOverview.length > 0 || blendedResults.length > 0) {
-    const diagnostics = buildDiagnostics(googleAttempts, googleResults.length, 'google');
-    if (duckDuckGoAttempts.length > 0) {
-      diagnostics.push(...buildDiagnostics(duckDuckGoAttempts, alternateResults.length, 'duckduckgo'));
-    }
-    if (duckDuckGoInstantAnswer) {
-      diagnostics.push(`duckduckgo-instant:${duckDuckGoInstantAnswer.status}`);
-      diagnostics.push(`duckduckgo-instant-results:${duckDuckGoInstantAnswer.results.length}`);
-    }
-
-    return {
-      query,
-      source: aiOverview.length > 0 ? 'google-ai-overview' : 'google-search-snippets',
-      provider: 'google',
-      summary: buildSummary(query, aiOverview, blendedResults),
-      aiOverview,
-      results: blendedResults,
-      extractedAt: Date.now(),
-      diagnostics,
-    };
-  }
-
-  if (alternateResults.length > 0) {
-    const diagnostics = buildDiagnostics(googleAttempts, googleResults.length, 'google');
-    if (duckDuckGoAttempts.length > 0) {
-      diagnostics.push(...buildDiagnostics(duckDuckGoAttempts, alternateResults.length, 'duckduckgo'));
-    }
-    if (duckDuckGoInstantAnswer) {
-      diagnostics.push(`duckduckgo-instant:${duckDuckGoInstantAnswer.status}`);
-      diagnostics.push(`duckduckgo-instant-results:${duckDuckGoInstantAnswer.results.length}`);
-    }
-
-    return {
-      query,
-      source: 'alternate-search-snippets',
-      provider: 'duckduckgo',
-      summary: buildSummary(query, [], alternateResults),
-      aiOverview: [],
-      results: alternateResults,
-      extractedAt: Date.now(),
-      diagnostics,
-    };
-  }
-
-  const diagnostics = buildDiagnostics(googleAttempts, googleResults.length, 'google');
-  if (duckDuckGoAttempts.length > 0) {
-    diagnostics.push(...buildDiagnostics(duckDuckGoAttempts, alternateResults.length, 'duckduckgo'));
-  } else {
-    diagnostics.push('duckduckgo-html:fetch-failed');
-  }
-  if (duckDuckGoInstantAnswer) {
-    diagnostics.push(`duckduckgo-instant:${duckDuckGoInstantAnswer.status}`);
-    diagnostics.push(`duckduckgo-instant-results:${duckDuckGoInstantAnswer.results.length}`);
-  } else {
-    diagnostics.push('duckduckgo-instant:fetch-failed');
-  }
-
-  throw new Error(`No extractable search snippets were available. ${diagnostics.join(' | ')}`);
-}
-
-function buildSearchUrl(query: string): string {
-  const searchUrl = new URL(GOOGLE_SEARCH_URL);
-  searchUrl.searchParams.set('q', query);
-  return searchUrl.toString();
-}
-
-function deriveConceptLabel(title: string, fallbackQuery: string): string {
-  const firstSegment = title.split(/[-:|]/)[0]?.trim();
-  if (firstSegment && firstSegment.length >= 4) {
-    return firstSegment;
-  }
-
-  return fallbackQuery;
-}
-
-function scoreDomainAuthority(url: string): number {
-  try {
-    const hostname = new URL(url).hostname.replace(/^www\./, '');
-    if (hostname.endsWith('.gov')) return 0.96;
-    if (hostname.endsWith('.edu')) return 0.92;
-    if (hostname.includes('wikipedia.org')) return 0.88;
-    if (hostname.endsWith('.org')) return 0.82;
-    if (hostname.includes('reuters.com') || hostname.includes('apnews.com') || hostname.includes('bbc.com')) return 0.84;
-    return 0.72;
-  } catch {
-    return 0.65;
-  }
-}
-
-function scoreInformativeText(text: string): number {
-  const wordCount = text.split(/\s+/).filter(Boolean).length;
-  const sentenceCount = text.split(/[.!?]+/).filter((segment) => segment.trim().length > 0).length;
-  return Math.min(0.98, 0.35 + Math.min(wordCount / 180, 0.38) + Math.min(sentenceCount / 10, 0.25));
-}
-
-function mapFallbackArtifacts(payload: SearchFallbackPayload): SearchArtifact[] {
-  return payload.results.map((result) => ({
-    web: {
-      title: result.title,
-      uri: result.url,
-    },
-    snippet: result.snippet,
-  }));
+  throw new Error(`No extractable search snippets were available. ${buildDiagnostics(googleAttempts, googleResults.length, 'google').join(' | ')}`);
 }
 
 function buildFallbackPopulation(payload: SearchFallbackPayload): WebPageGenotype[] {
-  const searchUrl = buildSearchUrl(payload.query);
+  const searchUrl = buildSearchUrl(payload.query, payload.provider);
   const distinctResults = selectDistinctSearchResults(payload.results, MAX_RESULTS - 1);
 
   const overviewPage: WebPageGenotype = {
     id: `fallback-overview-${payload.extractedAt}`,
     url: searchUrl,
-    title: payload.source === 'google-ai-overview'
-      ? `${payload.query} - Google AI Overview`
-      : `${payload.query} - Google Search Summary`,
+    title: buildFallbackOverviewTitle(payload),
     content: sanitizeFallbackSnippet(payload.summary),
     definitions: getRenderableDefinitions([
       {
@@ -1082,6 +1242,19 @@ export function parseRequestPayload(rawBody: string): RequestPayload {
   }
 }
 
+export function extractRequestedFallbackMode(
+  requestUrl: URL,
+  payload: RequestPayload
+): SearchFallbackMode {
+  return normalizeFallbackMode(requestUrl.searchParams.get('mode'))
+    || normalizeFallbackMode(typeof payload.mode === 'string' ? payload.mode : undefined)
+    || normalizeFallbackMode(typeof payload.fallbackMode === 'string' ? payload.fallbackMode : undefined)
+    || normalizeFallbackMode(requestUrl.searchParams.get('provider'))
+    || normalizeFallbackMode(payload.provider)
+    || normalizeFallbackMode(payload.fallbackProvider)
+    || 'google_duckduckgo';
+}
+
 function extractQuery(requestUrl: URL, payload: RequestPayload): string {
   const candidates = [
     requestUrl.searchParams.get('query'),
@@ -1144,17 +1317,23 @@ async function handleSearchFallbackRequest(request: IncomingMessage, response: S
     ? parseRequestPayload(await readRequestBody(request))
     : {};
   const query = extractQuery(requestUrl, payload);
+  const fallbackMode = extractRequestedFallbackMode(requestUrl, payload);
 
   if (!query) {
     sendJson(response, 400, { error: 'Query is required' });
     return;
   }
 
+  if (fallbackMode === 'off') {
+    sendJson(response, 400, { error: 'Fallback search is disabled for this request.' });
+    return;
+  }
+
   try {
-    const fallbackPayload = await buildGoogleSearchFallbackPayload(query);
+    const fallbackPayload = await buildGoogleSearchFallbackPayload(query, fallbackMode);
     sendJson(response, 200, fallbackPayload);
   } catch (error) {
-    console.error('Google search fallback failed', error);
+    console.error('Search fallback failed', error);
     const message = error instanceof Error ? error.message : 'Unable to extract search fallback results at the moment.';
     sendJson(response, 502, { error: message });
   }
@@ -1170,14 +1349,20 @@ async function handleLegacySearchRequest(request: IncomingMessage, response: Ser
     ? parseRequestPayload(await readRequestBody(request))
     : {};
   const query = extractQuery(requestUrl, payload);
+  const fallbackMode = extractRequestedFallbackMode(requestUrl, payload);
 
   if (!query) {
     sendJson(response, 400, { error: 'Query is required' });
     return;
   }
 
+  if (fallbackMode === 'off') {
+    sendJson(response, 400, { error: 'Fallback search is disabled for this request.' });
+    return;
+  }
+
   try {
-    const fallbackPayload = await buildGoogleSearchFallbackPayload(query);
+    const fallbackPayload = await buildGoogleSearchFallbackPayload(query, fallbackMode);
     const population = buildFallbackPopulation(fallbackPayload);
     const groundingChunks = mapFallbackArtifacts(fallbackPayload);
 
