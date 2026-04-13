@@ -52,6 +52,7 @@ module.exports = defineConfig({
     },
   },
   e2e: {
+    fixturesFolder: 'tests/cypress/fixtures',
     async setupNodeEvents(on, config) {
       await addCucumberPreprocessorPlugin(on, config);
       on('task', { downloadFile });

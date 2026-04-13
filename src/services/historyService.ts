@@ -261,9 +261,15 @@ export async function clearPersistedSearches(): Promise<void> {
   const snapshot = await getDocs(getSearchesCollection(services.db, user.uid));
   if (snapshot.empty) return;
 
-  const batch = writeBatch(services.db);
-  snapshot.docs.forEach((searchDoc) => batch.delete(searchDoc.ref));
-  await batch.commit();
+  // SE-7 fix: Firestore batches are capped at 500 operations; chunk the refs
+  // to avoid silent failures when a user has a large search history.
+  const BATCH_LIMIT = 500;
+  const refs = snapshot.docs.map((searchDoc) => searchDoc.ref);
+  for (let start = 0; start < refs.length; start += BATCH_LIMIT) {
+    const batch = writeBatch(services.db);
+    refs.slice(start, start + BATCH_LIMIT).forEach((ref) => batch.delete(ref));
+    await batch.commit();
+  }
 }
 
 export function mergeHistoryBooks(...historyGroups: WebBook[][]): WebBook[] {

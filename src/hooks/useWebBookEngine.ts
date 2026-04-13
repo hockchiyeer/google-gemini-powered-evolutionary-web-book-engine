@@ -146,7 +146,7 @@ export function useWebBookEngine() {
         },
       }));
 
-      const evolvedPopulation = await evolve(initialPopulation);
+      const { population: evolvedPopulation, completedGenerations, bestRedundancyPenalty } = await evolve(initialPopulation);
       ensureActiveRun();
       if (evolvedPopulation.length === 0) {
         throw new Error(
@@ -164,7 +164,7 @@ export function useWebBookEngine() {
         bestFitness: bestEvolved?.fitness || 0,
         bestInformativeScore: bestEvolved?.informativeScore || 0,
         bestAuthorityScore: bestEvolved?.authorityScore || 0,
-        bestRedundancyPenalty: 0,
+        bestRedundancyPenalty,
         artifacts: {
           ...previousState.artifacts,
           evolvedPopulation,
@@ -186,12 +186,12 @@ export function useWebBookEngine() {
       setState((previousState) => ({
         ...previousState,
         status: 'complete',
-        generation: 3,
+        generation: completedGenerations,
         population: evolvedPopulation,
         bestFitness: bestEvolved?.fitness || 0,
         bestInformativeScore: bestEvolved?.informativeScore || 0,
         bestAuthorityScore: bestEvolved?.authorityScore || 0,
-        bestRedundancyPenalty: 0,
+        bestRedundancyPenalty,
         artifacts: {
           ...previousState.artifacts,
           assemblyInput: evolvedPopulation.slice(0, ASSEMBLY_SOURCE_POOL_SIZE),

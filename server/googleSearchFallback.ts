@@ -12,6 +12,7 @@ import { isSearchFallbackMode } from '../src/types.ts';
 import {
   buildFallbackOverviewTitle,
   buildFallbackSearchUrl as buildSearchUrl,
+  calculateTextSimilarity,
   deriveConceptLabel,
   hasDuckDuckGoFallbackEvidence,
   mapFallbackArtifacts,
@@ -42,28 +43,6 @@ const SEARCH_QUERY_VARIANTS = [
   'applications',
   'history',
 ];
-const FALLBACK_STOPWORDS = new Set([
-  'about',
-  'after',
-  'also',
-  'amid',
-  'among',
-  'and',
-  'around',
-  'been',
-  'between',
-  'from',
-  'into',
-  'over',
-  'that',
-  'their',
-  'them',
-  'they',
-  'this',
-  'through',
-  'under',
-  'with',
-]);
 
 const DEFAULT_HEADERS = {
   'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -191,45 +170,7 @@ function normalizeComparableText(input: string): string {
   );
 }
 
-function tokenizeComparableText(input: string): string[] {
-  return normalizeComparableText(input)
-    .split(' ')
-    .filter((token) => token.length >= 3 && !FALLBACK_STOPWORDS.has(token));
-}
 
-function calculateTextSimilarity(left: string, right: string): number {
-  const normalizedLeft = normalizeComparableText(left);
-  const normalizedRight = normalizeComparableText(right);
-
-  if (!normalizedLeft || !normalizedRight) {
-    return 0;
-  }
-
-  if (normalizedLeft === normalizedRight) {
-    return 1;
-  }
-
-  const shorter = normalizedLeft.length <= normalizedRight.length ? normalizedLeft : normalizedRight;
-  const longer = shorter === normalizedLeft ? normalizedRight : normalizedLeft;
-  if (shorter.length >= 32 && longer.includes(shorter)) {
-    return 0.96;
-  }
-
-  const leftTokens = new Set(tokenizeComparableText(left));
-  const rightTokens = new Set(tokenizeComparableText(right));
-  if (leftTokens.size === 0 || rightTokens.size === 0) {
-    return 0;
-  }
-
-  let overlap = 0;
-  for (const token of leftTokens) {
-    if (rightTokens.has(token)) {
-      overlap += 1;
-    }
-  }
-
-  return overlap / new Set([...leftTokens, ...rightTokens]).size;
-}
 
 function stripHtmlToText(input: string): string {
   return collapseWhitespace(

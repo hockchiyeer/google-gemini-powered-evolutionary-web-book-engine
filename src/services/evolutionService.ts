@@ -16,6 +16,7 @@ import { getRenderableDefinitions, getRenderableSubTopics, isMeaningfulText } fr
 import {
   buildFallbackOverviewTitle,
   buildFallbackSearchUrl as buildSearchUrl,
+  calculateTextSimilarity,
   deriveConceptLabel,
   hasDuckDuckGoFallbackEvidence as hasDuckDuckGoFallbackEvidenceForPayload,
   mapFallbackArtifacts,
@@ -112,28 +113,6 @@ const GEMINI_NOT_FOUND_PATTERNS = [
   /\bno model found\b/i,
   /\bmodel.*?is not supported\b/i,
 ];
-const FALLBACK_STOPWORDS = new Set([
-  'about',
-  'after',
-  'also',
-  'amid',
-  'among',
-  'and',
-  'around',
-  'been',
-  'between',
-  'from',
-  'into',
-  'over',
-  'that',
-  'their',
-  'them',
-  'they',
-  'this',
-  'through',
-  'under',
-  'with',
-]);
 const FALLBACK_NARRATIVE_META_PATTERNS = [
   /\bfallback\b/i,
   /\brender(?:er|ing)?\b/i,
@@ -705,54 +684,6 @@ function splitSentences(text: string): string[] {
     .filter((sentence) => sentence.length > 0);
 }
 
-function normalizeComparableText(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/&/g, ' and ')
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function tokenizeComparableText(text: string): string[] {
-  return normalizeComparableText(text)
-    .split(' ')
-    .filter((token) => token.length >= 3 && !FALLBACK_STOPWORDS.has(token));
-}
-
-function calculateTextSimilarity(left: string, right: string): number {
-  const normalizedLeft = normalizeComparableText(left);
-  const normalizedRight = normalizeComparableText(right);
-
-  if (!normalizedLeft || !normalizedRight) {
-    return 0;
-  }
-
-  if (normalizedLeft === normalizedRight) {
-    return 1;
-  }
-
-  const shorter = normalizedLeft.length <= normalizedRight.length ? normalizedLeft : normalizedRight;
-  const longer = shorter === normalizedLeft ? normalizedRight : normalizedLeft;
-  if (shorter.length >= 32 && longer.includes(shorter)) {
-    return 0.96;
-  }
-
-  const leftTokens = new Set(tokenizeComparableText(left));
-  const rightTokens = new Set(tokenizeComparableText(right));
-  if (leftTokens.size === 0 || rightTokens.size === 0) {
-    return 0;
-  }
-
-  let overlap = 0;
-  for (const token of leftTokens) {
-    if (rightTokens.has(token)) {
-      overlap += 1;
-    }
-  }
-
-  return overlap / new Set([...leftTokens, ...rightTokens]).size;
-}
 
 function dedupeSentences(text: string, maxSentences = Number.POSITIVE_INFINITY): string[] {
   const unique: string[] = [];
@@ -1320,17 +1251,25 @@ export function calculateFitness(
 
 export const EVOLUTION_WEIGHTS = { alpha: 0.5, beta: 0.3, gamma: 0.2 };
 
-export async function evolve(population: WebPageGenotype[], generations = 3): Promise<WebPageGenotype[]> {
+export interface EvolveResult {
+  population: WebPageGenotype[];
+  completedGenerations: number;
+  bestRedundancyPenalty: number;
+}
+
+export async function evolve(population: WebPageGenotype[], generations = 3): Promise<EvolveResult> {
   let currentPopulation = selectDistinctPopulationPages(population, CONSOLIDATED_SOURCE_POOL_SIZE);
   const targetPopulationSize = currentPopulation.length;
 
   if (targetPopulationSize <= 2) {
-    return currentPopulation;
+    return { population: currentPopulation, completedGenerations: 0, bestRedundancyPenalty: 0 };
   }
 
   for (let generation = 0; generation < generations; generation += 1) {
-    currentPopulation.forEach((page) => {
-      page.fitness = calculateFitness(page, [], EVOLUTION_WEIGHTS);
+    // SE-3 fix: pass all other pages as optimalSet so the gamma redundancy
+    // penalty is genuinely computed rather than always being zero.
+    currentPopulation.forEach((page, _, arr) => {
+      page.fitness = calculateFitness(page, arr.filter(p => p !== page), EVOLUTION_WEIGHTS);
     });
 
     currentPopulation.sort((left, right) => right.fitness - left.fitness);
@@ -1371,14 +1310,29 @@ export async function evolve(population: WebPageGenotype[], generations = 3): Pr
     currentPopulation = nextPopulation.slice(0, targetPopulationSize);
   }
 
-  currentPopulation.forEach((page) => {
-    page.fitness = calculateFitness(page, [], EVOLUTION_WEIGHTS);
+  // Final ranking pass — again use real optimalSet so the top-ranked page
+  // receives an accurate fitness score before assembly source selection.
+  currentPopulation.forEach((page, _, arr) => {
+    page.fitness = calculateFitness(page, arr.filter(p => p !== page), EVOLUTION_WEIGHTS);
   });
   currentPopulation.sort((left, right) => right.fitness - left.fitness);
 
-  return currentPopulation;
-}
+  // SE-2 fix: compute the redundancy penalty for the top-ranked page so the
+  // UI's gamma R(w,S) term reflects a real measured value.
+  let bestRedundancyPenalty = 0;
+  const bestPage = currentPopulation[0];
+  if (bestPage && currentPopulation.length > 1) {
+    const otherTerms = new Set(
+      currentPopulation.slice(1)
+        .flatMap(p => (p.definitions || []).map(d => (d.term || '').toLowerCase()))
+    );
+    const pageTerms = (bestPage.definitions || []).map(d => (d.term || '').toLowerCase());
+    const overlap = pageTerms.filter(t => t && otherTerms.has(t)).length;
+    bestRedundancyPenalty = overlap / Math.max(pageTerms.length, 1);
+  }
 
+  return { population: currentPopulation, completedGenerations: generations, bestRedundancyPenalty };
+}
 type AssemblySourceContext = {
   title: string;
   url: string;

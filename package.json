@@ -38,12 +38,12 @@
     "firebase": "^12.11.0",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
-    "puppeteer": "^24.40.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "vite": "^6.2.0"
   },
   "devDependencies": {
+    "puppeteer": "^24.40.0",
     "@badeball/cypress-cucumber-preprocessor": "^17.2.1",
     "@bahmutov/cypress-esbuild-preprocessor": "^2.2.3",
     "@esbuild-plugins/node-globals-polyfill": "^0.2.3",

@@ -6,7 +6,7 @@ import type {
 
 const GOOGLE_SEARCH_URL = 'https://www.google.com/search';
 const DUCKDUCKGO_PUBLIC_SEARCH_URL = 'https://duckduckgo.com/';
-const FALLBACK_STOPWORDS = new Set([
+export const FALLBACK_STOPWORDS = new Set([
   'about',
   'after',
   'also',

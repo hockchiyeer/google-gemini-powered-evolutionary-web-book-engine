@@ -173,7 +173,12 @@ export function ControlSidebar({
   };
 
   const isBusy = state.status !== 'idle' && state.status !== 'complete';
-  const progressText = state.status === 'complete' ? '100%' : 'In Progress';
+  const progressWidthPct =
+    state.status === 'complete'   ? '100%' :
+    state.status === 'assembling' ? '80%'  :
+    state.status === 'evolving'   ? '55%'  :
+    state.status === 'searching'  ? '25%'  : '0%';
+  const progressText = state.status === 'complete' ? '100%' : progressWidthPct;
   const searchSummary = state.artifacts?.searchSummary;
 
   return (
@@ -356,7 +361,7 @@ export function ControlSidebar({
                 <motion.div
                   className="h-full bg-[#141414]"
                   initial={{ width: 0 }}
-                  animate={{ width: state.status === 'complete' ? '100%' : '60%' }}
+                  animate={{ width: progressWidthPct }}
                   transition={{ duration: 2, ease: 'easeInOut' }}
                 />
               </div>

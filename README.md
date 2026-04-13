@@ -36,7 +36,8 @@ This repository now includes:
 - `src/hooks/useWebBookEngine.ts` manages the search/evolution/assembly flow, carries the expanded assembly input set, and publishes artifact data to the UI.
 - `src/components/` contains the header, sidebar, history drawer, and Web-book viewer.
 - `src/components/ControlSidebar.tsx` shows population size, search coverage summary, evolved population, and assembly trace metrics.
-- `src/services/` contains the evolution pipeline, fallback client, history persistence, and export logic.
+- `src/services/` contains the evolution pipeline, fallback client, history persistence, shared search utilities, and export logic.
+- `src/services/searchFallbackShared.ts` provides centralized text-similarity scoring and stopword utilities shared by the evolution pipeline and the server-side fallback route.
 - `src/utils/webBookRender.ts` handles content filtering, render planning, and source-link normalization.
 
 ### Fallback Route
@@ -61,7 +62,7 @@ This repository now includes:
    - DuckDuckGo HTML and DuckDuckGo Lite snippet extraction as alternate providers
    - multiple search-query variants to widen coverage when one phrasing returns sparse results
 5. Build a deduplicated candidate population of source pages.
-6. Score and recombine that population across 3 lightweight evolutionary passes while preserving a larger population size.
+6. Score and recombine that population across 3 lightweight evolutionary passes. Each page is scored against every other page in its generation so the γ × R(w,S) redundancy penalty is genuinely computed.
 7. Assemble the final Web-book from an 18-source assembly pool into 10 chapters.
 8. Render the book with source verification links and external article links.
 9. Export the result if needed.
@@ -96,7 +97,8 @@ This repository now includes:
     |   |-- evolutionService.ts
     |   |-- exportService.ts
     |   |-- googleSearchFallbackClient.ts
-    |   `-- historyService.ts
+    |   |-- historyService.ts
+    |   `-- searchFallbackShared.ts
     `-- utils
         `-- webBookRender.ts
 ```
@@ -176,8 +178,8 @@ Important:
 - `npm run preview` - preview the built app
 - `npm run lint` - run TypeScript type checking with `tsc --noEmit`
 - `npm run clean` - remove `dist` using `rm -rf dist`
-- `npm run test:local` - run the Cypress suite against the local app and generate both HTML reports
-- `npm run test:qa` - run the Cypress suite against QA and generate both HTML reports
+- `npm run test:local` - start the test dev server on port 3001, run the Cypress BDD suite, and generate both HTML reports
+- `npm run test:unit` - run the server-side unit tests with `node --experimental-strip-types`
 - `npm run test:prod` - run the Cypress suite against PROD and generate both HTML reports
 - `npm run report:generate` - generate both the Mochawesome HTML report and the Multiple Cucumber HTML report from the latest Cypress artifacts
 
@@ -361,10 +363,9 @@ Important runtime check:
 ## Known Limitations
 
 - The evolutionary stage is still lightweight. It uses scoring, survivor selection, and recombination, but it is not a full genetic algorithm implementation.
-- `calculateFitness()` supports redundancy penalty, but the current `evolve()` loop still evaluates pages against an empty comparison set during that stage.
 - Decorative chapter images come from `picsum.photos`; they are placeholders, not topic-aware generated illustrations.
-- `package.json` is still named `react-example` even though the app and repo are Evolutionary Web-Book Engine.
 - `dotenv` is present in dependencies, but the checked-in backend endpoints are implemented as Vite middleware rather than a standalone Express server.
+- A plain static hosting deployment of the built `dist/` assets will not include the `/api/search-fallback` or `/__pdf` routes — a real backend or edge/serverless function is required for those.
 
 ## AI Studio Metadata
 
