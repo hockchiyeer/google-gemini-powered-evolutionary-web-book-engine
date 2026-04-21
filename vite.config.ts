@@ -104,12 +104,13 @@ export default defineConfig(({ mode }) => {
               res.statusCode = 405;
               return res.end();
             }
-            try {
-              let body = '';
-              req.on('data', (chunk) => {
-                body += chunk;
-              });
-              req.on('end', async () => {
+            let body = '';
+            req.setEncoding('utf8');
+            req.on('data', (chunk) => {
+              body += chunk;
+            });
+            req.on('error', (err) => { console.error('Request error:', err); res.statusCode = 400; res.end('Bad Request'); }); req.on('end', async () => {
+              try {
                 const { html, fileName } = JSON.parse(body);
                 // Lazy import so puppeteer absence (devDep) does not crash startup.
                 let generatePdf: ((h: string) => Promise<Buffer>) | null = null;
@@ -130,12 +131,13 @@ export default defineConfig(({ mode }) => {
                   `attachment; filename="${fileName || 'webbook'}.pdf"`
                 );
                 res.end(pdfBuffer);
-              });
-            } catch (err) {
-              console.error(err);
-              res.statusCode = 500;
-              res.end('PDF generation failed');
-            }
+              } catch (err) {
+                console.error('PDF generation error (preview):', err);
+                const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+                res.statusCode = 500;
+                res.end(`PDF generation failed: ${errorMessage}`);
+              }
+            });
           });
         },
         configureServer(server) {
@@ -144,12 +146,13 @@ export default defineConfig(({ mode }) => {
               res.statusCode = 405;
               return res.end();
             }
-            try {
-              let body = '';
-              req.on('data', (chunk) => {
-                body += chunk;
-              });
-              req.on('end', async () => {
+            let body = '';
+            req.setEncoding('utf8');
+            req.on('data', (chunk) => {
+              body += chunk;
+            });
+            req.on('error', (err) => { console.error('Request error:', err); res.statusCode = 400; res.end('Bad Request'); }); req.on('end', async () => {
+              try {
                 const { html, fileName } = JSON.parse(body);
                 // Lazy import so puppeteer absence (devDep) does not crash startup.
                 let generatePdf: ((h: string) => Promise<Buffer>) | null = null;
@@ -170,19 +173,18 @@ export default defineConfig(({ mode }) => {
                   `attachment; filename="${fileName || 'webbook'}.pdf"`
                 );
                 res.end(pdfBuffer);
-              });
-            } catch (err) {
-              console.error(err);
-              res.statusCode = 500;
-              res.end('PDF generation failed');
-            }
+              } catch (err) {
+                console.error('PDF generation error (dev):', err);
+                const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+                res.statusCode = 500;
+                res.end(`PDF generation failed: ${errorMessage}`);
+              }
+            });
           });
         },
       },
     ],
     define: {
-      // Preserve the documented AI Studio placeholder when no real key is
-      // configured at build time, rather than compiling the expression away.
       'process.env.GEMINI_API_KEY': JSON.stringify(resolvedApiKey),
     },
     resolve: {

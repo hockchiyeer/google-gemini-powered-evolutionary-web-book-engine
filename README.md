@@ -53,7 +53,7 @@ This repository now includes:
 
 ## Search And Assembly Pipeline
 
-1. Search and extract with Gemini in `src/services/evolutionService.ts` using a single-phase call that combines Google Search grounding with structured JSON output. This matches the canonical AI Studio reference implementation: grounding (`tools: [{ googleSearch: {} }]`) and `responseMimeType: 'application/json'` are combined in one `gemini-2.0-flash` request, halving quota cost and timeout exposure compared to a two-phase split.
+1. Search and extract with Gemini in `src/services/evolutionService.ts`.
 2. Enrich Gemini extraction with live search evidence when available so the consolidated source pool can approach roughly 40-50 distinct items.
 3. If Gemini fails for a known recoverable reason, request `/api/search-fallback`.
 4. The fallback route attempts:
@@ -141,9 +141,9 @@ VITE_FIREBASE_MEASUREMENT_ID="..."
 
 Notes:
 
-- `GEMINI_API_KEY` is the recommended option for all local and hosted runs. Set it in `.env` or pass it as an environment variable at build time.
-- `VITE_GEMINI_API_KEY` is accepted as a fallback for browser-hosted deployments when `GEMINI_API_KEY` is not available.
-- When neither key is configured at build time, `vite.config.ts` emits `JSON.stringify(undefined)` for the `process.env.GEMINI_API_KEY` define. This matches the canonical AI Studio pattern: the reference remains a live runtime expression that Google AI Studio can satisfy via its build-time key injection, rather than a hardcoded placeholder string that would reach `GoogleGenAI` as an invalid key value.
+- `VITE_GEMINI_API_KEY` is the simplest option for regular browser-hosted deployments.
+- `GEMINI_API_KEY` works for local or server-backed runs that inject a real value at build time.
+- Google AI Studio shared apps should keep the literal `process.env.GEMINI_API_KEY` placeholder available in the client bundle so AI Studio can proxy Gemini calls securely.
 - Gemini is recommended, but the app can still fall back to search-based synthesis when Gemini is unavailable.
 - `APP_URL` is present in `.env.example` for AI Studio style hosting metadata, but it is not required for normal local development.
 - `DISABLE_HMR=true` can be used in environments where hot reload causes instability.
@@ -178,7 +178,7 @@ Important:
 - `npm run preview` - preview the built app
 - `npm run lint` - run TypeScript type checking with `tsc --noEmit`
 - `npm run clean` - remove `dist` using `rm -rf dist`
-- `npm run test:local` - start the test dev server on port 3001, run the Cypress BDD suite, and generate both HTML reports
+- `npm run test:local` - start the test dev server on port 3000, run the Cypress BDD suite, and generate both HTML reports
 - `npm run test:unit` - run the server-side unit tests with `node --experimental-strip-types`
 - `npm run test:prod` - run the Cypress suite against PROD and generate both HTML reports
 - `npm run report:generate` - generate both the Mochawesome HTML report and the Multiple Cucumber HTML report from the latest Cypress artifacts
@@ -208,34 +208,51 @@ tests/
 |-- cypress.env.config.cjs
 |-- .cypress-cucumber-preprocessorrc.json
 |-- scripts/
-|   `-- generate-cucumber-report.cjs
+|   |-- generate-cucumber-report.cjs
+|   |-- run-cypress-with-reports.cjs
+|   |-- run-local-cypress.cjs
+|   `-- smoke/                        ← manual smoke-test scripts
+|       |-- test-import.js
+|       |-- test-pdf.ts
+|       |-- test-search.ts
+|       `-- test.pdf
+|-- server/                           ← server-side unit tests
+|   |-- documentTitle.test.ts
+|   |-- evolutionService.test.ts
+|   `-- googleSearchFallback.test.ts
 `-- cypress/
-    |-- features/
-    |   `-- *.feature
-    |-- common/
-    |   |-- given.js
-    |   |-- when.js
-    |   `-- then.js
+    |-- e2e/                          ← ACTIVE Cucumber tree
+    |   |-- features/
+    |   |   `-- webbook-generation.feature
+    |   |-- common/
+    |   |   |-- given.js
+    |   |   |-- when.js
+    |   |   `-- then.js
+    |   `-- pageObjects/
+    |       |-- index.js
+    |       `-- webBookEngine.js
+    |-- features/                     ← empty legacy directory (unused)
     |-- fixtures/
-    |   `-- *.json
-    |-- pageObjects/
+    |   |-- 1x1.png
+    |   |-- example.json
+    |   `-- search-fallback-quantum-physics.json
+    |-- pageObjects/                  ← imported by support/commands.js
     |   |-- index.js
     |   `-- webBookEngine.js
-    |-- support/
-    |   |-- e2e.js
-    |   `-- commands.js
-    `-- e2e/
-        |-- common/
-        |-- features/
-        `-- pageObjects/
+    `-- support/
+        |-- e2e.js
+        `-- commands.js
 ```
 
-- `tests/cypress/features/` holds the active Gherkin feature files matched by `tests/cypress.config.cjs`.
-- `tests/cypress/common/` holds shared Cucumber step definitions.
-- `tests/cypress/fixtures/` stores stubbed API payloads and test data.
-- `tests/cypress/pageObjects/` contains the selector maps used by the custom commands.
-- `tests/cypress/support/` bootstraps Cypress and registers reusable commands.
-- `tests/cypress/e2e/` is a mirrored legacy Cypress tree that is still present in the repository.
+- `tests/cypress/e2e/features/` holds the active Gherkin feature files matched by `specPattern` in `cypress.config.cjs`.
+- `tests/cypress/e2e/common/` holds the active Cucumber step definitions (given, when, then).
+- `tests/cypress/fixtures/` stores stubbed API payloads and test data used by `cy.fixture()`.
+- `tests/cypress/pageObjects/` contains the selector maps imported by `tests/cypress/support/commands.js`.
+- `tests/cypress/e2e/pageObjects/` is a mirrored copy of the same selectors kept in sync with the e2e tree.
+- `tests/cypress/support/` bootstraps Cypress and registers all reusable custom commands.
+- `tests/cypress/features/` is an empty legacy directory — it is not matched by `specPattern` and can be removed safely.
+- `tests/server/` contains server-side unit tests run via `npm run test:unit`.
+- `tests/scripts/smoke/` contains informal one-off debugging scripts for manual verification of server internals.
 
 ## Export Formats
 
@@ -249,7 +266,7 @@ The current Web-book can be exported as:
 
 Current export behavior:
 
-- PDF export uses a server-side Puppeteer pipeline (via Vite middleware at `/__pdf`). The `pdfBridge.ts` module is loaded lazily inside the middleware handler so that an absent `puppeteer` devDependency does not crash the dev or preview server on startup.
+- PDF export uses a zero-server Puppeteer pipeline (via Vite middleware) to generate high-quality server-side PDFs without crashing the browser thread.
 - HTML export preserves the rendered Web-book layout and links.
 - Word export produces a native `.docx` package with embedded chapter images and clickable internal and external links where supported.
 - The legacy print flow remains available as a simple browser fallback.
@@ -353,10 +370,9 @@ When this app is hosted inside Google AI Studio, several console messages can ap
 - `Origin trial controlled feature not enabled` warnings also come from the host environment and are not part of the Web-book engine.
 - Vite websocket errors such as `[vite] failed to connect to websocket` mean the app is being served in dev mode through an iframe proxy. The repo now auto-disables HMR when `APP_URL` looks like an AI Studio / Cloud Run deployment, and `npm start` avoids the dev websocket entirely.
 
-Important runtime notes:
+Important runtime check:
 
 - Current source from this repo uses direct Gemini browser calls plus `/api/search-fallback`.
-- The checked-in client no longer applies a hard per-request Gemini timeout (`GEMINI_REQUEST_TIMEOUT_MS = 0`), so long-running grounding and assembly requests are allowed to finish instead of aborting locally after a fixed cutoff.
 - Some AI Studio-hosted clients may still call `/api/search` or `/api/evolve`. The server now includes compatibility middleware for those legacy routes so older hosted wrappers can still function.
 - If the hosted app console shows `/api/search` or `/api/evolve` and the request still fails after redeploy, that usually means the host is still serving an older wrapper or an incomplete deployment.
 - Google AI Studio Build mode currently documents export-out workflows, but not importing a local app zip back into AI Studio as an editable project.

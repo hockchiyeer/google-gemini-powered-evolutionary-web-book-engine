@@ -2,7 +2,6 @@ import type { SearchFallbackMode, SearchFallbackOptions, SearchFallbackPayload }
 
 const SEARCH_FALLBACK_ROUTE = '/api/search-fallback';
 const FALLBACK_FETCH_ATTEMPTS = 3;
-const FALLBACK_FETCH_TIMEOUT_MS = 30000;
 
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -38,23 +37,30 @@ export async function fetchGoogleSearchFallback(
       requestUrl.searchParams.set('query', query);
       requestUrl.searchParams.set('mode', options.mode);
 
-      const response = await fetch(requestUrl.toString(), {
-        signal: AbortSignal.timeout(FALLBACK_FETCH_TIMEOUT_MS),
-      });
+      const response = await fetch(requestUrl.toString());
+      const contentType = response.headers.get('content-type') || '';
 
       if (!response.ok) {
         let errorMessage = `${modeLabel} is currently unavailable.`;
 
-        try {
-          const payload = (await response.json()) as { error?: string };
-          if (payload.error) {
-            errorMessage = payload.error;
+        if (contentType.includes('application/json')) {
+          try {
+            const payload = (await response.json()) as { error?: string };
+            if (payload.error) {
+              errorMessage = payload.error;
+            }
+          } catch {
+            // Ignore JSON parse failures and use the default message.
           }
-        } catch {
-          // Ignore JSON parse failures and use the default message.
         }
 
         throw new Error(errorMessage);
+      }
+
+      if (!contentType.includes('application/json')) {
+        const text = await response.text().catch(() => '');
+        const snippet = text.slice(0, 200).replace(/<[^>]+>/g, ' ').trim();
+        throw new Error(`${modeLabel} returned an invalid response format (expected JSON, got ${contentType}). ${snippet ? `Preview: ${snippet}` : ''}`);
       }
 
       return (await response.json()) as SearchFallbackPayload;

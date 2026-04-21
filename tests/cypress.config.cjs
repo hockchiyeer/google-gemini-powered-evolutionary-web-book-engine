@@ -36,6 +36,10 @@ module.exports = defineConfig({
   screenshotOnRunFailure: true,
   video: false,
   chromeWebSecurity: false,
+  defaultCommandTimeout: 90000,
+  pageLoadTimeout: 60000,
+  responseTimeout: 90000,
+  requestTimeout: 90000,
   failOnStatusCode: false,
   reporter: 'cypress-multi-reporters',
   reporterOptions: {
@@ -67,7 +71,7 @@ module.exports = defineConfig({
       return config;
     },
     specPattern: [
-      "tests/cypress/features/**/*.feature",
+      "tests/cypress/e2e/features/**/*.feature",
       "**/*.spec.js"
     ],
     supportFile: "tests/cypress/support/e2e.js",

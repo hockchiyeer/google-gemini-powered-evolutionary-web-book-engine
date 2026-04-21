@@ -23,3 +23,7 @@ When("I enter {string} in {string} on {string}", (value, locator_name, page_name
 When("I select {string} in {string} drop-down list on {string}", (value, locator_name, page_name) => {
   cy.selectByValue(value, locator_name, page_name);
 });
+
+When("I select fallback mode {string}", (modeValue) => {
+  cy.selectFallbackMode(modeValue);
+});

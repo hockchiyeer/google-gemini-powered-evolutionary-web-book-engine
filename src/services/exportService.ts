@@ -62,23 +62,40 @@ export async function exportWebBookToWord(webBook: WebBook): Promise<void> {
 
 export async function exportWebBookToPdf(webBook: WebBook): Promise<void> {
   const { clone } = await prepareExportContent(getWebBookElement());
-  const response = await fetch('/__pdf', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      html: buildPdfHtmlDocument(webBook, clone.outerHTML),
-      fileName: webBook.topic.replace(/\s+/g, '_'),
-    }),
-  });
+  
+  // Increase fetch timeout for PDF generation to 5 minutes
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes
 
-  if (!response.ok) {
-    throw new Error('PDF export failed');
+  try {
+    const response = await fetch('/__pdf', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        html: buildPdfHtmlDocument(webBook, clone.outerHTML),
+        fileName: webBook.topic.replace(/\s+/g, '_'),
+      }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      throw new Error(`PDF export failed: ${errorText}`);
+    }
+
+    const blob = await response.blob();
+    downloadBlob(blob, getExportFileName(webBook.topic, 'pdf'));
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error('PDF export timed out. The document might be too large or contain slow-loading assets.');
+    }
+    throw error;
   }
-
-  const blob = await response.blob();
-  downloadBlob(blob, getExportFileName(webBook.topic, 'pdf'));
 }
 
 export async function printWebBook(webBook: WebBook): Promise<void> {

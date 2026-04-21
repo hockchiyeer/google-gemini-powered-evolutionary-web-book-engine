@@ -35,3 +35,7 @@ Then("I verify the text {string} is not displayed on the webpage", (text) => {
   let expectedText = Cypress.env(text) || text;
   cy.pageNotContainsText(expectedText);
 });
+
+Then("I should see fallback mode is set to {string}", (modeValue) => {
+  cy.verifyFallbackModeSelected(modeValue);
+});

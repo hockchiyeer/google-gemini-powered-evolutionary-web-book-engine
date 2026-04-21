@@ -160,7 +160,7 @@ function resolveGeminiApiKey(): string | undefined {
 
   // Keep this direct reference in the client bundle so Google AI Studio can
   // recognize its placeholder and proxy Gemini requests without exposing a key.
-  const aiStudioProcessEnvApiKey = process.env.GEMINI_API_KEY;
+  const aiStudioProcessEnvApiKey = typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : undefined;
   const candidates = [
     import.meta.env.VITE_GEMINI_API_KEY,
     globalScope.__APP_ENV__?.GEMINI_API_KEY,
@@ -476,7 +476,7 @@ function classifyGeminiError(error: unknown): SearchFallbackReason | null {
   if (matchesAnyPattern(message, GEMINI_SERVICE_PATTERNS) || status === 500 || status === 502 || status === 503) {
     return 'service_unavailable';
   }
-  if (/\bgemini(?:\s+api)?\b/i.test(message)) {
+  if (/\bgemini(?:\s+api)?\b/i.test(message) || message.includes('no renderable chapters')) {
     return 'network_unreachable';
   }
   return null;
@@ -1362,8 +1362,8 @@ type AssemblySourceContext = {
 };
 
 function scoreAssemblySourceRelevance(source: AssemblySourceContext, chapterQuery: string): number {
-  const definitionSummary = source.definitions.map((definition) => `${definition.term} ${definition.description}`).join(' ');
-  const subTopicSummary = source.subTopics.map((subTopic) => `${subTopic.title} ${subTopic.summary}`).join(' ');
+  const definitionSummary = (source.definitions || []).map((definition) => `${definition.term} ${definition.description}`).join(' ');
+  const subTopicSummary = (source.subTopics || []).map((subTopic) => `${subTopic.title} ${subTopic.summary}`).join(' ');
 
   return (
     (calculateTextSimilarity(source.title, chapterQuery) * 0.45) +
@@ -1481,8 +1481,8 @@ async function assembleWebBookWithGemini(optimalPopulation: WebPageGenotype[], t
         contents: `Topic: ${topic}. Chapter: ${chapterOutline.title}. Focus: ${chapterOutline.focus}. Source evidence: ${JSON.stringify(supportingSources)}.
         Write a comprehensive, high-quality long-form chapter of 900-1200 words arranged in 7-9 paragraphs, with enough substance to fill three narrative Web-book pages before the glossary.
         Synthesize at least three distinct source perspectives, noting agreements, tradeoffs, chronology, or practical implications where appropriate.
-        Also provide at least 5 detailed definitions, including these terms when relevant: ${chapterOutline.terms.join(', ')}.
-        And provide 3-5 detailed analyses for the sub-topics: ${chapterOutline.subTopicTitles.join(', ')}.
+        Also provide at least 5 detailed definitions, including these terms when relevant: ${(chapterOutline.terms || []).join(', ')}.
+        And provide 3-5 detailed analyses for the sub-topics: ${(chapterOutline.subTopicTitles || []).join(', ')}.
         Ground the chapter in the supplied source evidence, synthesizing it into a cohesive explanation rather than copying snippets.`,
         config: {
           systemInstruction: 'You are an expert technical writer. Output valid JSON only. Be detailed, authoritative, and academic in tone. Use only the supplied source evidence, do not invent facts, and explicitly preserve nuance when sources describe limitations or disagreements. Ensure all definitions and sub-topic analyses are meaningful, human-readable, relevant to the chapter, and tied to the strongest supporting source. The prose must feel substantial enough for three narrative pages without padding or repetition. Strictly avoid generating random numbers, long strings of digits, or meaningless placeholder text.',
@@ -2396,8 +2396,9 @@ function createFallbackWebBook(
   );
 
   if (!hasRenderableChapters(finalChapters)) {
+    const reason = fallbackReason ? ` (Reason: ${fallbackReason})` : '';
     throw new Error(
-      `Fallback search did not yield enough renderable external evidence to assemble a Web-book for "${topic}".`
+      `Web-book assembly failed: Neither Gemini nor live search fallback could yield enough renderable content for "${topic}".${reason}`
     );
   }
 
@@ -2446,16 +2447,13 @@ export async function assembleWebBook(
   } catch (error) {
     const fallbackReason = classifyGeminiError(error);
     const incompleteGeminiOutput = isGeminiOutputIncomplete(error);
-    if (!fallbackReason && !incompleteGeminiOutput) {
-      if (options.mode === 'off') {
+    const isFallbackAllowed = options.mode === 'google' || options.mode === 'duckduckgo' || options.mode === 'google_duckduckgo';
+
+    if (!isFallbackAllowed || (!fallbackReason && !incompleteGeminiOutput)) {
+      if (options.mode === 'off' || !isFallbackAllowed) {
         throw buildGeminiOnlyModeError(error);
       }
-
       throw error;
-    }
-
-    if (options.mode === 'off') {
-      throw buildGeminiOnlyModeError(error);
     }
 
     let fallbackPayload = context?.fallbackPayload;

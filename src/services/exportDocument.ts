@@ -161,9 +161,9 @@ export async function prepareExportContent(root: HTMLElement): Promise<PreparedE
   clone.querySelectorAll(EXPORT_CLEANUP_SELECTOR).forEach((node) => node.remove());
 
   const images = Array.from(clone.querySelectorAll('img'));
-  for (const image of images) {
-    await inlineImageForExport(image as HTMLImageElement);
-  }
+  
+  // Inline images in parallel to speed up export preparation
+  await Promise.all(images.map((image) => inlineImageForExport(image as HTMLImageElement)));
 
   return {
     clone,
@@ -171,22 +171,139 @@ export async function prepareExportContent(root: HTMLElement): Promise<PreparedE
   };
 }
 
+// Compact inline Tailwind utility CSS used by the PDF shell.
+// This replaces the cdn.tailwindcss.com Play CDN which crashes Puppeteer
+// ("Target closed") because it runs DOM-scanning JS in headless Chrome.
+const PDF_TAILWIND_INLINE_CSS = `
+  *, *::before, *::after { box-sizing: border-box; }
+  .font-serif { font-family: 'Playfair Display', ui-serif, Georgia, serif; }
+  .font-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+  .font-sans { font-family: 'Inter', ui-sans-serif, system-ui, sans-serif; }
+  .font-bold { font-weight: 700; } .font-medium { font-weight: 500; } .font-black { font-weight: 900; }
+  .italic { font-style: italic; } .uppercase { text-transform: uppercase; } .capitalize { text-transform: capitalize; }
+  .text-\\[9px\\] { font-size: 9px; } .text-\\[10px\\] { font-size: 10px; } .text-\\[11px\\] { font-size: 11px; }
+  .text-xs  { font-size: .75rem;  line-height: 1rem;    }
+  .text-sm  { font-size: .875rem; line-height: 1.25rem; }
+  .text-base{ font-size: 1rem;    line-height: 1.5rem;  }
+  .text-lg  { font-size: 1.125rem;line-height: 1.75rem; }
+  .text-xl  { font-size: 1.25rem; line-height: 1.75rem; }
+  .text-2xl { font-size: 1.5rem;  line-height: 2rem;    }
+  .text-3xl { font-size: 1.875rem;line-height: 2.25rem; }
+  .text-4xl { font-size: 2.25rem; line-height: 2.5rem;  }
+  .text-5xl { font-size: 3rem;    line-height: 1;       }
+  .text-6xl { font-size: 3.75rem; line-height: 1;       }
+  .leading-none { line-height: 1; } .leading-tight { line-height: 1.25; } .leading-snug { line-height: 1.375; }
+  .leading-normal { line-height: 1.5; } .leading-relaxed { line-height: 1.625; } .leading-loose { line-height: 2; }
+  .tracking-tighter { letter-spacing: -0.05em; } .tracking-tight { letter-spacing: -0.025em; }
+  .tracking-wide { letter-spacing: 0.025em; } .tracking-wider { letter-spacing: 0.05em; } .tracking-widest { letter-spacing: 0.1em; }
+  .text-white { color: #fff; } .text-black { color: #000; }
+  .text-gray-400 { color: #9ca3af; } .text-gray-500 { color: #6b7280; } .text-gray-600 { color: #4b5563; }
+  .text-gray-700 { color: #374151; } .text-gray-800 { color: #1f2937; } .text-gray-900 { color: #111827; }
+  .text-red-600 { color: #dc2626; } .text-red-700 { color: #b91c1c; } .text-red-800 { color: #991b1b; }
+  .text-green-600 { color: #16a34a; } .text-green-700 { color: #15803d; } .text-green-800 { color: #166534; }
+  .text-blue-600 { color: #2563eb; } .text-amber-700 { color: #b45309; } .text-amber-900 { color: #78350f; }
+  .bg-white { background-color: #fff; } .bg-black { background-color: #000; }
+  .bg-gray-50 { background-color: #f9fafb; } .bg-gray-100 { background-color: #f3f4f6; } .bg-gray-200 { background-color: #e5e7eb; }
+  .bg-green-100 { background-color: #dcfce7; } .bg-blue-100 { background-color: #dbeafe; }
+  .bg-red-50 { background-color: #fef2f2; } .bg-amber-50 { background-color: #fffbeb; }
+  .border   { border-width: 1px;  border-style: solid; }
+  .border-0 { border-width: 0; }
+  .border-2 { border-width: 2px; border-style: solid; }
+  .border-t { border-top-width:    1px; border-top-style:    solid; }
+  .border-b { border-bottom-width: 1px; border-bottom-style: solid; }
+  .border-l { border-left-width:   1px; border-left-style:   solid; }
+  .border-r { border-right-width:  1px; border-right-style:  solid; }
+  .border-l-2 { border-left-width: 2px; border-left-style: solid; }
+  .border-black { border-color: #000; } .border-white { border-color: #fff; }
+  .border-gray-200 { border-color: #e5e7eb; } .border-gray-300 { border-color: #d1d5db; }
+  .border-gray-800 { border-color: #1f2937; } .border-amber-200 { border-color: #fde68a; }
+  .border-red-200   { border-color: #fecaca; } .border-red-400 { border-color: #f87171; }
+  .border-amber-300 { border-color: #fcd34d; }
+  .rounded    { border-radius: .25rem; } .rounded-sm { border-radius: .125rem; }
+  .rounded-lg { border-radius: .5rem;  } .rounded-full { border-radius: 9999px; }
+  .flex { display: flex; } .inline-flex { display: inline-flex; } .grid { display: grid; }
+  .block { display: block; } .inline { display: inline; } .inline-block { display: inline-block; } .hidden { display: none; }
+  .flex-col { flex-direction: column; } .flex-row { flex-direction: row; } .flex-wrap { flex-wrap: wrap; }
+  .flex-1 { flex: 1 1 0%; } .shrink-0 { flex-shrink: 0; } .grow { flex-grow: 1; }
+  .items-start { align-items: flex-start; } .items-center { align-items: center; } .items-end { align-items: flex-end; }
+  .justify-start { justify-content: flex-start; } .justify-center { justify-content: center; }
+  .justify-end { justify-content: flex-end; } .justify-between { justify-content: space-between; }
+  .gap-1 { gap: .25rem; } .gap-2 { gap: .5rem; } .gap-3 { gap: .75rem; } .gap-4 { gap: 1rem; }
+  .gap-6 { gap: 1.5rem; } .gap-8 { gap: 2rem; } .gap-12 { gap: 3rem; }
+  .w-full { width: 100%; } .w-1\/2 { width: 50%; } .h-full { height: 100%; }
+  .max-w-none { max-width: none; } .max-w-sm { max-width: 24rem; } .max-w-md { max-width: 28rem; }
+  .max-w-lg { max-width: 32rem; } .max-w-xl { max-width: 36rem; } .max-w-2xl { max-width: 42rem; }
+  .max-w-3xl { max-width: 48rem; } .max-w-4xl { max-width: 56rem; } .max-w-5xl { max-width: 64rem; }
+  .max-w-6xl { max-width: 72rem; } .max-w-7xl { max-width: 80rem; }
+  .mx-auto { margin-left: auto; margin-right: auto; } .my-auto { margin-top: auto; margin-bottom: auto; }
+  .m-0{margin:0} .mt-0{margin-top:0} .mt-1{margin-top:.25rem} .mt-2{margin-top:.5rem} .mt-3{margin-top:.75rem}
+  .mt-4{margin-top:1rem} .mt-6{margin-top:1.5rem} .mt-8{margin-top:2rem} .mt-10{margin-top:2.5rem}
+  .mb-0{margin-bottom:0} .mb-1{margin-bottom:.25rem} .mb-2{margin-bottom:.5rem} .mb-3{margin-bottom:.75rem}
+  .mb-4{margin-bottom:1rem} .mb-6{margin-bottom:1.5rem} .mb-8{margin-bottom:2rem} .mb-10{margin-bottom:2.5rem}
+  .ml-auto{margin-left:auto} .mr-auto{margin-right:auto} .mr-4{margin-right:1rem}
+  .p-0{padding:0} .p-1{padding:.25rem} .p-2{padding:.5rem} .p-3{padding:.75rem} .p-4{padding:1rem}
+  .p-6{padding:1.5rem} .p-8{padding:2rem} .p-10{padding:2.5rem} .p-12{padding:3rem} .p-16{padding:4rem} .p-20{padding:5rem}
+  .px-1{padding-left:.25rem;padding-right:.25rem} .px-2{padding-left:.5rem;padding-right:.5rem}
+  .px-3{padding-left:.75rem;padding-right:.75rem} .px-4{padding-left:1rem;padding-right:1rem}
+  .px-6{padding-left:1.5rem;padding-right:1.5rem} .px-8{padding-left:2rem;padding-right:2rem}
+  .py-0\.5{padding-top:.125rem;padding-bottom:.125rem} .py-1{padding-top:.25rem;padding-bottom:.25rem}
+  .py-2{padding-top:.5rem;padding-bottom:.5rem} .py-3{padding-top:.75rem;padding-bottom:.75rem}
+  .py-4{padding-top:1rem;padding-bottom:1rem}
+  .pt-2{padding-top:.5rem} .pt-4{padding-top:1rem} .pt-6{padding-top:1.5rem} .pt-8{padding-top:2rem}
+  .pb-1{padding-bottom:.25rem} .pb-2{padding-bottom:.5rem} .pb-4{padding-bottom:1rem} .pb-20{padding-bottom:5rem}
+  .pl-2{padding-left:.5rem} .pl-4{padding-left:1rem} .pr-4{padding-right:1rem}
+  .overflow-hidden{overflow:hidden} .overflow-auto{overflow:auto} .overflow-x-hidden{overflow-x:hidden}
+  .truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .break-words{word-break:break-word;overflow-wrap:break-word} .whitespace-pre-wrap{white-space:pre-wrap}
+  .relative{position:relative} .absolute{position:absolute} .top-0{top:0} .right-0{right:0}
+  .opacity-30{opacity:.3} .opacity-40{opacity:.4} .opacity-50{opacity:.5} .opacity-60{opacity:.6} .opacity-100{opacity:1}
+  .space-y-2>*+*{margin-top:.5rem} .space-y-4>*+*{margin-top:1rem}
+  .space-y-6>*+*{margin-top:1.5rem} .space-y-8>*+*{margin-top:2rem}
+  .list-disc{list-style-type:disc} .list-inside{list-style-position:inside}
+  .min-w-0{min-width:0} .grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .shadow{box-shadow:0 1px 3px 0 rgba(0,0,0,.1)}
+  a { color: inherit; text-decoration: underline; }
+`;
+
+// PDF-specific HTML shell.
+// Does NOT use the Tailwind CDN Play script (crashes Puppeteer via "Target closed").
+// Sets data-render-ready="true" directly on <html> so Puppeteer's waitForSelector
+// resolves immediately without any JavaScript execution.
+function buildPdfHtmlShell(title: string, htmlContent: string, extraCss: string): string {
+  return `<!DOCTYPE html>
+<html data-render-ready="true">
+<head>
+  <meta charset="utf-8">
+  <title>${title}</title>
+  ${EXPORT_FONT_LINKS}
+  <style>${PDF_TAILWIND_INLINE_CSS}</style>
+  <style>${extraCss}</style>
+</head>
+<body>
+  ${htmlContent}
+</body>
+</html>`;
+}
+
+
+// buildHtmlShell is used by standalone HTML export and the print/save path.
+// Those open in a real browser where the Tailwind CDN Play script works fine.
+// PDF export uses buildPdfHtmlShell instead (no CDN, no JS, instant ready signal).
 function buildHtmlShell(title: string, htmlContent: string, headContent: string, bodyAttributes = ''): string {
-  return `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <title>${title}</title>
-      <script src="https://cdn.tailwindcss.com"></script>
-      ${EXPORT_FONT_LINKS}
-      ${headContent}
-    </head>
-    <body${bodyAttributes}>
-      ${htmlContent}
-    </body>
-    </html>
-  `;
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>${title}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  ${EXPORT_FONT_LINKS}
+  ${headContent}
+</head>
+<body${bodyAttributes}>
+  ${htmlContent}
+</body>
+</html>`;
 }
 
 export function buildStandaloneHtmlDocument(webBook: WebBook, htmlContent: string): string {
@@ -215,53 +332,48 @@ export function buildStandaloneHtmlDocument(webBook: WebBook, htmlContent: strin
 }
 
 export function buildPdfHtmlDocument(webBook: WebBook, htmlContent: string): string {
-  return buildHtmlShell(
+  return buildPdfHtmlShell(
     getWebBookDocumentTitle(webBook.topic),
     htmlContent,
     `
-      <style>
-        body {
-          font-family: 'Inter', sans-serif;
-          margin: 0;
-          padding: 0;
-          background: white;
-        }
-        .font-serif { font-family: 'Playfair Display', serif; }
-        .font-mono { font-family: 'JetBrains Mono', monospace; }
-        * {
-          box-sizing: border-box;
-          overflow-wrap: break-word;
-        }
-        .web-book-container {
-          width: 100%;
-          max-width: none;
-          margin: 0;
-          padding: 0;
-        }
-        .web-book-page {
-          break-after: page;
-          page-break-after: always;
-          padding: 24mm;
-        }
-        .web-book-page:last-child {
-          break-after: auto;
-          page-break-after: auto;
-        }
-        h1, h2, h3, h4 {
-          break-after: avoid;
-        }
-        p, li {
-          break-inside: avoid;
-        }
-        img {
-          max-width: 100%;
-          break-inside: avoid;
-        }
-        @page {
-          size: A4;
-          margin: 0;
-        }
-      </style>
+      body {
+        font-family: 'Inter', sans-serif;
+        margin: 0;
+        padding: 0;
+        background: white;
+      }
+      * {
+        overflow-wrap: break-word;
+      }
+      .web-book-container {
+        width: 100%;
+        max-width: none;
+        margin: 0;
+        padding: 0;
+      }
+      .web-book-page {
+        break-after: page;
+        page-break-after: always;
+        padding: 24mm;
+      }
+      .web-book-page:last-child {
+        break-after: auto;
+        page-break-after: auto;
+      }
+      h1, h2, h3, h4 {
+        break-after: avoid;
+      }
+      p, li {
+        break-inside: avoid;
+      }
+      img {
+        max-width: 100%;
+        break-inside: avoid;
+      }
+      @page {
+        size: A4;
+        margin: 0;
+      }
     `
   );
 }

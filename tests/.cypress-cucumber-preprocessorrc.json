@@ -1,7 +1,7 @@
 {
   "stepDefinitions": [
-    "tests/cypress/common/*.js",
-    "tests/cypress/common/**/*.js"
+    "tests/cypress/e2e/common/*.js",
+    "tests/cypress/e2e/common/**/*.js"
   ],
   "html": {
     "enabled": true,

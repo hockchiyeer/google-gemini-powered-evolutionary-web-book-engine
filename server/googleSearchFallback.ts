@@ -80,6 +80,21 @@ const NAVIGATION_NOISE = [
   'previous',
   'cached',
   'translate this page',
+  'settings',
+  'privacy',
+  'terms',
+  'advertising',
+  'business',
+  'about',
+  'how search works',
+  'search help',
+  'send feedback',
+  'verbatim',
+  'past hour',
+  'past 24 hours',
+  'past week',
+  'past month',
+  'past year',
 ];
 
 const LEGACY_EVOLUTION_WEIGHTS = { alpha: 0.5, beta: 0.3, gamma: 0.2 };
@@ -272,12 +287,12 @@ function isExternalResultUrl(urlString: string): boolean {
 }
 
 function isLikelyResultTitle(title: string): boolean {
-  const normalized = title.toLowerCase();
-  if (title.length < 12 || title.length > 180) return false;
-  if (NAVIGATION_NOISE.some((noise) => normalized === noise || normalized.startsWith(`${noise} `))) {
+  const normalized = title.toLowerCase().trim();
+  if (normalized.length < 2 || normalized.length > 300) return false;
+  if (NAVIGATION_NOISE.some((noise) => normalized === noise || normalized.startsWith(`${noise} `) || normalized.endsWith(` ${noise}`))) {
     return false;
   }
-  return /[a-z]{3}/i.test(title);
+  return /[a-z0-9]/i.test(normalized);
 }
 
 function extractSnippetFromContext(contextHtml: string, title: string): string {
@@ -286,8 +301,20 @@ function extractSnippetFromContext(contextHtml: string, title: string): string {
     /<div[^>]*class="[^"]*BNeawe[^"]*s3v9rd[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
     /<span[^>]*class="[^"]*aCOpRe[^"]*"[^>]*>([\s\S]*?)<\/span>/i,
     /<div[^>]*data-sncf="[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+    /<div[^>]*class="[^"]*MUFwZ[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+    /<div[^>]*class="[^"]*yD979[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+    /<div[^>]*class="[^"]*K8v00d[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+    /<div[^>]*class="[^"]*lEBKkf[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+    /<div[^>]*class="[^"]*y67Ybd[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+    /<div[^>]*class="[^"]*st[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+    /<div[^>]*class="[^"]*s[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+    /<span[^>]*class="[^"]*st[^"]*"[^>]*>([\s\S]*?)<\/span>/i,
+    /<div[^>]*class="[^"]*kb0Odf[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+    /<div[^>]*class="[^"]*L5V62d[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+    /<div[^>]*class="[^"]*wDY59b[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
     /<a[^>]*class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>/i,
     /<div[^>]*class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+    /<div[^>]*class="[^"]*snippet[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
   ];
 
   for (const pattern of snippetPatterns) {
@@ -295,16 +322,21 @@ function extractSnippetFromContext(contextHtml: string, title: string): string {
     if (!match?.[1]) continue;
 
     const snippet = stripHtmlToText(match[1]);
-    if (snippet.length >= 40) {
-      return snippet.slice(0, 420);
+    if (snippet.length >= 30) {
+      return snippet.slice(0, 480);
     }
   }
 
+  // Fallback: just take the next few meaningful sentences if no specific container matches.
   const plainText = stripHtmlToText(contextHtml)
     .replace(new RegExp(title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), '')
     .trim();
 
-  return plainText.slice(0, 420);
+  if (plainText.length >= 30) {
+    return plainText.slice(0, 480);
+  }
+
+  return '';
 }
 
 function extractSearchResultsFromGoogleHtml(html: string): SearchFallbackResult[] {
@@ -327,7 +359,7 @@ function extractSearchResultsFromGoogleHtml(html: string): SearchFallbackResult[
     const contextStart = match.index + match[0].length;
     const contextHtml = html.slice(contextStart, contextStart + 3000);
     const snippet = extractSnippetFromContext(contextHtml, title);
-    if (snippet.length < 40) {
+    if (snippet.length < 30) {
       continue;
     }
 
@@ -373,7 +405,7 @@ function extractSearchResultsFromDuckDuckGoHtml(html: string): SearchFallbackRes
 
       const contextHtml = html.slice(match.index, match.index + 2800);
       const snippet = extractSnippetFromContext(contextHtml, title);
-      if (snippet.length < 40) {
+      if (snippet.length < 30) {
         continue;
       }
 
@@ -612,6 +644,16 @@ function buildSummary(query: string, aiOverview: string[], results: SearchFallba
   return `Search results for ${query} highlighted these sources: ${titles}.`;
 }
 
+export function isGoogleNoResultsPage(html: string): boolean {
+  const normalized = stripHtmlToText(html).toLowerCase();
+  return (
+    normalized.includes('did not match any documents') ||
+    normalized.includes('no results found for') ||
+    normalized.includes('try different keywords') ||
+    normalized.includes('check your spelling')
+  );
+}
+
 export function isGoogleBlockedPage(html: string): boolean {
   const normalized = stripHtmlToText(html).toLowerCase();
   return (
@@ -619,14 +661,19 @@ export function isGoogleBlockedPage(html: string): boolean {
     normalized.includes('our systems have detected unusual traffic') ||
     normalized.includes('detected unusual traffic') ||
     normalized.includes('not a robot') ||
-    normalized.includes('please click here if you are not redirected within a few seconds')
+    normalized.includes('please click here if you are not redirected within a few seconds') ||
+    normalized.includes('captcha') ||
+    normalized.includes('recaptcha') ||
+    normalized.includes('security check') ||
+    normalized.includes('verify you are a human') ||
+    normalized.includes('automated queries') ||
+    normalized.includes('support.google.com/websearch/answer/86640')
   );
 }
 
 async function fetchSearchHtml(url: URL, label: string, headers: Record<string, string> = DEFAULT_HEADERS): Promise<SearchFetchResult> {
   const response = await fetch(url, {
     headers,
-    signal: AbortSignal.timeout(15000),
   });
 
   return {
@@ -714,7 +761,6 @@ async function fetchDuckDuckGoLiteAttempt(query: string, labelSuffix: string): P
         'user-agent': DEFAULT_HEADERS['user-agent'],
       },
       body: body.toString(),
-      signal: AbortSignal.timeout(15000),
     });
 
     return {
@@ -816,7 +862,6 @@ async function fetchDuckDuckGoInstantAnswer(query: string): Promise<{ status: nu
         'cache-control': 'no-cache',
         'user-agent': DEFAULT_HEADERS['user-agent'],
       },
-      signal: AbortSignal.timeout(15000),
     });
 
     const payload = await response.json();
@@ -832,7 +877,8 @@ async function fetchDuckDuckGoInstantAnswer(query: string): Promise<{ status: nu
 function buildDiagnostics(fetches: SearchFetchResult[], resultsCount: number, provider: SearchFallbackProvider): string[] {
   const diagnostics = fetches.map((attempt) => {
     const blockedNote = provider === 'google' && isGoogleBlockedPage(attempt.html) ? ' blocked-by-google' : '';
-    return `${attempt.label}:${attempt.status}${blockedNote}`;
+    const noResultsNote = provider === 'google' && isGoogleNoResultsPage(attempt.html) ? ' no-results' : '';
+    return `${attempt.label}:${attempt.status}${blockedNote}${noResultsNote}`;
   });
 
   diagnostics.push(`${provider}-results:${resultsCount}`);
@@ -1395,7 +1441,14 @@ export function createApiCompatibilityMiddleware() {
 
       next();
     } catch (error) {
-      next(error);
+      console.error('API Middleware Error:', error);
+      if (!response.headersSent) {
+        sendJson(response, 500, {
+          error: error instanceof Error ? error.message : 'Internal server error in search fallback middleware'
+        });
+      } else {
+        next(error);
+      }
     }
   };
 }

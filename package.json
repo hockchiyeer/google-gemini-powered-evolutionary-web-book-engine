@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "vite --configLoader native --port=3000 --host=0.0.0.0",
-    "dev:test": "vite --configLoader native --port=3001 --host=0.0.0.0",
+    "dev:test": "vite --configLoader native --port=3000 --host=0.0.0.0",
     "start": "node ./scripts/start-preview.mjs",
     "package:aistudio": "node ./scripts/package-google-ai-studio.mjs",
     "build": "vite build",
@@ -17,7 +17,7 @@
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "cy:open": "cypress open --config-file tests/cypress.config.cjs",
-    "cy:run:local": "node tests/scripts/run-cypress-with-reports.cjs --environment DEV --baseUrl http://localhost:3001 --headed",
+    "cy:run:local": "node tests/scripts/run-cypress-with-reports.cjs --environment DEV --baseUrl http://localhost:3000 --headed",
     "cy:run:qa": "node tests/scripts/run-cypress-with-reports.cjs --environment QA --headed",
     "cy:run:prod": "node tests/scripts/run-cypress-with-reports.cjs --environment PROD --headed",
     "test:local": "node tests/scripts/run-local-cypress.cjs",
