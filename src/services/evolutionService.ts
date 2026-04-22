@@ -38,7 +38,7 @@ export interface SearchAndExtractResult {
   fallbackPayload?: SearchFallbackPayload;
 }
 
-const GEMINI_SEARCH_MODEL = 'gemini-3-flash-preview';
+const GEMINI_SEARCH_MODEL = 'gemini-2.5-flash';
 const GEMINI_MODEL = 'gemini-2.5-flash';
 const AI_STUDIO_GEMINI_API_KEY_PLACEHOLDER = 'process.env.GEMINI_API_KEY';
 export const CONSOLIDATED_SOURCE_POOL_SIZE = 48;
