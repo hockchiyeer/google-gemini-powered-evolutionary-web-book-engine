@@ -4,6 +4,33 @@ import { getWebBookDocumentTitle } from './documentTitle';
 
 const EXPORT_CLEANUP_SELECTOR = 'button, .print\\:hidden, [data-html2canvas-ignore]';
 const EXPORT_FONT_LINKS = '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400;1,700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">';
+const EXPORT_RENDER_READY_SCRIPT = `
+  (() => {
+    const markReady = () => {
+      const finalize = () => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            document.documentElement.dataset.renderReady = 'true';
+          });
+        });
+      };
+
+      if ('fonts' in document && document.fonts?.ready) {
+        document.fonts.ready.then(finalize).catch(finalize);
+        return;
+      }
+
+      finalize();
+    };
+
+    if (document.readyState === 'complete') {
+      markReady();
+      return;
+    }
+
+    window.addEventListener('load', markReady, { once: true });
+  })();
+`;
 
 export interface PreparedExportContent {
   clone: HTMLElement;
@@ -266,10 +293,9 @@ const PDF_TAILWIND_INLINE_CSS = `
   a { color: inherit; text-decoration: underline; }
 `;
 
-// PDF-specific HTML shell.
-// Does NOT use the Tailwind CDN Play script (crashes Puppeteer via "Target closed").
-// Sets data-render-ready="true" directly on <html> so Puppeteer's waitForSelector
-// resolves immediately without any JavaScript execution.
+// Legacy PDF-specific HTML shell retained as a fallback option.
+// The active high-res PDF path now reuses the print HTML shell so it can match
+// the browser's print/save-as-PDF styling more closely.
 function buildPdfHtmlShell(title: string, htmlContent: string, extraCss: string): string {
   return `<!DOCTYPE html>
 <html data-render-ready="true">
@@ -287,9 +313,9 @@ function buildPdfHtmlShell(title: string, htmlContent: string, extraCss: string)
 }
 
 
-// buildHtmlShell is used by standalone HTML export and the print/save path.
-// Those open in a real browser where the Tailwind CDN Play script works fine.
-// PDF export uses buildPdfHtmlShell instead (no CDN, no JS, instant ready signal).
+// buildHtmlShell is used by standalone HTML export, the print/save path, and
+// the high-res PDF path. The inline readiness script gives Puppeteer a stable
+// signal once external styles and fonts have finished loading.
 function buildHtmlShell(title: string, htmlContent: string, headContent: string, bodyAttributes = ''): string {
   return `<!DOCTYPE html>
 <html>
@@ -302,6 +328,7 @@ function buildHtmlShell(title: string, htmlContent: string, headContent: string,
 </head>
 <body${bodyAttributes}>
   ${htmlContent}
+  <script>${EXPORT_RENDER_READY_SCRIPT}</script>
 </body>
 </html>`;
 }
@@ -332,50 +359,9 @@ export function buildStandaloneHtmlDocument(webBook: WebBook, htmlContent: strin
 }
 
 export function buildPdfHtmlDocument(webBook: WebBook, htmlContent: string): string {
-  return buildPdfHtmlShell(
-    getWebBookDocumentTitle(webBook.topic),
-    htmlContent,
-    `
-      body {
-        font-family: 'Inter', sans-serif;
-        margin: 0;
-        padding: 0;
-        background: white;
-      }
-      * {
-        overflow-wrap: break-word;
-      }
-      .web-book-container {
-        width: 100%;
-        max-width: none;
-        margin: 0;
-        padding: 0;
-      }
-      .web-book-page {
-        break-after: page;
-        page-break-after: always;
-        padding: 24mm;
-      }
-      .web-book-page:last-child {
-        break-after: auto;
-        page-break-after: auto;
-      }
-      h1, h2, h3, h4 {
-        break-after: avoid;
-      }
-      p, li {
-        break-inside: avoid;
-      }
-      img {
-        max-width: 100%;
-        break-inside: avoid;
-      }
-      @page {
-        size: A4;
-        margin: 0;
-      }
-    `
-  );
+  // Reuse the print shell so the server-side PDF matches the browser print
+  // dialog output, including Tailwind arbitrary values and print media rules.
+  return buildPrintHtmlDocument(webBook, htmlContent);
 }
 
 export function buildPrintHtmlDocument(webBook: WebBook, htmlContent: string): string {

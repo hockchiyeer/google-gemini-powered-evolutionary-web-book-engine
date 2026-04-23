@@ -440,11 +440,21 @@ function repairTruncatedJSON(jsonString: string): string {
 }
 
 function parseJsonResponse<T>(rawText: string, fallbackMessage: string): T {
+  let cleanText = rawText.trim();
+  const match = cleanText.match(/(?:```(?:json)?\n)?([\s\S]*?)(?:\n```)?$/i);
+  if (match && match[1]) {
+    cleanText = match[1].trim();
+  }
+
+  if (cleanText.startsWith('```')) {
+    cleanText = cleanText.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
+  }
+
   try {
-    return JSON.parse(rawText) as T;
+    return JSON.parse(cleanText) as T;
   } catch {
     try {
-      return JSON.parse(repairTruncatedJSON(rawText)) as T;
+      return JSON.parse(repairTruncatedJSON(cleanText)) as T;
     } catch {
       console.error('Failed to parse model JSON:', rawText);
       throw new Error(fallbackMessage);
@@ -1113,46 +1123,9 @@ async function searchAndExtractWithGemini(query: string): Promise<SearchAndExtra
     For each source report: its URL, title, a content summary (3+ sentences), key definitions,
     salient sub-topics, an informative value score (0-1), and an authority score (0-1).`,
     config: {
-      systemInstruction: 'You are a precise data extractor. Use Google Search to find real, credible, domain-diverse sources. Output valid JSON only. Extract only real, meaningful definitions and sub-topics from the search results. Do not generate placeholder text, random numbers, or gibberish. If no meaningful definitions are found for a source, return an empty array.',
+      systemInstruction: 'You are a precise data extractor. Use Google Search to find real, credible, domain-diverse sources. Output valid JSON only. The JSON must be an array of objects. Each object must contain: "url" (string), "title" (string), "content" (string), "definitions" (array of { "term": string, "description": string }), "subTopics" (array of { "title": string, "summary": string }), "informativeScore" (number), and "authorityScore" (number). Extract only real, meaningful definitions and sub-topics from the search results. Do not generate placeholder text, random numbers, or gibberish. If no meaningful definitions are found for a source, return an empty array.',
       tools: [{ googleSearch: {} }],
-      responseMimeType: 'application/json',
       maxOutputTokens: 8192,
-      responseSchema: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            url: { type: Type.STRING },
-            title: { type: Type.STRING },
-            content: { type: Type.STRING },
-            definitions: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  term: { type: Type.STRING },
-                  description: { type: Type.STRING },
-                },
-                required: ['term', 'description'],
-              },
-            },
-            subTopics: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  title: { type: Type.STRING },
-                  summary: { type: Type.STRING },
-                },
-                required: ['title', 'summary'],
-              },
-            },
-            informativeScore: { type: Type.NUMBER },
-            authorityScore: { type: Type.NUMBER },
-          },
-          required: ['url', 'title', 'content', 'definitions', 'subTopics', 'informativeScore', 'authorityScore'],
-        },
-      },
     },
   }), GEMINI_RECONNECT_ATTEMPTS, GEMINI_RETRY_INITIAL_DELAY_MS, 'Gemini search grounding/extraction');
 
