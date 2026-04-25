@@ -150,6 +150,7 @@ function normalizeWebBook(raw: unknown, fallbackId: string): WebBook | null {
     topic: candidate.topic,
     timestamp: typeof candidate.timestamp === 'number' ? candidate.timestamp : Date.now(),
     chapters: candidate.chapters as WebBook['chapters'],
+    completedGenerations: typeof candidate.completedGenerations === 'number' ? candidate.completedGenerations : undefined,
     sourceMode: normalizeSourceMode(candidate.sourceMode),
     generationNote: typeof candidate.generationNote === 'string' ? candidate.generationNote : undefined,
     fallbackSource: normalizeFallbackSource(candidate.fallbackSource),

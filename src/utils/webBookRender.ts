@@ -35,8 +35,33 @@ const STRUCTURED_EXPORT_HEADING_PATTERN = /^(?:VISUAL CONCEPT|CORE CONCEPTS|SUB-
 const EXPORT_METADATA_LINE_PATTERN = /^(?:Generated on:|CHAPTER\s+\d+\s*:)/i;
 const JSONISH_KEY_PATTERN = /"(?:url|title|content|definitions|subTopics|summary|term|description|sourceUrl|priorityScore|informativeScore|authorityScore)"\s*:/i;
 const DOMAINISH_PATTERN = /\b(?:https?:\/\/|www\.|(?:[a-z0-9-]+\.)+(?:com|org|net|edu|gov|io|co(?:\.[a-z]{2})?|ac\.uk|co\.uk))\S*/gi;
+const URLISH_INLINE_PATTERN = /\b(?:https?:\/\/|www\.|(?:[a-z0-9-]+\.)+(?:com|org|net|edu|gov|io|co(?:\.[a-z]{2})?|ac\.uk|co\.uk)\/)\S*/gi;
 const ISO_TIMESTAMP_PATTERN = /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?\b/;
 const BULLET_LINE_PATTERN = /^(?:[-*]|\d+[.)])\s+/;
+const GENERIC_SYNTHESIS_SENTENCE_PATTERNS = [
+  /^\s*overall,\s*the available search evidence keeps\b/i,
+];
+const PROMOTIONAL_NARRATIVE_PATTERNS = [
+  /\bthrough our website\b/i,
+  /\bon our website\b/i,
+  /\bapply\b.{0,40}\b(?:online|website|form)\b/i,
+  /\be-?visa\b/i,
+  /\bwithout having to go\b/i,
+  /\bin a convenient way\b/i,
+  /\bon your own\b/i,
+];
+const GENERIC_SOURCE_SUBDOMAINS = new Set([
+  "www",
+  "en",
+  "m",
+  "mobile",
+  "home",
+  "docs",
+  "support",
+  "blog",
+  "amp",
+  "edition",
+]);
 
 type DefinitionLike = {
   term?: string | null;
@@ -110,6 +135,35 @@ function isLikelyStructuredArtifactParagraph(paragraph: string): boolean {
   return countDomainMentions(normalized) >= 2 && !/[.!?]/.test(normalized);
 }
 
+function containsNarrativeJunk(text: string): boolean {
+  return GENERIC_SYNTHESIS_SENTENCE_PATTERNS.some((pattern) => pattern.test(text))
+    || PROMOTIONAL_NARRATIVE_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+function stripInlineUrlArtifacts(text: string): string {
+  return text
+    .replace(URLISH_INLINE_PATTERN, " ")
+    .replace(ISO_TIMESTAMP_PATTERN, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function sanitizeNarrativeParagraph(paragraph: string): string {
+  const normalizedParagraph = paragraph.replace(/\s+/g, " ").trim();
+  if (!normalizedParagraph) return "";
+
+  const withoutInlineUrls = stripInlineUrlArtifacts(normalizedParagraph);
+  const sentences = splitIntoSentences(withoutInlineUrls);
+  const cleanedSentences = (sentences.length > 0 ? sentences : [withoutInlineUrls])
+    .map((sentence) => trimWrapperPunctuation(sentence.replace(/\s+/g, " ").trim()))
+    .filter(Boolean)
+    .filter((sentence) => !containsNarrativeJunk(sentence))
+    .filter((sentence) => !isLikelyStructuredArtifactLine(sentence))
+    .filter((sentence) => !isLikelyStructuredArtifactParagraph(sentence));
+
+  return cleanedSentences.join(" ").trim();
+}
+
 export function sanitizeNarrativeText(text?: string | null): string {
   const raw = typeof text === "string" ? text.replace(/\r/g, "\n").trim() : "";
   if (!raw) {
@@ -151,6 +205,7 @@ export function sanitizeNarrativeText(text?: string | null): string {
       .join(" ")
       .replace(/\s+/g, " ")
       .trim())
+    .map((paragraph) => sanitizeNarrativeParagraph(paragraph))
     .filter(Boolean)
     .filter((paragraph) => !isLikelyStructuredArtifactParagraph(paragraph));
 
@@ -317,7 +372,7 @@ export function isMeaningfulText(text?: string | null, description = ""): boolea
 
     for (let i = 0; i < words.length - 1; i += 1) {
       const phrase = `${words[i]} ${words[i + 1]}`;
-      if (phrase.length < 5) continue;
+      if (phrase.length < 12) continue;
 
       let count = 0;
       for (let j = 0; j < words.length - 1; j += 1) {
@@ -579,7 +634,18 @@ export function buildChapterRenderPlan(
 
 function buildReadableSourceTitle(url: URL): string {
   const hostname = url.hostname.replace(/^www\./, "");
-  return hostname.split(".")[0]?.replace(/[-_]/g, " ") || hostname;
+  const parts = hostname
+    .split(".")
+    .map((part) => part.trim().toLowerCase())
+    .filter(Boolean);
+  const meaningfulParts = parts.filter((part, index) => (
+    index === parts.length - 1 || !GENERIC_SOURCE_SUBDOMAINS.has(part)
+  ));
+  const label = meaningfulParts.length >= 2
+    ? meaningfulParts[meaningfulParts.length - 2]
+    : meaningfulParts[0] || parts[0] || hostname;
+
+  return label.replace(/[-_]/g, " ").trim() || hostname;
 }
 
 function isSearchResultsPage(url: URL): boolean {
@@ -600,9 +666,13 @@ export function normalizeSourceLink(source: Chapter["sourceUrls"][number]): Norm
       return null;
     }
 
-    const title = typeof source === "string"
+    const rawTitle = typeof source === "string" ? "" : (source.title?.trim() || "");
+    const title = !rawTitle
+      || rawTitle === url.toString()
+      || /^https?:\/\//i.test(rawTitle)
+      || /^www\./i.test(rawTitle)
       ? buildReadableSourceTitle(url)
-      : (source.title?.trim() || buildReadableSourceTitle(url));
+      : rawTitle;
 
     return {
       title,
@@ -634,4 +704,43 @@ export function getChapterSourceLinks(
   });
 
   return links.slice(0, maxItems);
+}
+
+export function reduceRepeatedChapterSourceReferences(chapters: WebBook["chapters"]): WebBook["chapters"] {
+  const usedUrls = new Set<string>();
+
+  return chapters.map((chapter) => {
+    const sourceUrls = Array.isArray(chapter.sourceUrls) ? chapter.sourceUrls : [];
+    const seenWithinChapter = new Set<string>();
+    const novelSources: typeof sourceUrls = [];
+    const fallbackSources: typeof sourceUrls = [];
+
+    sourceUrls.forEach((source) => {
+      const url = typeof source === "string" ? source.trim() : source?.url?.trim();
+      if (!url || seenWithinChapter.has(url)) {
+        return;
+      }
+
+      seenWithinChapter.add(url);
+      if (usedUrls.has(url)) {
+        fallbackSources.push(source);
+        return;
+      }
+
+      novelSources.push(source);
+    });
+
+    const dedupedSourceUrls = novelSources.length > 0 ? novelSources : fallbackSources.slice(0, 1);
+    dedupedSourceUrls.forEach((source) => {
+      const url = typeof source === "string" ? source.trim() : source?.url?.trim();
+      if (url) {
+        usedUrls.add(url);
+      }
+    });
+
+    return {
+      ...chapter,
+      sourceUrls: dedupedSourceUrls,
+    };
+  });
 }

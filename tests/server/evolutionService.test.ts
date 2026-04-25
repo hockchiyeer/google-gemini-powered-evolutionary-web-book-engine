@@ -3,8 +3,11 @@ import {
   GEMINI_REQUEST_TIMEOUT_MS,
   buildGeminiUserFacingErrorMessage,
 } from '../../src/services/geminiUserFacingErrors.ts';
+import { hasUsableFallbackPayloadEvidence } from '../../src/services/fallbackPayloadHeuristics.ts';
 import { parseSearchExtractionResponse } from '../../src/services/searchIntakeParser.ts';
 import {
+  normalizeSourceLink,
+  reduceRepeatedChapterSourceReferences,
   sanitizeNarrativeText,
   sanitizeStructuredLabel,
   sanitizeWebBookForPresentation,
@@ -195,6 +198,30 @@ assert.equal(
   'Comparative narrative sentences that cite multiple domains should survive prose sanitization.'
 );
 
+const urlDumpWithGenericSynthesis = `en.wikipedia.org/wiki/Indonesia en.wikipedia.org/wiki/Indonesia www.fao.org/indonesia/about-us/indonesia-at-a-glance/en www.countryreports.org/country/Indonesia.htm Overall, the available search evidence keeps indonesia - wikipedia connected to Indonesia, Indonesia at a glance, and History of Indonesia within the broader story of Indonesia.`;
+
+assert.equal(
+  sanitizeNarrativeText(urlDumpWithGenericSynthesis),
+  '',
+  'URL dumps and generic synthesis filler should not survive into chapter prose.'
+);
+
+const urlDumpWithRealNarrative = `en.wikipedia.org/wiki/Indonesia www.fao.org/indonesia/about-us/indonesia-at-a-glance/en Indonesia is the world\'s largest archipelagic state and spans thousands of islands across Southeast Asia.`;
+
+assert.equal(
+  sanitizeNarrativeText(urlDumpWithRealNarrative),
+  'Indonesia is the world\'s largest archipelagic state and spans thousands of islands across Southeast Asia.',
+  'Inline URL clusters should be stripped while retaining a meaningful narrative sentence.'
+);
+
+const promotionalFallbackNarrative = `Through our website, you can apply for the e-Visa application form online in a convenient way without having to go to apply in the Indonesia embassy on your own.`;
+
+assert.equal(
+  sanitizeNarrativeText(promotionalFallbackNarrative),
+  '',
+  'Transactional promotional fallback copy should not survive into chapter prose.'
+);
+
 const inlineHeadingNarrative = `Reference comparison across docs.
 Definitions: This line starts a legitimate section from the source page.
 The next sentence has real explanatory detail.`;
@@ -245,6 +272,95 @@ assert.equal(
     : sanitizedBook.chapters[0].sourceUrls[0].title,
   'https://example.com/raw-source',
   'Malformed source titles should fall back to the URL instead of leaking bracket artifacts.'
+);
+
+assert.equal(
+  normalizeSourceLink({
+    title: 'https://en.wikipedia.org/wiki/Indonesia',
+    url: 'https://en.wikipedia.org/wiki/Indonesia',
+  })?.title,
+  'wikipedia',
+  'Display titles for source links should fall back to a readable host label instead of a raw URL.'
+);
+
+const cumulativeSnippetFallbackPayload = {
+  query: 'Basic Topic',
+  source: 'google-search-snippets' as const,
+  provider: 'google' as const,
+  summary: 'Brief topic overview.',
+  aiOverview: [],
+  results: [
+    {
+      title: 'Foundational Concepts',
+      url: 'https://example.com/foundations',
+      domain: 'example.com',
+      snippet: 'Basic explainers describe the topic in clear terms and connect its vocabulary to the larger field.',
+    },
+    {
+      title: 'Practical Context',
+      url: 'https://example.org/context',
+      domain: 'example.org',
+      snippet: 'Reference material adds real world context, common examples, and the reasons the topic keeps appearing in introductions for new readers and students.',
+    },
+  ],
+  extractedAt: 1,
+};
+
+assert.equal(
+  hasUsableFallbackPayloadEvidence(cumulativeSnippetFallbackPayload),
+  true,
+  'Several shorter fallback snippets should count as usable evidence when they add up to enough meaningful content.'
+);
+
+const repeatedSourceCounts = reduceRepeatedChapterSourceReferences([
+  {
+    title: 'Shared references opening',
+    content: 'Meaningful narrative content for the opening chapter.',
+    definitions: [],
+    subTopics: [],
+    sourceUrls: [
+      { title: 'Alpha', url: 'https://alpha.example.org' },
+      { title: 'Beta', url: 'https://beta.example.org' },
+      { title: 'Gamma', url: 'https://gamma.example.org' },
+    ],
+    visualSeed: 'alpha',
+  },
+  {
+    title: 'Second chapter',
+    content: 'Meaningful narrative content for the second chapter.',
+    definitions: [],
+    subTopics: [],
+    sourceUrls: [
+      { title: 'Alpha duplicate', url: 'https://alpha.example.org' },
+      { title: 'Delta', url: 'https://delta.example.org' },
+      { title: 'Gamma duplicate', url: 'https://gamma.example.org' },
+    ],
+    visualSeed: 'delta',
+  },
+  {
+    title: 'Third chapter',
+    content: 'Meaningful narrative content for the third chapter.',
+    definitions: [],
+    subTopics: [],
+    sourceUrls: [
+      { title: 'Beta duplicate', url: 'https://beta.example.org' },
+      { title: 'Epsilon', url: 'https://epsilon.example.org' },
+      { title: 'Delta duplicate', url: 'https://delta.example.org' },
+    ],
+    visualSeed: 'epsilon',
+  },
+]).reduce((counts, chapter) => {
+  chapter.sourceUrls.forEach((source) => {
+    const url = typeof source === 'string' ? source : source.url;
+    counts.set(url, (counts.get(url) || 0) + 1);
+  });
+  return counts;
+}, new Map<string, number>());
+
+assert.equal(
+  [...repeatedSourceCounts.values()].some((count) => count > 1),
+  false,
+  'Fallback chapter source trails should prefer fresh URLs across the book instead of repeating the same link on multiple pages.'
 );
 
 console.log('evolutionService regression checks passed');

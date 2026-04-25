@@ -1,7 +1,7 @@
 import React from 'react';
 import { ArrowUpRight, BookOpen, CheckCircle2, Globe2, Image as ImageIcon, Layers } from 'lucide-react';
 import type { WebBook } from './types';
-import { buildChapterRenderPlan, getChapterSourceLinks, sanitizeWebBookForPresentation } from './utils/webBookRender';
+import { buildChapterRenderPlan, getChapterSourceLinks, normalizeSourceLink, sanitizeWebBookForPresentation } from './utils/webBookRender';
 
 interface WebBookViewerProps {
   webBook: WebBook;
@@ -82,7 +82,27 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
           const sourceLinks = getChapterSourceLinks(chapter, { maxItems: 8 });
           const externalSourceLinks = getChapterSourceLinks(chapter, { includeSearchResults: false, maxItems: 6 });
           const displayedSourceLinks = externalSourceLinks.length > 0 ? externalSourceLinks : sourceLinks;
-          const verificationSource = displayedSourceLinks[0] || null;
+          const readingTrailLinks = displayedSourceLinks.slice(0, 5);
+          const verificationSource = displayedSourceLinks.find(
+            (candidate) => !readingTrailLinks.some((sourceLink) => sourceLink.url === candidate.url)
+          ) || readingTrailLinks[0] || null;
+          const surfacedSourceUrls = new Set(readingTrailLinks.map((sourceLink) => sourceLink.url));
+          if (verificationSource) {
+            surfacedSourceUrls.add(verificationSource.url);
+          }
+          const auxiliarySourceUrls = new Set<string>();
+          const claimAuxiliarySourceUrl = (sourceUrl?: string) => {
+            const normalized = sourceUrl ? normalizeSourceLink({ title: sourceUrl, url: sourceUrl }) : null;
+            if (!normalized || normalized.isSearchResultsPage) {
+              return null;
+            }
+            if (surfacedSourceUrls.has(normalized.url) || auxiliarySourceUrls.has(normalized.url)) {
+              return null;
+            }
+
+            auxiliarySourceUrls.add(normalized.url);
+            return normalized.url;
+          };
           const hostnames = Array.from(new Set(displayedSourceLinks.map((sourceLink) => sourceLink.hostname))).slice(0, 6);
           const glossaryDefinitions = renderableDefinitions.slice(0, 6);
           const synthesisSubTopics = renderableSubTopics.slice(0, 3);
@@ -197,15 +217,15 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                           </div>
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                             {synthesisSubTopics.map((subTopic, subTopicIndex) => {
-                              const sourceLink = displayedSourceLinks.find((candidate) => candidate.url === subTopic.sourceUrl) || null;
+                              const subTopicSourceUrl = claimAuxiliarySourceUrl(subTopic.sourceUrl);
 
                               return (
                                 <div key={subTopic.title + subTopicIndex} className="border border-[#141414] bg-[#FBFBFB] p-5 flex flex-col gap-3 print:break-inside-avoid">
                                   <h5 className="font-bold text-lg leading-tight">{subTopic.title}</h5>
                                   <p className="text-sm leading-relaxed text-gray-600 font-light">{subTopic.summary}</p>
-                                  {sourceLink && (
+                                  {subTopicSourceUrl && (
                                     <a
-                                      href={sourceLink.url}
+                                      href={subTopicSourceUrl}
                                       target="_blank"
                                       rel="noopener noreferrer"
                                       className="inline-flex items-center gap-2 mt-auto text-[11px] uppercase tracking-[0.18em] font-bold text-[#141414] hover:underline"
@@ -255,6 +275,7 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                           const words = (definition.description || '').split(/\s+/);
                           const isLong = words.length > 55;
                           const displayDescription = isLong ? `${words.slice(0, 55).join(' ')}...` : definition.description;
+                          const definitionSourceUrl = claimAuxiliarySourceUrl(definition.sourceUrl);
 
                           return (
                             <div key={definition.term + definitionIndex} className="group print:break-inside-avoid">
@@ -264,9 +285,9 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                               <p className="text-sm leading-relaxed opacity-85 font-light italic border-l border-white/10 pl-4 break-words">
                                 {displayDescription}
                               </p>
-                              {definition.sourceUrl && (
+                              {definitionSourceUrl && (
                                 <a
-                                  href={definition.sourceUrl}
+                                  href={definitionSourceUrl}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   title="Read the source behind this term"
@@ -292,7 +313,7 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                         <Globe2 size={12} /> Credible Reading Trail
                       </div>
                       <div className="space-y-4">
-                        {displayedSourceLinks.slice(0, 5).map((sourceLink, sourceIndex) => (
+                        {readingTrailLinks.map((sourceLink, sourceIndex) => (
                           <a
                             key={sourceLink.url + sourceIndex}
                             href={sourceLink.url}
@@ -317,15 +338,21 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                       <div className="text-[10px] uppercase font-bold tracking-[0.24em] text-[#141414]/60 mb-4">Source Verification</div>
                       <div className="text-sm leading-relaxed text-gray-600 font-light">
                         {verificationSource ? (
-                          <a
-                            href={verificationSource.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            title="Verify this chapter at a supporting source"
-                            className="inline-flex items-center gap-2 font-semibold text-[#141414] hover:underline break-all"
-                          >
-                            {verificationSource.title} <ArrowUpRight size={14} />
-                          </a>
+                          readingTrailLinks.some((sourceLink) => sourceLink.url === verificationSource.url) ? (
+                            <span className="font-semibold text-[#141414] break-words">
+                              {verificationSource.title}
+                            </span>
+                          ) : (
+                            <a
+                              href={verificationSource.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title="Verify this chapter at a supporting source"
+                              className="inline-flex items-center gap-2 font-semibold text-[#141414] hover:underline break-all"
+                            >
+                              {verificationSource.title} <ArrowUpRight size={14} />
+                            </a>
+                          )
                         ) : (
                           'No supporting source link is available for this chapter.'
                         )}

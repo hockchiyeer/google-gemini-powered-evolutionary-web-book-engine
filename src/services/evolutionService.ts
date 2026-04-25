@@ -12,12 +12,14 @@ import type {
   WebPageGenotype,
 } from '../types';
 import { fetchGoogleSearchFallback } from './googleSearchFallbackClient';
+import { hasUsableFallbackPayloadEvidence } from './fallbackPayloadHeuristics';
 import { GEMINI_REQUEST_TIMEOUT_MS, buildGeminiUserFacingErrorMessage } from './geminiUserFacingErrors';
 import { parseSearchExtractionResponse, tryParseLooseJson } from './searchIntakeParser';
 import {
   getRenderableDefinitions,
   getRenderableSubTopics,
   isMeaningfulText,
+  reduceRepeatedChapterSourceReferences,
   sanitizeNarrativeText,
   sanitizeStructuredLabel,
   sanitizeWebBookForPresentation,
@@ -552,7 +554,7 @@ function hasRenderableChapters(chapters: WebBook['chapters']): boolean {
 
   return chapters.some((chapter) => {
     const content = normalizePopulationText(chapter?.content || '');
-    return content.length > 0 && countWords(content) >= 80 && isMeaningfulText(content);
+    return content.length > 0 && countWords(content) >= 40 && isMeaningfulText(content);
   });
 }
 
@@ -844,21 +846,12 @@ function hasUsableSearchEvidence(pages: WebPageGenotype[]): boolean {
   return getUsableExternalEvidencePages(pages).length >= MIN_USABLE_SEARCH_SOURCE_COUNT;
 }
 
-function hasUsableFallbackPayload(payload?: SearchFallbackPayload): boolean {
-  if (!payload) {
-    return false;
-  }
-
-  const summary = sanitizeFallbackSnippet(payload.summary, 6);
-  if (countWords(summary) >= MIN_USABLE_SOURCE_WORD_COUNT && isMeaningfulText(summary)) {
-    return true;
-  }
-
-  return selectDistinctFallbackResults(payload.results, CONSOLIDATED_SOURCE_POOL_SIZE)
-    .some((result) => {
-      const evidenceText = buildFallbackResultEvidenceText(result);
-      return countWords(evidenceText) >= MIN_USABLE_SOURCE_WORD_COUNT && isMeaningfulText(evidenceText);
-    });
+export function hasUsableFallbackPayload(payload?: SearchFallbackPayload): boolean {
+  return hasUsableFallbackPayloadEvidence(
+    payload,
+    MIN_USABLE_SOURCE_WORD_COUNT,
+    FALLBACK_MAX_SENTENCE_POOL
+  );
 }
 
 function buildSearchSummaryFromPopulation(population: WebPageGenotype[], topic: string): string {
@@ -2390,7 +2383,6 @@ function createFallbackWebBook(
             ...relatedEvidence
               .filter((evidence) => evidence.url !== page.url)
               .map((evidence) => ({ title: evidence.title, url: evidence.url })),
-            ...referenceSources.filter((source) => source.url !== page.url),
           ],
           CHAPTER_SOURCE_CONTEXT_SIZE
         ),
@@ -2413,10 +2405,11 @@ function createFallbackWebBook(
   const finalChapters = dedupeFallbackChapters(
     [...chapterPool, ...supplementalChapters].slice(0, FINAL_WEBBOOK_CHAPTER_COUNT)
   );
+  const diversifiedSourceChapters = reduceRepeatedChapterSourceReferences(finalChapters);
 
   const sanitizedFallbackBook = sanitizeWebBookForPresentation({
     topic,
-    chapters: finalChapters,
+    chapters: diversifiedSourceChapters,
     id: `book-${Date.now()}`,
     timestamp: Date.now(),
     sourceMode: 'search-fallback',

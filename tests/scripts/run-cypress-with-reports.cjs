@@ -87,13 +87,13 @@ async function main() {
   }
 
   const cypressResult = await runCommand("npx", cypressArgs);
-  const reportResult = await runCommand("npm", ["run", "report:generate"]);
 
   if (cypressResult.code !== 0) {
     process.exitCode = cypressResult.code;
     return;
   }
 
+  const reportResult = await runCommand("npm", ["run", "report:generate"]);
   process.exitCode = reportResult.code;
 }
 

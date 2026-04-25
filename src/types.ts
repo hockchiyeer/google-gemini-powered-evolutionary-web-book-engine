@@ -112,6 +112,7 @@ export interface WebBook {
   topic: string;
   timestamp: number;
   chapters: Chapter[];
+  completedGenerations?: number;
   sourceMode?: WebBookSourceMode;
   generationNote?: string;
   fallbackSource?: SearchFallbackSource;

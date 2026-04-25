@@ -66,8 +66,8 @@ export async function exportWebBookToWord(webBook: WebBook): Promise<void> {
 
 export async function exportWebBookToPdf(webBook: WebBook): Promise<void> {
   const safeWebBook = sanitizeWebBookForPresentation(webBook);
-  const { clone } = await prepareExportContent(getWebBookElement());
-  
+  const { clone } = await prepareExportContent(getWebBookElement(), { inlineImages: false });
+
   // Increase fetch timeout for PDF generation to 5 minutes
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes
@@ -150,11 +150,16 @@ export async function printWebBook(webBook: WebBook): Promise<void> {
     window.clearTimeout(cleanupFallbackTimer);
     window.removeEventListener('afterprint', cleanup);
     iframeWindow.removeEventListener('afterprint', cleanup);
-    document.title = originalTitle;
 
-    if (iframe.parentNode) {
-      iframe.parentNode.removeChild(iframe);
-    }
+    // Defer restoring the title and removing the iframe.
+    // Chrome fires 'afterprint' prematurely when print() is called from an iframe,
+    // which causes the print dialog to see the original title (or an empty name).
+    setTimeout(() => {
+      document.title = originalTitle;
+      if (iframe.parentNode) {
+        iframe.parentNode.removeChild(iframe);
+      }
+    }, 1000);
   };
 
   window.addEventListener('afterprint', cleanup);

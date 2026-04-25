@@ -38,6 +38,7 @@ This repository now includes:
 - `src/WebBookViewer.tsx` renders the main Web-book viewer.
 - `src/components/ControlSidebar.tsx` shows population size, search coverage summary, evolved population, and assembly trace metrics.
 - `src/services/` contains the evolution pipeline, fallback client, history persistence, shared search utilities, and export logic.
+- `src/services/fallbackPayloadHeuristics.ts` centralizes checks for whether fallback search payloads contain enough usable evidence to continue assembly.
 - `src/services/searchFallbackShared.ts` provides centralized text-similarity scoring and stopword utilities shared by the evolution pipeline and the server-side fallback route.
 - `src/utils/webBookRender.ts` handles content filtering, render planning, and source-link normalization.
 
@@ -118,6 +119,7 @@ Key checked-in structure is shown below. Generated local directories such as `ar
     |   |-- evolutionService.ts
     |   |-- exportDocument.ts
     |   |-- exportService.ts
+    |   |-- fallbackPayloadHeuristics.ts
     |   |-- geminiUserFacingErrors.ts
     |   |-- googleSearchFallbackClient.ts
     |   |-- historyService.ts
@@ -258,7 +260,8 @@ tests/
     |-- fixtures/
     |   |-- 1x1.png
     |   |-- example.json
-    |   `-- search-fallback-quantum-physics.json
+    |   |-- search-fallback-quantum-physics.json
+    |   `-- search-fallback-quantum-physics-live-shape.json
     `-- support/
         |-- e2e.js
         `-- commands.js

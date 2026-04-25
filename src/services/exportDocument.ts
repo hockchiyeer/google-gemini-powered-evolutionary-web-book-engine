@@ -37,6 +37,10 @@ export interface PreparedExportContent {
   chapterImages: Array<DocxChapterImageAsset | null>;
 }
 
+interface PrepareExportContentOptions {
+  inlineImages?: boolean;
+}
+
 export function getWebBookElement(): HTMLElement {
   const element = document.querySelector('.web-book-container') as HTMLElement | null;
   if (!element) {
@@ -53,9 +57,12 @@ export function getExportFileName(topic: string, extension: string): string {
 export function downloadBlob(blob: Blob, fileName: string): void {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
+  anchor.style.display = 'none';
   anchor.href = url;
   anchor.download = fileName;
+  document.body.appendChild(anchor);
   anchor.click();
+  document.body.removeChild(anchor);
   URL.revokeObjectURL(url);
 }
 
@@ -183,14 +190,19 @@ async function inlineImageForExport(image: HTMLImageElement): Promise<void> {
   image.className = image.className.replace(/grayscale|hover:grayscale-0/g, '').trim();
 }
 
-export async function prepareExportContent(root: HTMLElement): Promise<PreparedExportContent> {
+export async function prepareExportContent(
+  root: HTMLElement,
+  options: PrepareExportContentOptions = {}
+): Promise<PreparedExportContent> {
+  const { inlineImages = true } = options;
   const clone = root.cloneNode(true) as HTMLElement;
   clone.querySelectorAll(EXPORT_CLEANUP_SELECTOR).forEach((node) => node.remove());
 
   const images = Array.from(clone.querySelectorAll('img'));
-  
-  // Inline images in parallel to speed up export preparation
-  await Promise.all(images.map((image) => inlineImageForExport(image as HTMLImageElement)));
+
+  if (inlineImages) {
+    await Promise.all(images.map((image) => inlineImageForExport(image as HTMLImageElement)));
+  }
 
   return {
     clone,
@@ -359,8 +371,6 @@ export function buildStandaloneHtmlDocument(webBook: WebBook, htmlContent: strin
 }
 
 export function buildPdfHtmlDocument(webBook: WebBook, htmlContent: string): string {
-  // Reuse the print shell so the server-side PDF matches the browser print
-  // dialog output, including Tailwind arbitrary values and print media rules.
   return buildPrintHtmlDocument(webBook, htmlContent);
 }
 

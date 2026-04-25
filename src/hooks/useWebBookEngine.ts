@@ -173,7 +173,11 @@ export function useWebBookEngine() {
 
       const assembledBook = await assembleWebBook(evolvedPopulation, trimmedQuery, searchResult, { mode: fallbackMode });
       ensureActiveRun();
-      const book = persistedSearchId ? { ...assembledBook, id: persistedSearchId } : assembledBook;
+      const bookWithGenerations = {
+        ...assembledBook,
+        completedGenerations,
+      };
+      const book = persistedSearchId ? { ...bookWithGenerations, id: persistedSearchId } : bookWithGenerations;
 
       setWebBook(book);
       setNotice(book.generationNote || searchResult.generationNote || null);
@@ -233,7 +237,7 @@ export function useWebBookEngine() {
     setError(null);
     setNotice(item.generationNote || null);
     setState({
-      generation: 3,
+      generation: item.completedGenerations ?? 3,
       population: [],
       bestFitness: 0,
       status: 'complete',

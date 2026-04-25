@@ -18,7 +18,7 @@ export const WebBookEngine_Page = {
     // Metrics Panel
     evolutionary_metrics_section: "//h2[contains(normalize-space(.), 'Evolutionary Metrics')]",
     status_label: "//span[normalize-space(.)='Status']/following-sibling::span",
-    generation_number: "//span[normalize-space(.)='Generation']/following-sibling::span",
+    generation_number: "//span[normalize-space(.)='Generation' or normalize-space(.)='Generations Run']/following-sibling::span",
     pop_size_number: "//span[contains(normalize-space(.), 'Pop. Size')]/following-sibling::span",
     show_artifacts_button: "//button[contains(normalize-space(.), 'Show Artifacts')]",
     hide_artifacts_button: "//button[contains(normalize-space(.), 'Hide Artifacts')]",

@@ -189,6 +189,7 @@ export function ControlSidebar({
   const progressText = state.status === 'complete' ? '100%' : progressWidthPct;
   const searchSummary = state.artifacts?.searchSummary;
   const fallbackHelperText = getFallbackModeHelperText(fallbackMode);
+  const evolutionWasSkipped = state.status === 'complete' && state.generation === 0;
 
   return (
     <div data-html2canvas-ignore="true" className="lg:col-span-4 space-y-8 print:hidden">
@@ -351,8 +352,13 @@ export function ControlSidebar({
 
           <div className="grid grid-cols-2 gap-4">
             <div className="border border-[#141414] p-3 bg-[#F5F5F5]">
-              <span className="block text-[9px] uppercase opacity-50 mb-1">Generation</span>
+              <span className="block text-[9px] uppercase opacity-50 mb-1">Generations Run</span>
               <span className="text-2xl font-mono font-bold">{state.generation}</span>
+              {evolutionWasSkipped && (
+                <span className="block mt-1 text-[9px] leading-relaxed opacity-55">
+                  Evolution rounds were skipped because the surviving evidence pool was too small to iterate.
+                </span>
+              )}
             </div>
             <div className="border border-[#141414] p-3 bg-[#F5F5F5]">
               <span className="block text-[9px] uppercase opacity-50 mb-1">Pop. Size</span>
@@ -539,5 +545,4 @@ export function ControlSidebar({
     </div>
   );
 }
-
 

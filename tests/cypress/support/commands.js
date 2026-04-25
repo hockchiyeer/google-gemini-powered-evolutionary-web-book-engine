@@ -49,12 +49,14 @@ function buildPrintWindowStub() {
   const stubDoc = {
     title: '',
     head: { querySelector: () => null },
+    open: () => { },
     write: () => { },
     close: () => { },
     createElement: () => ({ style: {}, setAttribute: () => { }, click: () => { } }),
   };
   const stub = {
     document: stubDoc,
+    history: { replaceState: () => { } },
     focus: () => { },
     print: () => { },
     close: () => { },
@@ -144,7 +146,7 @@ Cypress.Commands.add('mockFallbackSearchResults', (fixtureName = 'search-fallbac
  *   GET  picsum.photos/**     → 200 image/png 1×1     (chapter images, prevents inlining hang)
  *   GET  fonts.googleapis.com → 204                   (Google Fonts CSS)
  *   GET  fonts.gstatic.com    → 204                   (Google Fonts woff2)
- *   window.open               → safe proxy stub       (Print/Save PDF iframe path)
+ *   document.createElement    → iframe with stubbed contentWindow (Print/Save PDF path)
  *   URL.createObjectURL       → 'blob:mock-export'    (DOCX / HTML / TXT download trigger)
  *   URL.revokeObjectURL       → no-op
  *   HTMLAnchorElement#click   → no-op                 (hidden anchor download trigger)
@@ -174,11 +176,21 @@ Cypress.Commands.add('stubWebBookExportHandlers', () => {
 
   // ── Window / download stubs ──────────────────────────────────────────────
   cy.window().then((win) => {
-    // printWebBook() creates a hidden iframe; stub window.open as a safety net
-    // for any alternate print path.
-    cy.stub(win, 'open')
-      .callsFake(() => buildPrintWindowStub())
-      .as('windowOpen');
+    const realCreateElement = win.document.createElement.bind(win.document);
+    cy.stub(win.document, 'createElement')
+      .callsFake((tagName, ...args) => {
+        const element = realCreateElement(tagName, ...args);
+
+        if (String(tagName).toLowerCase() === 'iframe') {
+          Object.defineProperty(element, 'contentWindow', {
+            configurable: true,
+            value: buildPrintWindowStub(),
+          });
+        }
+
+        return element;
+      })
+      .as('documentCreateElement');
 
     // downloadBlob() calls URL.createObjectURL → creates <a> → anchor.click()
     cy.stub(win.URL, 'createObjectURL').returns('blob:mock-export').as('createObjectURL');
