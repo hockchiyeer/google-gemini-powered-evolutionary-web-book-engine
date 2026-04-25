@@ -37,9 +37,13 @@ const JSONISH_KEY_PATTERN = /"(?:url|title|content|definitions|subTopics|summary
 const DOMAINISH_PATTERN = /\b(?:https?:\/\/|www\.|(?:[a-z0-9-]+\.)+(?:com|org|net|edu|gov|io|co(?:\.[a-z]{2})?|ac\.uk|co\.uk))\S*/gi;
 const URLISH_INLINE_PATTERN = /\b(?:https?:\/\/|www\.|(?:[a-z0-9-]+\.)+(?:com|org|net|edu|gov|io|co(?:\.[a-z]{2})?|ac\.uk|co\.uk)\/)\S*/gi;
 const ISO_TIMESTAMP_PATTERN = /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?\b/;
+const ISO_TIMESTAMP_GLOBAL_PATTERN = /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?\b/g;
 const BULLET_LINE_PATTERN = /^(?:[-*]|\d+[.)])\s+/;
 const GENERIC_SYNTHESIS_SENTENCE_PATTERNS = [
   /^\s*overall,\s*the available search evidence keeps\b/i,
+  /^\s*coverage of\b.+\b(?:draws on several related sources and recurring themes|repeatedly returns to|often connects)\b/i,
+  /^\s*coverage from\b.+\bplaces\b.+\bshowing that the subject is best understood through several complementary sources rather than a single account\b/i,
+  /^\s*(?:overview|context|themes?|views?|perspectives?|foundations?|map)\b.+\bconnected to\b.+\bwithin the broader story of\b/i,
 ];
 const PROMOTIONAL_NARRATIVE_PATTERNS = [
   /\bthrough our website\b/i,
@@ -143,7 +147,7 @@ function containsNarrativeJunk(text: string): boolean {
 function stripInlineUrlArtifacts(text: string): string {
   return text
     .replace(URLISH_INLINE_PATTERN, " ")
-    .replace(ISO_TIMESTAMP_PATTERN, " ")
+    .replace(ISO_TIMESTAMP_GLOBAL_PATTERN, " ")
     .replace(/\s+/g, " ")
     .trim();
 }

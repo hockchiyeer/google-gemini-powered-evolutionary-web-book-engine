@@ -352,7 +352,7 @@ export function ControlSidebar({
 
           <div className="grid grid-cols-2 gap-4">
             <div className="border border-[#141414] p-3 bg-[#F5F5F5]">
-              <span className="block text-[9px] uppercase opacity-50 mb-1">Generations Run</span>
+              <span className="block text-[9px] uppercase opacity-50 mb-1">Generation</span>
               <span className="text-2xl font-mono font-bold">{state.generation}</span>
               {evolutionWasSkipped && (
                 <span className="block mt-1 text-[9px] leading-relaxed opacity-55">

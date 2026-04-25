@@ -182,12 +182,13 @@ assert.equal(
 );
 
 const urlAndTimestampNoise = `www.sciencedirect.com/science/article/pii/S2949882125000167 2025-05-01T00:00:00.0000000 ailiteracy.institute/ai-literacy-review-march-11-2025/ 2025-03-11T00:00:00.0000000
-Coverage of US VS UK on public AI Literacy often connects AI Literacy and classroom practice.`;
+Coverage of US VS UK on public AI Literacy often connects AI Literacy and classroom practice.
+Public AI literacy debates now focus on which skills schools should teach and how those skills are assessed.`;
 
 assert.equal(
   sanitizeNarrativeText(urlAndTimestampNoise),
-  'Coverage of US VS UK on public AI Literacy often connects AI Literacy and classroom practice.',
-  'Standalone URL/timestamp dump lines should be removed from chapter prose.'
+  'Public AI literacy debates now focus on which skills schools should teach and how those skills are assessed.',
+  'Standalone URL/timestamp dump lines and generic fallback bridge copy should be removed from chapter prose.'
 );
 
 const comparativeDomainNarrative = `Placed beside one another, sources from wikipedia.org, britannica.com, and state.gov keep returning to geography and history. That overlap suggests a shared core narrative around Malaysia, even as each source contributes its own mix of detail, framing, and emphasis.`;
@@ -212,6 +213,14 @@ assert.equal(
   sanitizeNarrativeText(urlDumpWithRealNarrative),
   'Indonesia is the world\'s largest archipelagic state and spans thousands of islands across Southeast Asia.',
   'Inline URL clusters should be stripped while retaining a meaningful narrative sentence.'
+);
+
+const genericBridgeNarrative = `overview connected to Iran War Clock — Accountability Tracker within the broader story of When would Iran war be ended?. 2026-04-17T00:21:43.0000000 2026-03-10T17:30:00.0000000 The Iran War Clock tracks the live length of the US- Iran War and the official predictions from the Trump Administration about its end.`;
+
+assert.equal(
+  sanitizeNarrativeText(genericBridgeNarrative),
+  'The Iran War Clock tracks the live length of the US- Iran War and the official predictions from the Trump Administration about its end.',
+  'Title-fragment fallback bridge sentences should be dropped while keeping the real narrative that follows them.'
 );
 
 const promotionalFallbackNarrative = `Through our website, you can apply for the e-Visa application form online in a convenient way without having to go to apply in the Indonesia embassy on your own.`;
@@ -264,7 +273,7 @@ assert.equal(
 assert.equal(sanitizedBook.chapters[0].title, 'Practical Context');
 assert.equal(
   sanitizedBook.chapters[0].content,
-  'Coverage of US VS UK on public AI Literacy often connects AI Literacy and classroom practice.'
+  'Public AI literacy debates now focus on which skills schools should teach and how those skills are assessed.'
 );
 assert.equal(
   typeof sanitizedBook.chapters[0].sourceUrls[0] === 'string'
