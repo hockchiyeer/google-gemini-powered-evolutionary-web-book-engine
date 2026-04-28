@@ -780,7 +780,7 @@ function buildFallbackResultEvidenceText(result: SearchFallbackResult): string {
   ].join(' '));
 }
 
-function selectDistinctFallbackResults(results: SearchFallbackResult[], maxResults = 5): SearchFallbackResult[] {
+function selectDistinctFallbackResults(results: ReadonlyArray<SearchFallbackResult>, maxResults = 5): SearchFallbackResult[] {
   const distinct: SearchFallbackResult[] = [];
 
   for (const result of results) {

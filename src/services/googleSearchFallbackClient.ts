@@ -33,7 +33,7 @@ export async function fetchGoogleSearchFallback(
 
   for (let attempt = 1; attempt <= FALLBACK_FETCH_ATTEMPTS; attempt += 1) {
     try {
-      const requestUrl = new URL(SEARCH_FALLBACK_ROUTE, window.location.origin);
+      const requestUrl = new URL(SEARCH_FALLBACK_ROUTE, window.location.origin === 'null' ? window.location.href : window.location.origin);
       requestUrl.searchParams.set('query', query);
       requestUrl.searchParams.set('mode', options.mode);
 

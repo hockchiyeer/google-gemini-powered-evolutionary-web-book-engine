@@ -111,7 +111,7 @@ export async function printWebBook(webBook: WebBook): Promise<void> {
   const printFileName = getExportFileName(safeWebBook.topic, 'pdf');
   const printPreviewUrl = new URL(
     `/print-preview/${encodeURIComponent(printFileName)}`,
-    window.location.origin
+    window.location.origin === 'null' ? window.location.href : window.location.origin
   ).toString();
 
   const iframe = document.createElement('iframe');

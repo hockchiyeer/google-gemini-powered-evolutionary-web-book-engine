@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { extractRequestedFallbackMode, isGoogleBlockedPage, parseRequestPayload } from '../../server/googleSearchFallback.ts';
+import { extractRequestedFallbackMode, parseRequestPayload } from '../../server/googleSearchFallback.ts';
+import { isGoogleBlockedPage } from '../../server/searchStrategies/googleStrategy.ts';
 import { buildFallbackOverviewTitle, buildFallbackSearchUrl } from '../../src/services/searchFallbackShared.ts';
 import { isSearchFallbackReason } from '../../src/types.ts';
 

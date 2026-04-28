@@ -109,15 +109,15 @@ export interface SearchFallbackResult {
 }
 
 export interface SearchFallbackPayload {
-  query: string;
-  mode?: SearchFallbackMode;
-  source: SearchFallbackSource;
-  provider: SearchFallbackProvider;
-  summary: string;
-  aiOverview: string[];
-  results: SearchFallbackResult[];
-  extractedAt: number;
-  diagnostics?: string[];
+  readonly query: string;
+  readonly mode?: SearchFallbackMode;
+  readonly source: SearchFallbackSource;
+  readonly provider: SearchFallbackProvider;
+  readonly summary: string;
+  readonly aiOverview: ReadonlyArray<string>;
+  readonly results: ReadonlyArray<SearchFallbackResult>;
+  readonly extractedAt: number;
+  readonly diagnostics?: ReadonlyArray<string>;
 }
 
 export interface Chapter {
