@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import type { EvolutionState, SearchFallbackMode, WebPageGenotype } from '../types';
 import { GEMINI_MODELS } from '../types';
+import { discoverAvailableGeminiModels } from '../services/evolutionService';
 
 const QUERY_PREVIEW_LINE_THRESHOLD = 4;
 const FALLBACK_MODE_OPTIONS: Array<{
@@ -101,6 +102,19 @@ export function ControlSidebar({
   const [shouldShowQueryPreview, setShouldShowQueryPreview] = useState(false);
   const [isQueryPreviewActive, setIsQueryPreviewActive] = useState(false);
   const [tooltipPosition, setTooltipPosition] = useState<'top' | 'bottom'>('top');
+  const [dynamicModels, setDynamicModels] = useState<string[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    void discoverAvailableGeminiModels().then((models) => {
+      if (isMounted && models.length > 0) {
+        setDynamicModels(models);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (showArtifacts && artifactsRef.current) {
@@ -280,13 +294,17 @@ export function ControlSidebar({
             <div className="relative flex-1">
               <select
                 id="gemini-model"
-                value={geminiModel || 'gemini-3.1-pro-preview'}
+                value={geminiModel || 'gemini-3.8-flash'}
                 onChange={(event) => onGeminiModelChange(event.target.value)}
                 disabled={isBusy}
                 title="Choose which Gemini model to use"
                 className="w-full appearance-none bg-[#F5F5F5] border border-[#141414] px-3 py-2 pr-9 text-[11px] font-mono focus:outline-none disabled:opacity-50"
               >
-                {GEMINI_MODELS.map((model) => (
+                {Array.from(new Set([
+                  ...GEMINI_MODELS,
+                  ...dynamicModels,
+                  ...(geminiModel ? [geminiModel] : []),
+                ])).map((model) => (
                   <option key={model} value={model}>
                     {model}
                   </option>

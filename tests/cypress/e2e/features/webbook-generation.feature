@@ -16,7 +16,7 @@ Feature: Web-Book Engine Evolution Pipeline
     And I should see "fallback_mode_select" is displayed on "WebBookEngine_Page"
     And I should see "gemini_model_select" is displayed on "WebBookEngine_Page"
     And I should see fallback mode is set to "google_duckduckgo"
-    And I should see Gemini model is set to "gemini-3.1-pro-preview"
+    And I should see Gemini model is set to "gemini-3.8-flash"
     And I should see "status_label" text displayed in "idle" on "WebBookEngine_Page"
     And I should see "generation_number" text displayed in "0" on "WebBookEngine_Page"
     And I should see "pop_size_number" text displayed in "0" on "WebBookEngine_Page"

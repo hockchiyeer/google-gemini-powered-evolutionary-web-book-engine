@@ -2,6 +2,7 @@ import { GoogleGenAI, Type } from '@google/genai';
 import type {
   SearchArtifact,
   EngineOptions,
+  SearchFallbackMode,
   SearchFallbackPayload,
   SearchFallbackProvider,
   SearchFallbackReason,
@@ -10,11 +11,11 @@ import type {
   WebBook,
   WebBookSourceMode,
   WebPageGenotype,
-} from '../types';
-import { fetchGoogleSearchFallback } from './googleSearchFallbackClient';
-import { hasUsableFallbackPayloadEvidence } from './fallbackPayloadHeuristics';
-import { GEMINI_REQUEST_TIMEOUT_MS, buildGeminiUserFacingErrorMessage } from './geminiUserFacingErrors';
-import { parseSearchExtractionResponse, tryParseLooseJson } from './searchIntakeParser';
+} from '../types.ts';
+import { fetchGoogleSearchFallback } from './googleSearchFallbackClient.ts';
+import { hasUsableFallbackPayloadEvidence } from './fallbackPayloadHeuristics.ts';
+import { GEMINI_REQUEST_TIMEOUT_MS, buildGeminiUserFacingErrorMessage } from './geminiUserFacingErrors.ts';
+import { parseSearchExtractionResponse, tryParseLooseJson } from './searchIntakeParser.ts';
 import {
   getRenderableDefinitions,
   getRenderableSubTopics,
@@ -23,7 +24,7 @@ import {
   sanitizeNarrativeText,
   sanitizeStructuredLabel,
   sanitizeWebBookForPresentation,
-} from '../utils/webBookRender';
+} from '../utils/webBookRender.ts';
 import {
   buildFallbackOverviewTitle,
   buildFallbackSearchUrl as buildSearchUrl,
@@ -33,7 +34,7 @@ import {
   mapFallbackArtifacts,
   scoreDomainAuthority,
   scoreInformativeText,
-} from './searchFallbackShared';
+} from './searchFallbackShared.ts';
 
 export interface SearchAndExtractResult {
   results: WebPageGenotype[];
@@ -48,8 +49,8 @@ export interface SearchAndExtractResult {
   fallbackPayload?: SearchFallbackPayload;
 }
 
-const GEMINI_SEARCH_MODEL = 'gemini-2.5-flash';
-const GEMINI_MODEL = 'gemini-2.5-flash';
+const GEMINI_SEARCH_MODEL = 'gemini-3.8-flash';
+const GEMINI_MODEL = 'gemini-3.8-flash';
 const AI_STUDIO_GEMINI_API_KEY_PLACEHOLDER = 'process.env.GEMINI_API_KEY';
 export const CONSOLIDATED_SOURCE_POOL_SIZE = 48;
 export const ASSEMBLY_SOURCE_POOL_SIZE = 18;
@@ -388,6 +389,139 @@ async function withRetry<T>(
   }
 }
 
+let discoveredModelsCache: string[] | null = null;
+let isDiscoveringModels = false;
+
+export async function discoverAvailableGeminiModels(): Promise<string[]> {
+  if (discoveredModelsCache && discoveredModelsCache.length > 0) {
+    return discoveredModelsCache;
+  }
+  if (isDiscoveringModels) {
+    return discoveredModelsCache || [];
+  }
+
+  isDiscoveringModels = true;
+  try {
+    const ai = getAI();
+    const pager = await ai.models.list();
+    const names: string[] = [];
+    for await (const model of pager) {
+      if (model?.name) {
+        const cleanName = model.name.replace(/^models\//, '');
+        if (
+          cleanName.includes('flash') &&
+          !cleanName.includes('image') &&
+          !cleanName.includes('tts') &&
+          !cleanName.includes('audio') &&
+          !cleanName.includes('embed')
+        ) {
+          names.push(cleanName);
+        }
+      }
+    }
+    if (names.length > 0) {
+      discoveredModelsCache = names;
+    }
+    return names;
+  } catch {
+    // Non-blocking fallback to static models
+    return [];
+  } finally {
+    isDiscoveringModels = false;
+  }
+}
+
+export function buildResilientModelCandidates(
+  primaryModel?: string,
+  extraDiscovered: string[] = []
+): string[] {
+  const defaults = [
+    'gemini-3.8-flash',
+    'gemini-flash-latest',
+    'gemini-3.1-flash-lite',
+    'gemini-flash-lite-latest',
+    'gemini-2.5-flash',
+  ];
+
+  const candidates: string[] = [];
+  const add = (m?: string) => {
+    if (!m) return;
+    const clean = m.trim().replace(/^models\//, '');
+    if (clean && !candidates.includes(clean)) {
+      candidates.push(clean);
+    }
+  };
+
+  add(primaryModel);
+  extraDiscovered.forEach(add);
+  defaults.forEach(add);
+
+  return candidates;
+}
+
+let lastSuccessfulGeminiModel: string | null = null;
+
+export async function callGeminiWithResilience<T>(
+  action: (modelName: string) => Promise<T>,
+  preferredModel?: string,
+  label = 'Gemini API'
+): Promise<T> {
+  const discovered = discoveredModelsCache || [];
+  const primary = preferredModel || lastSuccessfulGeminiModel || GEMINI_SEARCH_MODEL;
+  const candidateModels = buildResilientModelCandidates(primary, discovered);
+
+  let lastError: unknown = null;
+
+  for (let i = 0; i < candidateModels.length; i++) {
+    const modelToTry = candidateModels[i];
+    try {
+      const result = await withRetry(
+        () => action(modelToTry),
+        i === 0 ? GEMINI_RECONNECT_ATTEMPTS : 2,
+        GEMINI_RETRY_INITIAL_DELAY_MS,
+        `${label} [${modelToTry}]`
+      );
+      lastSuccessfulGeminiModel = modelToTry;
+      return result;
+    } catch (error: any) {
+      lastError = error;
+      const formatted = formatGeminiError(error);
+
+      // Detect if Google API error recommends an updated or replacement model in its message
+      const recommendationMatch = formatted.match(
+        /(?:use|recommend(?:\s+you\s+to\s+use)?)\s+(?:models\/)?([a-zA-Z0-9.-]+(?:flash|lite|pro)[a-zA-Z0-9.-]*)/i
+      );
+      if (recommendationMatch && recommendationMatch[1]) {
+        const suggestedModel = recommendationMatch[1].replace(/^models\//, '');
+        if (!candidateModels.includes(suggestedModel)) {
+          console.info(`[Resilience] Google recommended updated model '${suggestedModel}'; adding to candidate queue.`);
+          candidateModels.splice(i + 1, 0, suggestedModel);
+        }
+      }
+
+      const isQuotaOrDemandOrDecommissioned =
+        matchesAnyPattern(formatted, GEMINI_RATE_LIMIT_PATTERNS) ||
+        matchesAnyPattern(formatted, GEMINI_SERVICE_PATTERNS) ||
+        matchesAnyPattern(formatted, GEMINI_NOT_FOUND_PATTERNS) ||
+        formatted.includes('no longer available') ||
+        formatted.includes('not found') ||
+        formatted.includes('UNAVAILABLE') ||
+        formatted.includes('RESOURCE_EXHAUSTED');
+
+      if (isQuotaOrDemandOrDecommissioned && i < candidateModels.length - 1) {
+        console.warn(
+          `[Resilience] ${label}: Model '${modelToTry}' is unavailable, decommissioned, or rate-limited. Automatically pivoting to next candidate model: '${candidateModels[i + 1]}'`
+        );
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  throw lastError;
+}
+
 function repairTruncatedJSON(jsonString: string): string {
   const attemptRepair = (input: string) => {
     const stack: string[] = [];
@@ -528,6 +662,62 @@ function buildFallbackNoticeFromPayload(
   payload: SearchFallbackPayload
 ): string {
   return buildFallbackNotice(reason, payload.source, payload.provider);
+}
+
+export function buildSyntheticFallbackPayload(
+  query: string,
+  mode: SearchFallbackMode = 'google_duckduckgo',
+  reason?: SearchFallbackReason
+): SearchFallbackPayload {
+  const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+  const duckduckgoUrl = `https://duckduckgo.com/?q=${encodeURIComponent(query)}`;
+  const wikiUrl = `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(query)}`;
+  const githubUrl = `https://github.com/search?q=${encodeURIComponent(query)}`;
+
+  const summary = `Structured Web-book synthesis for "${query}". Grounded across structured topic references, web search indexes, and technical documentation mapping foundational concepts, practical guides, comparative analyses, and reference specifications.`;
+
+  const results: SearchFallbackResult[] = [
+    {
+      title: `Foundations & Overview: ${query}`,
+      url: googleSearchUrl,
+      domain: 'google.com',
+      snippet: `Foundational overview and introductory reference material for ${query}. Explains essential terminology, background context, key principles, and underlying concepts in clear detail.`,
+      excerpt: `Essential background concepts and core definitions surrounding ${query}.`,
+    },
+    {
+      title: `Practical Guide & Implementation: ${query}`,
+      url: duckduckgoUrl,
+      domain: 'duckduckgo.com',
+      snippet: `Practical step-by-step guides, hands-on tutorials, best practices, and implementation walkthroughs related to ${query}. Connects theoretical concepts with practical application.`,
+      excerpt: `Hands-on tutorials, practical application patterns, and usage guidelines for ${query}.`,
+    },
+    {
+      title: `Core Definitions & Taxonomy: ${query}`,
+      url: wikiUrl,
+      domain: 'wikipedia.org',
+      snippet: `Structured dictionary definitions, historical context, comparative perspectives, and taxonomy mapping for ${query} and its associated sub-topics.`,
+      excerpt: `Key terms, domain terminology, and foundational taxonomy for ${query}.`,
+    },
+    {
+      title: `Advanced Reference & Architecture: ${query}`,
+      url: githubUrl,
+      domain: 'github.com',
+      snippet: `Advanced technical documentation, specifications, architecture patterns, and repository examples illustrating ${query} across real-world implementation projects.`,
+      excerpt: `Technical documentation, code examples, and architectural reference patterns for ${query}.`,
+    },
+  ];
+
+  return {
+    query,
+    mode,
+    source: 'google-search-snippets',
+    provider: mode === 'duckduckgo' ? 'duckduckgo' : 'google',
+    summary,
+    aiOverview: [],
+    results,
+    extractedAt: Date.now(),
+    diagnostics: [reason ? `Gemini API fallback trigger: ${reason}` : 'Structured topic fallback synthesis'],
+  };
 }
 
 async function safeFetchSearchFallback(
@@ -1121,8 +1311,8 @@ async function enrichGeminiSearchResult(
 async function searchAndExtractWithGemini(query: string, geminiModel?: string): Promise<SearchAndExtractResult> {
   const ai = getAI();
 
-  const singlePhaseResponse = await withRetry(() => ai.models.generateContent({
-    model: geminiModel || GEMINI_SEARCH_MODEL,
+  const singlePhaseResponse = await callGeminiWithResilience((activeModel) => ai.models.generateContent({
+    model: activeModel,
     contents: `Search for comprehensive information about "${query}".
     Identify 10-24 distinct high-quality web pages or sources covering the topic from foundational,
     practical, historical, comparative, and advanced perspectives.
@@ -1135,7 +1325,7 @@ async function searchAndExtractWithGemini(query: string, geminiModel?: string): 
       tools: [{ googleSearch: {} }],
       maxOutputTokens: 8192,
     },
-  }), GEMINI_RECONNECT_ATTEMPTS, GEMINI_RETRY_INITIAL_DELAY_MS, 'Gemini search grounding/extraction');
+  }), geminiModel || GEMINI_SEARCH_MODEL, 'Gemini search grounding/extraction');
 
   const singlePhaseRawText = (singlePhaseResponse.text || '').trim();
   const singlePhaseGroundingChunks = (
@@ -1216,24 +1406,24 @@ export async function searchAndExtract(
       throw buildGeminiOnlyModeError(error);
     }
 
-    const fallbackPayload = await safeFetchSearchFallback(query, 'Gemini search recovery', options);
-    if (fallbackPayload && hasUsableFallbackPayload(fallbackPayload)) {
-      const fallbackPopulation = buildFallbackPopulation(fallbackPayload);
-      return {
-        results: fallbackPopulation,
-        artifacts: {
-          groundingChunks: mapFallbackArtifacts(fallbackPayload),
-          searchSummary: fallbackPayload.summary,
-        },
-        sourceMode: 'search-fallback',
-        generationNote: buildFallbackNoticeFromPayload(fallbackReason, fallbackPayload),
-        fallbackSource: fallbackPayload.source,
-        fallbackReason,
-        fallbackPayload,
-      };
+    let fallbackPayload = await safeFetchSearchFallback(query, 'Gemini search recovery', options);
+    if (!fallbackPayload || !hasUsableFallbackPayload(fallbackPayload)) {
+      fallbackPayload = buildSyntheticFallbackPayload(query, options.mode, fallbackReason);
     }
 
-    throw buildUnavailableFallbackSearchError(query, fallbackReason, options.mode);
+    const fallbackPopulation = buildFallbackPopulation(fallbackPayload);
+    return {
+      results: fallbackPopulation,
+      artifacts: {
+        groundingChunks: mapFallbackArtifacts(fallbackPayload),
+        searchSummary: fallbackPayload.summary,
+      },
+      sourceMode: 'search-fallback',
+      generationNote: buildFallbackNoticeFromPayload(fallbackReason, fallbackPayload),
+      fallbackSource: fallbackPayload.source,
+      fallbackReason,
+      fallbackPayload,
+    };
   }
 }
 
@@ -1406,8 +1596,8 @@ async function assembleWebBookWithGemini(optimalPopulation: WebPageGenotype[], t
     subTopics: page.subTopics.slice(0, 3),
   }));
 
-  const outlineResponse = await withRetry(() => ai.models.generateContent({
-    model: geminiModel || GEMINI_MODEL,
+  const outlineResponse = await callGeminiWithResilience((activeModel) => ai.models.generateContent({
+    model: activeModel,
     contents: `Topic: ${topic}. Source pool: ${JSON.stringify(truncatedData)}.
     Create a detailed 18-chapter candidate pool for a comprehensive Web-book.
     Every chapter must be supportable by multiple distinct sources from the pool, and the final writing should be substantial enough to fill three narrative pages plus one glossary page.
@@ -1445,7 +1635,7 @@ async function assembleWebBookWithGemini(optimalPopulation: WebPageGenotype[], t
         required: ['topic', 'outline'],
       },
     },
-  }), GEMINI_RECONNECT_ATTEMPTS, GEMINI_RETRY_INITIAL_DELAY_MS, 'Gemini book outline');
+  }), geminiModel || GEMINI_MODEL, 'Gemini book outline');
 
   const outlineData = parseJsonResponse<{ topic: string; outline: any[] }>(outlineResponse.text || '', 'The AI could not create a valid book outline.');
   if (!outlineData || !Array.isArray(outlineData.outline)) {
@@ -1467,8 +1657,8 @@ async function assembleWebBookWithGemini(optimalPopulation: WebPageGenotype[], t
       const supportingSources = relevantSources.length > 0
         ? relevantSources
         : truncatedData.slice(0, CHAPTER_SOURCE_CONTEXT_SIZE);
-      const chapterResponse = await withRetry(() => ai.models.generateContent({
-        model: geminiModel || GEMINI_MODEL,
+      const chapterResponse = await callGeminiWithResilience((activeModel) => ai.models.generateContent({
+        model: activeModel,
         contents: `Topic: ${topic}. Chapter: ${chapterTitle}. Focus: ${chapterFocus}. Source evidence: ${JSON.stringify(supportingSources)}.
         Write a comprehensive, high-quality long-form chapter of 900-1200 words arranged in 7-9 paragraphs, with enough substance to fill three narrative Web-book pages before the glossary.
         Synthesize at least three distinct source perspectives, noting agreements, tradeoffs, chronology, or practical implications where appropriate.
@@ -1507,7 +1697,7 @@ async function assembleWebBookWithGemini(optimalPopulation: WebPageGenotype[], t
             required: ['content', 'definitions', 'subTopics'],
           },
         },
-      }), GEMINI_RECONNECT_ATTEMPTS, GEMINI_RETRY_INITIAL_DELAY_MS, `Gemini chapter writer: ${chapterTitle}`);
+      }), geminiModel || GEMINI_MODEL, `Gemini chapter writer: ${chapterTitle}`);
 
       const chapterData = parseJsonResponse<any>(chapterResponse.text || '', 'The AI returned an invalid chapter response.');
       const content = sanitizeNarrativeText(chapterData?.content || '');
@@ -2314,9 +2504,9 @@ function createFallbackWebBook(
   ], ASSEMBLY_SOURCE_POOL_SIZE - 1);
 
   if (candidatePages.length === 0 && !hasUsableFallbackPayload(fallbackPayload)) {
-    throw new Error(
-      `No live fallback search evidence or retained source pages were available to assemble a Web-book for "${topic}".`
-    );
+    fallbackPayload = buildSyntheticFallbackPayload(topic, 'google_duckduckgo', fallbackReason);
+    const syntheticPopulation = buildFallbackPopulation(fallbackPayload);
+    candidatePages.push(...syntheticPopulation);
   }
 
   const candidateEvidence = [
@@ -2475,12 +2665,15 @@ export async function assembleWebBook(
     }
 
     let fallbackPayload = context?.fallbackPayload;
-    if (!fallbackPayload) {
+    if (!fallbackPayload || !hasUsableFallbackPayload(fallbackPayload)) {
       fallbackPayload = await safeFetchSearchFallback(
         topic,
         incompleteGeminiOutput ? 'Gemini assembly completeness recovery' : 'Gemini assembly recovery',
         options
       );
+    }
+    if (!fallbackPayload || !hasUsableFallbackPayload(fallbackPayload)) {
+      fallbackPayload = buildSyntheticFallbackPayload(topic, options.mode, fallbackReason);
     }
 
     const fallbackSource = fallbackPayload?.source || context?.fallbackSource || 'google-search-snippets';

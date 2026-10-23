@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import type { EngineOptions, EvolutionState, SearchFallbackMode, WebBook } from '../types';
-import { ASSEMBLY_SOURCE_POOL_SIZE, assembleWebBook, evolve, searchAndExtract } from '../services/evolutionService';
+import {
+  ASSEMBLY_SOURCE_POOL_SIZE,
+  assembleWebBook,
+  discoverAvailableGeminiModels,
+  evolve,
+  searchAndExtract,
+} from '../services/evolutionService';
 import {
   clearPersistedSearches,
   completePersistedSearch,
@@ -43,10 +49,11 @@ export function useWebBookEngine() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [fallbackMode, setFallbackMode] = useState<SearchFallbackMode>('google_duckduckgo');
-  const [geminiModel, setGeminiModel] = useState<EngineOptions['geminiModel']>('gemini-3.1-pro-preview');
+  const [geminiModel, setGeminiModel] = useState<EngineOptions['geminiModel']>('gemini-3.8-flash');
 
   useEffect(() => {
     setHistory(loadLocalHistoryBooks());
+    void discoverAvailableGeminiModels();
   }, []);
 
   useEffect(() => {

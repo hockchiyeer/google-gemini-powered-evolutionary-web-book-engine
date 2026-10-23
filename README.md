@@ -2,7 +2,7 @@
 
 Evolutionary Web-Book Engine is a React + Vite application that uses Google Gemini first, with a server-assisted Google Search / DuckDuckGo fallback, to search, extract, score, and synthesize Web knowledge into a styled multi-chapter Web-book for a user-supplied topic.
 
-👉 You can explore the live application built from this repository’s source code at: [https://aistudio.google.com/apps/84d53490-d503-494c-bf74-c67f1af980a8?showPreview=true&showAssistant=true](https://aistudio.google.com/apps/84d53490-d503-494c-bf74-c67f1af980a8?showPreview=true&showAssistant=true)
+👉 You can explore the live application built from this repository’s source code at: [https://ai.studio/apps/31adbd5d-351d-4f99-8974-e1d1bb92f1f0](https://ai.studio/apps/31adbd5d-351d-4f99-8974-e1d1bb92f1f0)
 
 This repository now includes:
 

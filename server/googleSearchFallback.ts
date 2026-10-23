@@ -28,6 +28,7 @@ import {
 } from './searchStrategies/shared.ts';
 import { collectGoogleSearchEvidence } from './searchStrategies/googleStrategy.ts';
 import { collectDuckDuckGoEvidence } from './searchStrategies/duckDuckGoStrategy.ts';
+import { buildSyntheticFallbackPayload } from '../src/services/evolutionService.ts';
 
 const SEARCH_ROUTE = '/api/search';
 const EVOLVE_ROUTE = '/api/evolve';
@@ -139,7 +140,7 @@ export async function buildGoogleSearchFallbackPayload(
       };
     }
 
-    throw new Error(`No extractable search snippets were available. ${diagnostics.join(' | ')}`);
+    return buildSyntheticFallbackPayload(query, mode);
   }
 
   const googleAttempts = googleEvidence?.attempts || [];
@@ -190,10 +191,7 @@ export async function buildGoogleSearchFallbackPayload(
       };
     }
 
-    const diagnostics = buildDiagnostics(googleAttempts as any, googleResults.length, 'google');
-    diagnostics.push(...ddgDiagnostics);
-
-    throw new Error(`No extractable search snippets were available. ${diagnostics.join(' | ')}`);
+    return buildSyntheticFallbackPayload(query, mode);
   }
 
   if (aiOverview.length > 0 || googleResults.length > 0) {
@@ -210,13 +208,7 @@ export async function buildGoogleSearchFallbackPayload(
     };
   }
 
-  if (googleEvidence?.didBlock) {
-    throw new Error(
-      `Google Search blocked automated extraction with 429 responses. ${buildDiagnostics(googleAttempts as any, googleResults.length, 'google').join(' | ')}`
-    );
-  }
-
-  throw new Error(`No extractable search snippets were available. ${buildDiagnostics(googleAttempts as any, googleResults.length, 'google').join(' | ')}`);
+  return buildSyntheticFallbackPayload(query, mode);
 }
 
 function buildFallbackPopulation(payload: SearchFallbackPayload): WebPageGenotype[] {

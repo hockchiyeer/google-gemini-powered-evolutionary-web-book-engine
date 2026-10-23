@@ -23,14 +23,17 @@ export interface WebPageGenotype {
 }
 
 export const GEMINI_MODELS = [
+  'gemini-3.8-flash',
+  'gemini-flash-latest',
+  'gemini-3.1-flash-lite',
+  'gemini-2.5-flash',
+  'gemini-2.5-pro',
+  'gemini-3.1-pro',
   'gemini-1.5-flash',
   'gemini-1.5-pro',
   'gemini-2.0-flash',
   'gemini-2.0-flash-lite',
   'gemini-2.0-pro',
-  'gemini-2.5-flash',
-  'gemini-2.5-pro',
-  'gemini-3.1-pro',
   'gemini-1.5-pro-preview',
   'gemini-1.5-flash-preview',
   'gemini-2.0-flash-preview',
@@ -40,7 +43,7 @@ export const GEMINI_MODELS = [
   'gemini-2.5-pro-preview',
   'gemini-3.1-pro-preview',
 ] as const;
-export type GeminiModel = typeof GEMINI_MODELS[number];
+export type GeminiModel = (typeof GEMINI_MODELS)[number] | (string & {});
 
 export const WEB_BOOK_SOURCE_MODES = ['gemini', 'search-fallback'] as const;
 export type WebBookSourceMode = typeof WEB_BOOK_SOURCE_MODES[number];

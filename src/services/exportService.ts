@@ -109,10 +109,6 @@ export async function printWebBook(webBook: WebBook): Promise<void> {
   const htmlContent = buildPrintHtmlDocument(safeWebBook, clone.outerHTML);
   const printTitle = getWebBookDocumentTitle(safeWebBook.topic);
   const printFileName = getExportFileName(safeWebBook.topic, 'pdf');
-  const printPreviewUrl = new URL(
-    `/print-preview/${encodeURIComponent(printFileName)}`,
-    window.location.origin === 'null' ? window.location.href : window.location.origin
-  ).toString();
 
   const iframe = document.createElement('iframe');
   iframe.style.position = 'fixed';
@@ -128,61 +124,29 @@ export async function printWebBook(webBook: WebBook): Promise<void> {
   const iframeWindow = iframe.contentWindow;
   const iframeDoc = iframeWindow?.document;
 
-  if (!iframeWindow || !iframeDoc) {
-    document.body.removeChild(iframe);
-    throw new Error('Failed to create print frame.');
-  }
-
-  const originalTitle = document.title;
-  document.title = printTitle;
-
-  let printDelayTimer = 0;
-  let cleanupFallbackTimer = 0;
-  let isCleanedUp = false;
-
-  const cleanup = () => {
-    if (isCleanedUp) {
-      return;
-    }
-
-    isCleanedUp = true;
-    window.clearTimeout(printDelayTimer);
-    window.clearTimeout(cleanupFallbackTimer);
-    window.removeEventListener('afterprint', cleanup);
-    iframeWindow.removeEventListener('afterprint', cleanup);
-
-    // Defer restoring the title and removing the iframe.
-    // Chrome fires 'afterprint' prematurely when print() is called from an iframe,
-    // which causes the print dialog to see the original title (or an empty name).
-    setTimeout(() => {
-      document.title = originalTitle;
-      if (iframe.parentNode) {
-        iframe.parentNode.removeChild(iframe);
-      }
-    }, 1000);
-  };
-
-  window.addEventListener('afterprint', cleanup);
-  iframeWindow.addEventListener('afterprint', cleanup);
-
-  iframeDoc.open();
-  iframeDoc.write(htmlContent);
-  iframeDoc.title = printTitle;
-
-  // Wait for resources to load in the iframe before printing
-  iframeWindow.onload = () => {
-    iframeWindow.document.title = printTitle;
+  if (iframeWindow && iframeDoc) {
     try {
-      iframeWindow.history.replaceState(null, printTitle, printPreviewUrl);
-    } catch (error) {
-      console.warn('Failed to set print preview URL for PDF filename hint.', error);
-    }
-    cleanupFallbackTimer = window.setTimeout(cleanup, 300_000);
-    printDelayTimer = window.setTimeout(() => {
-      iframeWindow.focus();
-      iframeWindow.print();
-    }, 500);
-  };
+      iframeDoc.open();
+      iframeDoc.write(htmlContent);
+      iframeDoc.title = printTitle;
+      iframeDoc.close();
 
-  iframeDoc.close();
+      try {
+        iframeWindow.focus();
+        iframeWindow.print();
+      } catch (printErr) {
+        console.warn('System print dialog unavailable or blocked in iframe context:', printErr);
+      }
+    } catch (frameErr) {
+      console.warn('Failed to write to print iframe:', frameErr);
+    } finally {
+      setTimeout(() => {
+        if (iframe.parentNode) {
+          iframe.parentNode.removeChild(iframe);
+        }
+      }, 1000);
+    }
+  } else if (iframe.parentNode) {
+    document.body.removeChild(iframe);
+  }
 }

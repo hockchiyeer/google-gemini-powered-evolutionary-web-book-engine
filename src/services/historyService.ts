@@ -60,21 +60,45 @@ let firebaseDb: Firestore | null = null;
 let authInitPromise: Promise<User | null> | null = null;
 
 function isFirebaseConfigured(): boolean {
-  return Boolean(
-    FIREBASE_CONFIG.apiKey &&
-    FIREBASE_CONFIG.authDomain &&
-    FIREBASE_CONFIG.projectId &&
-    FIREBASE_CONFIG.appId
-  );
+  const apiKey = FIREBASE_CONFIG.apiKey?.trim();
+  const projectId = FIREBASE_CONFIG.projectId?.trim();
+  const appId = FIREBASE_CONFIG.appId?.trim();
+  const authDomain = FIREBASE_CONFIG.authDomain?.trim();
+
+  if (!apiKey || !projectId || !appId || !authDomain) {
+    return false;
+  }
+
+  // Reject placeholder and template dummy values
+  if (
+    apiKey.includes('MY_FIREBASE') ||
+    apiKey.includes('YOUR_') ||
+    apiKey === 'undefined' ||
+    projectId.includes('MY_FIREBASE') ||
+    projectId.includes('YOUR_') ||
+    appId.includes('MY_FIREBASE')
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 function getFirebaseServices(): { auth: Auth; db: Firestore } | null {
   if (!isFirebaseConfigured()) return null;
 
   if (!firebaseApp) {
-    firebaseApp = initializeApp(FIREBASE_CONFIG);
-    firebaseAuth = getAuth(firebaseApp);
-    firebaseDb = getFirestore(firebaseApp);
+    try {
+      firebaseApp = initializeApp(FIREBASE_CONFIG);
+      firebaseAuth = getAuth(firebaseApp);
+      firebaseDb = getFirestore(firebaseApp);
+    } catch (error) {
+      console.warn('Firebase initialization failed; falling back to local history storage.', error);
+      firebaseApp = null;
+      firebaseAuth = null;
+      firebaseDb = null;
+      return null;
+    }
   }
 
   return { auth: firebaseAuth!, db: firebaseDb! };
@@ -125,7 +149,7 @@ async function ensureAnonymousUser(): Promise<User | null> {
       return credential.user;
     })().catch((error) => {
       authInitPromise = null;
-      console.error('Firebase persistence auth failed', error);
+      console.warn('Firebase persistence auth failed, falling back to local history storage.', error?.message || error);
       return null;
     });
   }
@@ -173,36 +197,47 @@ function normalizeFallbackReason(value: unknown): SearchFallbackReason | undefin
 async function updateSearchRecord(searchId: string | null, data: Partial<PersistedSearchRecord>): Promise<void> {
   if (!searchId) return;
 
-  const services = getFirebaseServices();
-  const user = await ensureAnonymousUser();
-  if (!services || !user) return;
+  try {
+    const services = getFirebaseServices();
+    if (!services) return;
+    const user = await ensureAnonymousUser();
+    if (!user) return;
 
-  await setDoc(
-    doc(getSearchesCollection(services.db, user.uid), searchId),
-    {
-      ...data,
-      updatedAt: serverTimestamp(),
-    },
-    { merge: true }
-  );
+    await setDoc(
+      doc(getSearchesCollection(services.db, user.uid), searchId),
+      {
+        ...data,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+  } catch (error) {
+    console.warn('Firebase search update failed (non-fatal):', error);
+  }
 }
 
 export async function createPersistedSearch(queryText: string): Promise<string | null> {
-  const services = getFirebaseServices();
-  const user = await ensureAnonymousUser();
-  if (!services || !user) return null;
+  try {
+    const services = getFirebaseServices();
+    if (!services) return null;
+    const user = await ensureAnonymousUser();
+    if (!user) return null;
 
-  const searchRef = await addDoc(getSearchesCollection(services.db, user.uid), {
-    query: queryText,
-    status: 'started',
-    timestamp: Date.now(),
-    error: null,
-    webBook: null,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
+    const searchRef = await addDoc(getSearchesCollection(services.db, user.uid), {
+      query: queryText,
+      status: 'started',
+      timestamp: Date.now(),
+      error: null,
+      webBook: null,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
 
-  return searchRef.id;
+    return searchRef.id;
+  } catch (error) {
+    console.warn('Firebase create search failed (non-fatal):', error);
+    return null;
+  }
 }
 
 export async function completePersistedSearch(searchId: string | null, queryText: string, webBook: WebBook): Promise<void> {
@@ -226,50 +261,66 @@ export async function failPersistedSearch(searchId: string | null, queryText: st
 }
 
 export async function loadPersistedWebBooks(): Promise<WebBook[]> {
-  const services = getFirebaseServices();
-  const user = await ensureAnonymousUser();
-  if (!services || !user) return [];
+  try {
+    const services = getFirebaseServices();
+    if (!services) return [];
+    const user = await ensureAnonymousUser();
+    if (!user) return [];
 
-  const snapshot = await getDocs(
-    firestoreQuery(getSearchesCollection(services.db, user.uid), orderBy('timestamp', 'desc'))
-  );
+    const snapshot = await getDocs(
+      firestoreQuery(getSearchesCollection(services.db, user.uid), orderBy('timestamp', 'desc'))
+    );
 
-  return snapshot.docs
-    .map((searchDoc) => {
-      const data = searchDoc.data() as Partial<PersistedSearchRecord>;
-      if (data.status !== 'complete' || !data.webBook) {
-        return null;
-      }
+    return snapshot.docs
+      .map((searchDoc) => {
+        const data = searchDoc.data() as Partial<PersistedSearchRecord>;
+        if (data.status !== 'complete' || !data.webBook) {
+          return null;
+        }
 
-      return normalizeWebBook(data.webBook, searchDoc.id);
-    })
-    .filter((webBook): webBook is WebBook => Boolean(webBook));
+        return normalizeWebBook(data.webBook, searchDoc.id);
+      })
+      .filter((webBook): webBook is WebBook => Boolean(webBook));
+  } catch (error) {
+    console.warn('Firebase load history failed (non-fatal):', error);
+    return [];
+  }
 }
 
 export async function deletePersistedSearch(searchId: string): Promise<void> {
-  const services = getFirebaseServices();
-  const user = await ensureAnonymousUser();
-  if (!services || !user || !searchId) return;
+  try {
+    const services = getFirebaseServices();
+    if (!services || !searchId) return;
+    const user = await ensureAnonymousUser();
+    if (!user) return;
 
-  await deleteDoc(doc(getSearchesCollection(services.db, user.uid), searchId));
+    await deleteDoc(doc(getSearchesCollection(services.db, user.uid), searchId));
+  } catch (error) {
+    console.warn('Firebase delete search failed (non-fatal):', error);
+  }
 }
 
 export async function clearPersistedSearches(): Promise<void> {
-  const services = getFirebaseServices();
-  const user = await ensureAnonymousUser();
-  if (!services || !user) return;
+  try {
+    const services = getFirebaseServices();
+    if (!services) return;
+    const user = await ensureAnonymousUser();
+    if (!user) return;
 
-  const snapshot = await getDocs(getSearchesCollection(services.db, user.uid));
-  if (snapshot.empty) return;
+    const snapshot = await getDocs(getSearchesCollection(services.db, user.uid));
+    if (snapshot.empty) return;
 
-  // SE-7 fix: Firestore batches are capped at 500 operations; chunk the refs
-  // to avoid silent failures when a user has a large search history.
-  const BATCH_LIMIT = 500;
-  const refs = snapshot.docs.map((searchDoc) => searchDoc.ref);
-  for (let start = 0; start < refs.length; start += BATCH_LIMIT) {
-    const batch = writeBatch(services.db);
-    refs.slice(start, start + BATCH_LIMIT).forEach((ref) => batch.delete(ref));
-    await batch.commit();
+    // SE-7 fix: Firestore batches are capped at 500 operations; chunk the refs
+    // to avoid silent failures when a user has a large search history.
+    const BATCH_LIMIT = 500;
+    const refs = snapshot.docs.map((searchDoc) => searchDoc.ref);
+    for (let start = 0; start < refs.length; start += BATCH_LIMIT) {
+      const batch = writeBatch(services.db);
+      refs.slice(start, start + BATCH_LIMIT).forEach((ref) => batch.delete(ref));
+      await batch.commit();
+    }
+  } catch (error) {
+    console.warn('Firebase clear searches failed (non-fatal):', error);
   }
 }
 
