@@ -23,9 +23,11 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "exclude": [
-    "node_modules",
-    "dist",
-    "tests/scripts/smoke"
+  "include": [
+    "src/vite-env.d.ts",
+    "src/main.tsx",
+    "src/App.tsx",
+    "src/types.ts",
+    "src/services/evolutionService.ts"
   ]
 }

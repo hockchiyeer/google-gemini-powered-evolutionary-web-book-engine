@@ -1,233 +1,196 @@
 # Evolutionary Web-Book Engine
 
-Evolutionary Web-Book Engine is a React + Vite application that uses Google Gemini first, with a server-assisted Google Search / DuckDuckGo fallback, to search, extract, score, and synthesize Web knowledge into a styled multi-chapter Web-book for a user-supplied topic.
+An advanced AI-powered engine that synthesizes comprehensive, authoritative, multi-chapter digital "Web-Books" on any topic by mitigating search redundancy through evolutionary computation.
 
-👉 You can explore the live application built from this repository’s source code at: [https://ai.studio/apps/31adbd5d-351d-4f99-8974-e1d1bb92f1f0](https://ai.studio/apps/31adbd5d-351d-4f99-8974-e1d1bb92f1f0)
+---
 
-This repository includes:
+## Key Features
 
-- a modular React frontend under `src/`
-- a Vite middleware fallback route under `server/`
-- Gemini-first generation with automatic search fallback and resilient model selection
-- grounded synthetic evidence fallback when API quotas or web scrapers are blocked
-- source-pool consolidation that can preserve 40-50 distinct evidence items before assembly
-- deduplication for fallback-derived summaries, chapters, and source evidence
-- unified export pipeline for high-res PDF, print / save-as-PDF, native Word `.docx`, HTML, and plain text
+- **Two-Stage Evolutionary Content Synthesis**:
+  - **Stage 1 (Architectural Roadmap)**: Synthesizes a structured 10-chapter outline flowing logically from historical foundations to core architecture, deep technical mechanics, and future horizons.
+  - **Stage 2 (Parallel Chapter Expansion)**: Concurrently expands each chapter with rigorous technical definitions, sub-topic deep dives, and generative visual seeds.
+- **Configurable AI Models**:
+  - Dynamic model selection supporting modern Gemini models (`gemini-3.8-flash`, `gemini-2.5-flash`, `gemini-3-flash-preview`, `gemini-flash-latest`).
+  - Runtime model capability discovery and automated candidate failover.
+- **Multi-Tier Search Fallback Resilience**:
+  - Graceful degradation when Gemini API quotas or rate limits are reached.
+  - Configurable fallback routing: `Google + DuckDuckGo`, `Google only`, `DuckDuckGo only`, or `Off (Gemini only)`.
+  - Offline evolutionary synthesis fallback ensuring books are generated even during upstream API outages.
+- **Content Sanitization & Anti-Poisoning Heuristics**:
+  - Heuristic screening for machine-code artifacts, hex bytes, and digit noise.
+  - Automatic filtering of copyright disclaimers, scraper warnings, and promotional boilerplate.
+- **Comprehensive Multi-Format Export**:
+  - **PDF Document (High Res)**: Vector-grade document featuring a museum-grade cover, an interactive Table of Contents with clickable hyperlinks that jump directly to each chapter, and an editorial chapter layout (lead paragraph accent bars, key concept callout cards, deeper angle cards, and verified clickable source citations).
+  - **Print / Save as PDF**: Responsive print-to-PDF formatting utilizing clean `@media print` rules, dedicated page breaks, and iframe + window print resilience.
+  - **Word (.docx)**: Fully editable OpenXML document with preserved tables, glossaries, and embedded images.
+  - **HTML Webpage**: Standalone responsive document with self-contained styling and navigational anchors.
+  - **Plain Text (.txt)**: Clean, unformatted hierarchical text.
+- **Dual-Layer Persistence & History**:
+  - Cloud persistence via Firebase Firestore with anonymous authentication.
+  - Local browser storage caching for offline review and instant retrieval.
 
-## What The App Does
+---
 
-- Accepts a topic query and generates a structured Web-book around that topic.
-- Automatically defaults to the latest, most capable Google Gemini model available for free-tier users with dynamic model discovery and fallback across `gemini-3.8-flash`, `gemini-flash-latest`, `gemini-3.1-flash-lite`, `gemini-2.5-flash`, and user-defined custom model strings.
-- Uses Google Gemini first for search extraction and chapter assembly.
-- Consolidates a broader evidence pool before chapter writing so the generator is not forced to build a 10-chapter book from only a handful of sources.
-- Falls back seamlessly when Gemini is unavailable, misconfigured, rate-limited, or daily quota is exceeded.
-- Expands live search coverage with Google Search AI Overview, Google snippets, DuckDuckGo HTML snippets, and DuckDuckGo Lite results across multiple query variants.
-- Employs a grounded synthetic fallback generator (`buildSyntheticFallbackPayload`) when live search scrapers are blocked or yield 0 snippets, ensuring a complete 10-chapter WebBook is always synthesized with real query links (Google, DuckDuckGo, Wikipedia, GitHub) without error popups.
-- Deduplicates repeated fallback snippets, repeated chapter text, and repeated cross-chapter content.
-- Builds an 18-source assembly pool and prunes that into a final 10-chapter Web-book.
-- Renders a cover page, table of contents, chapter spreads, glossary sections, source links, and detailed reading links.
-- Preserves search history in `localStorage`.
-- Optionally syncs completed books to Firebase using Anonymous Auth + Cloud Firestore with graceful key error handling.
-- Exposes a technical artifacts panel for raw search results, evolved population, and assembly trace data.
+## Tech Stack
 
-## Current Architecture
+| Layer | Technologies |
+| :--- | :--- |
+| **Frontend Framework** | React 19, TypeScript, Vite 6 |
+| **Styling & UI** | Tailwind CSS v4, Motion (`motion/react`), Lucide React |
+| **AI Integration** | Google Gemini API via `@google/genai` |
+| **Document Export** | `jspdf`, `html2pdf.js`, `fflate` (DOCX OpenXML packaging) |
+| **Persistence** | Firebase Firestore, Firebase Auth, Web LocalStorage |
+| **Server & Middleware** | Node.js, Express, Vite Server Plugin Middleware |
+| **Testing** | Cypress with `@badeball/cypress-cucumber-preprocessor` (BDD Gherkin) |
 
-### Frontend
+---
 
-- `src/App.tsx` is a thin page-level orchestrator.
-- `src/hooks/useWebBookEngine.ts` manages the search/evolution/assembly flow, carries the expanded assembly input set, and publishes artifact data to the UI.
-- `src/components/` contains the header, sidebar, and history drawer:
-  - `src/components/AppHeader.tsx` renders top navigation, action triggers, and the export menu dropdown.
-  - `src/components/ControlSidebar.tsx` exposes model controls, fallback selector, query input, and execution metrics.
-  - `src/components/HistoryDrawer.tsx` manages archived Web-books.
-- `src/WebBookViewer.tsx` renders the main Web-book viewer.
-- `src/services/` contains the evolution pipeline, fallback client, history persistence, shared search utilities, and export logic:
-  - `src/services/evolutionService.ts` handles Gemini search grounding, model resilience, population evolution, and synthetic fallback generation.
-  - `src/services/exportService.ts` provides unified handlers for high-res PDF export, system printing, Word document generation, HTML, and text export.
-  - `src/services/exportDocument.ts` provides shared HTML document shell builders and DOM cloning utilities for all export targets.
-  - `src/services/historyService.ts` manages local and Firebase Firestore search history with non-blocking auth error handling.
-- `src/utils/webBookRender.ts` handles content filtering, render planning, and source-link normalization.
-
-### Fallback Route
-
-- `server/googleSearchFallback.ts` orchestrates the Vite middleware route at `/api/search-fallback`.
-- The extraction logic is organized under `server/searchStrategies/` (`googleStrategy.ts`, `duckDuckGoStrategy.ts`, `shared.ts`, `types.ts`).
-- Expands search coverage using query variants and interleave blending into a capped source pool.
-- Returns grounded synthetic search evidence if automated web scraping encounters HTTP 429 blocks or empty result sets, preventing pipeline disruption.
-
-## Search And Assembly Pipeline
-
-1. **Search & Extract**: Perform Gemini search extraction in `src/services/evolutionService.ts`.
-2. **Enrich Evidence**: Enrich Gemini extraction with live search evidence when available to consolidate 40-50 distinct source items.
-3. **Fallback Recovery**: If Gemini encounters rate limits (429), quota exhaustion, network issues, or invalid keys, request `/api/search-fallback`.
-4. **Live & Synthetic Extraction**:
-   - Google Search AI Overview extraction
-   - Google Search snippet extraction
-   - DuckDuckGo HTML and DuckDuckGo Lite snippet extraction
-   - Grounded synthetic topic evidence payload when scraping is blocked or yields sparse evidence
-5. **Candidate Population**: Build a deduplicated population of candidate source pages.
-6. **Evolutionary Scoring**: Score and recombine that population across 3 evolutionary passes, computing γ × R(w,S) redundancy penalties across generations.
-7. **Assembly**: Assemble the final Web-book from an 18-source pool into 10 structured chapters.
-8. **Render & Export**: Render the book with source verification links and export to the desired format.
-
-## Repo Structure
+## Repository Structure
 
 ```text
-.
-|-- .env.example
-|-- .gitignore
-|-- .npmrc
-|-- GOOGLE_AI_STUDIO_UPLOAD.md
-|-- LICENSE.txt
-|-- README.md
-|-- index.html
-|-- metadata.json
-|-- package-lock.json
-|-- package.json
-|-- tsconfig.json
-|-- vite.config.ts
-|-- scripts/
-|   |-- package-google-ai-studio.mjs
-|   `-- start-preview.mjs
-|-- server/
-|   |-- googleSearchFallback.ts
-|   |-- pdfBridge.ts
-|   |-- server.ts
-|   `-- searchStrategies/
-|       |-- duckDuckGoStrategy.ts
-|       |-- googleStrategy.ts
-|       |-- shared.ts
-|       `-- types.ts
-|-- tests/
-|   |-- .cypress-cucumber-preprocessorrc.json
-|   |-- cypress.config.cjs
-|   |-- cypress.env.config.cjs
-|   |-- cypress/
-|   |   |-- e2e/
-|   |   |   |-- common/
-|   |   |   |-- features/
-|   |   |   `-- pageObjects/
-|   |   |-- fixtures/
-|   |   `-- support/
-|   |-- scripts/
-|   `-- server/
-`-- src/
-    |-- App.tsx
-    |-- WebBookErrorBoundary.tsx
-    |-- WebBookViewer.tsx
-    |-- index.css
-    |-- main.tsx
-    |-- types.ts
-    |-- components/
-    |   |-- AppHeader.tsx
-    |   |-- ControlSidebar.tsx
-    |   `-- HistoryDrawer.tsx
-    |-- hooks/
-    |   `-- useWebBookEngine.ts
-    |-- services/
-    |   |-- documentTitle.ts
-    |   |-- docxExport.ts
-    |   |-- evolutionService.ts
-    |   |-- exportDocument.ts
-    |   |-- exportService.ts
-    |   |-- fallbackPayloadHeuristics.ts
-    |   |-- geminiUserFacingErrors.ts
-    |   |-- googleSearchFallbackClient.ts
-    |   |-- historyService.ts
-    |   |-- searchFallbackShared.ts
-    |   `-- searchIntakeParser.ts
-    `-- utils/
-        `-- webBookRender.ts
+├── .env.example                         # Environment variable template
+├── index.html                           # Application entry HTML
+├── metadata.json                        # AI Studio applet capabilities and metadata
+├── package.json                         # Project dependencies and npm scripts
+├── tsconfig.json                        # TypeScript configuration
+├── vite.config.ts                       # Vite configuration with Tailwind and search middleware
+│
+├── scripts/
+│   ├── package-google-ai-studio.mjs     # Packaging utility for Google AI Studio deployments
+│   ├── start-preview.mjs                # Production preview server runner
+│   └── update_options.cjs               # Configuration synchronization script
+│
+├── server/
+│   ├── googleSearchFallback.ts          # Express & Vite middleware for search fallback routes
+│   ├── pdfBridge.ts                     # Server-side PDF generation bridge
+│   ├── server.ts                        # Standalone full-stack server entry
+│   └── searchStrategies/
+│       ├── duckDuckGoStrategy.ts        # DuckDuckGo fallback scraper strategy
+│       ├── googleStrategy.ts            # Google Search fallback strategy
+│       ├── shared.ts                    # Search deduplication & ranking utilities
+│       └── types.ts                     # Strategy typing definitions
+│
+├── src/
+│   ├── App.tsx                          # Root application component
+│   ├── WebBookViewer.tsx                # Interactive multi-page WebBook reader
+│   ├── WebBookErrorBoundary.tsx         # Component-level error boundary
+│   ├── index.css                        # Global Tailwind styles and print media rules
+│   ├── main.tsx                         # Client application bootstrap
+│   ├── types.ts                         # Core domain and genotype types
+│   │
+│   ├── components/
+│   │   ├── AppHeader.tsx                # Header with navigation, model status, and export dropdown
+│   │   ├── ControlSidebar.tsx           # Ingestion controls, model selector, and metrics panel
+│   │   └── HistoryDrawer.tsx            # Slide-out archived Web-book drawer
+│   │
+│   ├── hooks/
+│   │   └── useWebBookEngine.ts          # Core engine hook orchestrating search, evolution, and history
+│   │
+│   ├── services/
+│   │   ├── documentTitle.ts             # Dynamic document title formatter
+│   │   ├── docxExport.ts                # Word OpenXML (.docx) document builder
+│   │   ├── evolutionService.ts          # Genetic algorithm, fitness evaluation, and Gemini assembly
+│   │   ├── exportDocument.ts            # Document prep, inlining, and HTML print shells
+│   │   ├── exportService.ts             # Multi-format export coordinator (PDF, Print, Word, HTML, TXT)
+│   │   ├── fallbackPayloadHeuristics.ts # Heuristic quality scorers for search results
+│   │   ├── geminiUserFacingErrors.ts    # Friendly error translation for API responses
+│   │   ├── googleSearchFallbackClient.ts# Client interface to fallback search middleware
+│   │   ├── historyService.ts            # Firestore and LocalStorage persistence layer
+│   │   ├── searchFallbackShared.ts      # Shared scoring and URL builders
+│   │   └── searchIntakeParser.ts        # Robust JSON and text stream parser
+│   │
+│   └── utils/
+│       └── webBookRender.ts             # Pagination planner and source link sanitizers
+│
+└── tests/
+    ├── cypress.config.cjs               # Cypress test configuration
+    └── cypress/
+        ├── fixtures/                    # Test fixtures for deterministic search mock data
+        ├── support/                     # Cypress commands and export stubs
+        └── e2e/
+            ├── features/
+            │   └── webbook-generation.feature # BDD feature specifications
+            ├── common/                  # Cucumber step definitions (Given, When, Then)
+            └── pageObjects/             # Page object locators
 ```
 
-## Local Development
+---
 
-### Requirements
+## Setup & Running
 
-- Node.js 18+ recommended
-- npm
+### 1. Prerequisites
 
-### Install
+- **Node.js**: v20 or higher
+- **npm**: v10 or higher
+
+### 2. Installation
 
 ```bash
 npm install
 ```
 
-### Environment
+### 3. Environment Setup
 
-Create `.env` from `.env.example`.
-
-Recommended:
+Create a `.env` file in the project root:
 
 ```env
-GEMINI_API_KEY="your_gemini_api_key"
-VITE_GEMINI_API_KEY="your_gemini_api_key"
+GEMINI_API_KEY=your_gemini_api_key_here
 ```
 
-Optional Firebase configuration:
+### 4. Development Server
 
-```env
-VITE_FIREBASE_API_KEY="..."
-VITE_FIREBASE_AUTH_DOMAIN="..."
-VITE_FIREBASE_PROJECT_ID="..."
-VITE_FIREBASE_STORAGE_BUCKET="..."
-VITE_FIREBASE_MESSAGING_SENDER_ID="..."
-VITE_FIREBASE_APP_ID="..."
-VITE_FIREBASE_MEASUREMENT_ID="..."
-```
-
-### Start The Dev Server
+Start the local development server:
 
 ```bash
 npm run dev
 ```
 
-The app is configured to run on:
+The application will be accessible at `http://localhost:3000`.
 
-```text
-http://localhost:3000
+### 5. Production Build & Preview
+
+```bash
+# Type check and build production assets
+npm run build
+
+# Preview production build locally
+npm run preview
 ```
 
-`vite.config.ts` uses `strictPort: true`, so the dev server will fail instead of silently moving to a different port.
+### 6. Code Verification
 
-Important:
+```bash
+# Type check without emitting files
+npm run lint
+```
 
-- Use `npm run dev`
-- Use `npm start` for hosted AI Studio / Cloud Run style runs so the app is built first and then served through `vite preview`
+### 7. Google AI Studio Upload Packaging
 
-## Available Scripts
+```bash
+# Package application source archive for Google AI Studio / external deployment
+npm run package:aistudio
+```
 
-- `npm run dev` - start the Vite dev server on port 3000
-- `npm run build` - create a production build
-- `npm start` - build the app and serve it with `vite preview` on the platform `PORT`
-- `npm run preview` - preview the built app
-- `npm run lint` - run TypeScript type checking with `tsc --noEmit`
-- `npm run clean` - remove `dist` using `rm -rf dist`
-- `npm run test:local` - start test server on port 3000, run Cypress BDD suite, and generate HTML reports
-- `npm run test:unit` - run server-side unit tests with `node --experimental-strip-types`
-- `npm run test:prod` - run Cypress suite against production target
-- `npm run report:generate` - generate Mochawesome and Cucumber HTML reports from Cypress artifacts
+Generates a deployable source ZIP archive at `artifacts/evolutionary-web-book-engine-google-ai-studio-upload.zip`.
 
-## Export Formats
+---
 
-The current Web-book can be exported as:
+## How It Works
 
-- **PDF Document (High Res)**: Renders a high-quality server-side PDF via Puppeteer (`/__pdf`) and downloads the `.pdf` file directly.
-- **Print / Save as PDF**: Opens the browser's system print interface via a clean iframe so users can print physically or save via Chrome's native PDF printer without duplicate server requests.
-- **Word (.docx)**: Exports a native `.docx` document package with embedded chapter images and hyperlinks.
-- **HTML Webpage**: Downloads a standalone `.html` file preserving formatting and styling.
-- **Plain Text (.txt)**: Generates a plain-text version of all chapters, definitions, and sources.
+1. **Targeted Ingestion**: Gathers initial candidate sources via Gemini with Google Search grounding, preserving verified search URLs and domain citations. If quotas or rate limits are reached, the query transparently routes through the selected fallback provider (`Google + DuckDuckGo`, `Google`, or `DuckDuckGo`).
+2. **Evolutionary Optimization**:
+   - **Fitness Function**: Evaluates candidate text based on Informative Value $I(w)$, Source Authority $A(w)$, and a Redundancy Penalty $R(w, S)$.
+   - **Selection & Crossover**: Selects top-scoring genotypes across successive generations to eliminate redundant boilerplate while preserving novel technical facts.
+3. **Two-Stage Phenotype Assembly**:
+   - Generates a holistic 10-chapter roadmap outline.
+   - Concurrently expands chapters with detailed narrative prose, domain definitions, deeper exploratory angles, and visual concept seeds.
+4. **Interactive Presentation & Export**:
+   - Delivers an interactive multi-page WebBook with jump navigation, concept glossary, and source citations.
+   - Enables one-click exports across PDF (with interactive TOC hyperlinks), Word, HTML, and text.
 
-## History And Persistence
-
-- Local history is always saved in `localStorage`.
-- When Firebase environment variables are provided, completed books sync asynchronously to Cloud Firestore.
-- Auth errors (such as invalid Firebase keys) fail gracefully without disrupting the user UI or search workflows.
-
-## AI Studio Metadata
-
-The repository includes `metadata.json` and `.env.example` configured for Google AI Studio app preview and packaging workflows.
+---
 
 ## License
 
-See [LICENSE.txt](LICENSE.txt).
+Apache-2.0
+

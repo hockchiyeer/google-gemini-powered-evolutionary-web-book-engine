@@ -22,114 +22,79 @@ export interface WebPageGenotype {
   fitness: number;          // F(w)
 }
 
-export const GEMINI_MODELS = [
-  'gemini-3.8-flash',
-  'gemini-flash-latest',
-  'gemini-3.1-flash-lite',
-  'gemini-2.5-flash',
-  'gemini-2.5-pro',
-  'gemini-3.1-pro',
-  'gemini-1.5-flash',
-  'gemini-1.5-pro',
-  'gemini-2.0-flash',
-  'gemini-2.0-flash-lite',
-  'gemini-2.0-pro',
-  'gemini-1.5-pro-preview',
-  'gemini-1.5-flash-preview',
-  'gemini-2.0-flash-preview',
-  'gemini-2.0-flash-lite-preview',
-  'gemini-2.0-pro-preview',
-  'gemini-2.5-flash-preview',
-  'gemini-2.5-pro-preview',
-  'gemini-3.1-pro-preview',
-] as const;
-export type GeminiModel = (typeof GEMINI_MODELS)[number] | (string & {});
-
-export const WEB_BOOK_SOURCE_MODES = ['gemini', 'search-fallback'] as const;
-export type WebBookSourceMode = typeof WEB_BOOK_SOURCE_MODES[number];
-
-export const SEARCH_FALLBACK_SOURCES = [
-  'google-ai-overview',
-  'google-search-snippets',
-  'alternate-search-snippets',
-] as const;
-export type SearchFallbackSource = typeof SEARCH_FALLBACK_SOURCES[number];
-
-export const SEARCH_FALLBACK_PROVIDERS = ['google', 'duckduckgo'] as const;
-export type SearchFallbackProvider = typeof SEARCH_FALLBACK_PROVIDERS[number];
-
-export const SEARCH_FALLBACK_MODES = ['off', 'google', 'duckduckgo', 'google_duckduckgo'] as const;
-export type SearchFallbackMode = typeof SEARCH_FALLBACK_MODES[number];
-export interface EngineOptions {
-  mode: SearchFallbackMode;
-  geminiModel?: GeminiModel;
-}
-
-
-export const SEARCH_FALLBACK_REASONS = [
-  'missing_api_key',
-  'invalid_api_key',
-  'quota_or_rate_limit',
-  'service_unavailable',
-  'network_unreachable',
-] as const;
-export type SearchFallbackReason = typeof SEARCH_FALLBACK_REASONS[number];
-
-export function isWebBookSourceMode(value: unknown): value is WebBookSourceMode {
-  return typeof value === 'string' && WEB_BOOK_SOURCE_MODES.includes(value as WebBookSourceMode);
-}
-
-export function isSearchFallbackSource(value: unknown): value is SearchFallbackSource {
-  return typeof value === 'string' && SEARCH_FALLBACK_SOURCES.includes(value as SearchFallbackSource);
-}
-
-export function isSearchFallbackProvider(value: unknown): value is SearchFallbackProvider {
-  return typeof value === 'string' && SEARCH_FALLBACK_PROVIDERS.includes(value as SearchFallbackProvider);
-}
-
-export function isSearchFallbackMode(value: unknown): value is SearchFallbackMode {
-  return typeof value === 'string' && SEARCH_FALLBACK_MODES.includes(value as SearchFallbackMode);
-}
-
-export function isSearchFallbackReason(value: unknown): value is SearchFallbackReason {
-  return typeof value === 'string' && SEARCH_FALLBACK_REASONS.includes(value as SearchFallbackReason);
-}
-
-export interface SearchArtifact {
-  web?: {
-    title?: string;
-    uri?: string;
-  };
-  snippet?: string;
-}
-
-export interface SearchFallbackResult {
-  title: string;
-  url: string;
-  domain: string;
-  snippet: string;
-  excerpt?: string;
-}
-
-export interface SearchFallbackPayload {
-  readonly query: string;
-  readonly mode?: SearchFallbackMode;
-  readonly source: SearchFallbackSource;
-  readonly provider: SearchFallbackProvider;
-  readonly summary: string;
-  readonly aiOverview: ReadonlyArray<string>;
-  readonly results: ReadonlyArray<SearchFallbackResult>;
-  readonly extractedAt: number;
-  readonly diagnostics?: ReadonlyArray<string>;
-}
+export type ChapterSourceUrl = string | { title: string; url: string };
 
 export interface Chapter {
   title: string;
   content: string;
   definitions: Definition[];
   subTopics: SubTopic[];
-  sourceUrls: Array<string | { title: string; url: string }>;
+  sourceUrls: ChapterSourceUrl[];
   visualSeed: string; // Keyword for image generation
+}
+
+export const GEMINI_MODELS = [
+  'gemini-3-flash-preview',
+  'gemini-2.5-flash',
+  'gemini-3.8-flash',
+  'gemini-flash-latest',
+] as const;
+
+export type SearchFallbackMode = 'off' | 'duckduckgo' | 'google' | 'google_duckduckgo';
+export type SearchFallbackSource = 'google' | 'duckduckgo' | 'google_duckduckgo' | 'gemini';
+export type SearchFallbackReason = 'quota_exhausted' | 'rate_limited' | 'unreachable' | 'network_unreachable' | 'manual' | 'no_content';
+export type WebBookSourceMode = 'gemini' | 'fallback_search' | 'hybrid' | 'search-fallback';
+export type SearchFallbackProvider = 'google' | 'duckduckgo';
+
+export interface SearchArtifact {
+  title?: string;
+  url?: string;
+  snippet?: string;
+  source?: SearchFallbackProvider;
+  web?: { title: string; uri: string };
+}
+
+export interface SearchFallbackResult {
+  title: string;
+  url: string;
+  snippet: string;
+  source?: SearchFallbackProvider;
+  domain?: string;
+  excerpt?: string;
+}
+
+export interface SearchFallbackPayload {
+  query: string;
+  provider: SearchFallbackProvider | 'google_duckduckgo';
+  results: SearchFallbackResult[];
+  timestamp?: number;
+  extractedAt?: number;
+  summary?: string;
+  diagnostics?: string[];
+  source?: string;
+  aiOverview?: any[];
+}
+
+export interface EngineOptions {
+  mode: SearchFallbackMode;
+  geminiModel?: string;
+  maxGenerations?: number;
+}
+
+export function isSearchFallbackMode(val: unknown): val is SearchFallbackMode {
+  return typeof val === 'string' && ['off', 'duckduckgo', 'google', 'google_duckduckgo'].includes(val);
+}
+
+export function isSearchFallbackReason(val: unknown): val is SearchFallbackReason {
+  return typeof val === 'string' && ['quota_exhausted', 'rate_limited', 'unreachable', 'network_unreachable', 'manual', 'no_content'].includes(val);
+}
+
+export function isSearchFallbackSource(val: unknown): val is SearchFallbackSource {
+  return typeof val === 'string' && ['google', 'duckduckgo', 'google_duckduckgo', 'gemini'].includes(val);
+}
+
+export function isWebBookSourceMode(val: unknown): val is WebBookSourceMode {
+  return typeof val === 'string' && ['gemini', 'fallback_search', 'hybrid', 'search-fallback'].includes(val);
 }
 
 export interface WebBook {
@@ -137,9 +102,9 @@ export interface WebBook {
   topic: string;
   timestamp: number;
   chapters: Chapter[];
-  completedGenerations?: number;
   sourceMode?: WebBookSourceMode;
   generationNote?: string;
+  completedGenerations?: number;
   fallbackSource?: SearchFallbackSource;
   fallbackReason?: SearchFallbackReason;
 }
@@ -148,32 +113,18 @@ export interface EvolutionState {
   generation: number;
   population: WebPageGenotype[];
   bestFitness: number;
-  bestInformativeScore?: number;
-  bestAuthorityScore?: number;
-  bestRedundancyPenalty?: number;
   status: 'idle' | 'searching' | 'parsing' | 'evolving' | 'assembling' | 'complete';
   artifacts?: {
-    rawSearchResults?: SearchArtifact[];
-    evolvedPopulation?: WebPageGenotype[];
-    assemblyInput?: any;
-    assemblyOutput?: any;
     searchSummary?: string;
+    rawSearchResults?: any[];
+    evolvedPopulation?: WebPageGenotype[];
+    assemblyInput?: WebPageGenotype[];
+    assemblyOutput?: WebBook;
+    [key: string]: unknown;
   };
-}
-
-declare global {
-  interface ImportMetaEnv {
-    readonly VITE_GEMINI_API_KEY?: string;
-    readonly VITE_FIREBASE_API_KEY?: string;
-    readonly VITE_FIREBASE_AUTH_DOMAIN?: string;
-    readonly VITE_FIREBASE_PROJECT_ID?: string;
-    readonly VITE_FIREBASE_STORAGE_BUCKET?: string;
-    readonly VITE_FIREBASE_MESSAGING_SENDER_ID?: string;
-    readonly VITE_FIREBASE_APP_ID?: string;
-    readonly VITE_FIREBASE_MEASUREMENT_ID?: string;
-  }
-
-  interface ImportMeta {
-    readonly env: ImportMetaEnv;
-  }
+  generationNote?: string;
+  completedGenerations?: number;
+  bestRedundancyPenalty?: number;
+  bestInformativeScore?: number;
+  bestAuthorityScore?: number;
 }

@@ -26,6 +26,7 @@ export default function App() {
   const [showArtifacts, setShowArtifacts] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+
   const {
     query,
     setQuery,
@@ -44,6 +45,7 @@ export default function App() {
     deleteHistoryItem,
     clearAllHistory,
   } = useWebBookEngine();
+
   const isBusy = state.status !== 'idle' && state.status !== 'complete';
 
   useEffect(() => {
@@ -88,6 +90,7 @@ export default function App() {
             </button>
           </div>
         )}
+
         <ControlSidebar
           query={query}
           onQueryChange={setQuery}

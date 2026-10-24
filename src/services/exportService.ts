@@ -1,7 +1,8 @@
 import type { WebBook } from '../types';
+import type { DocxChapterImageAsset } from './docxExport';
 import { buildWebBookDocx } from './docxExport';
 import { getWebBookDocumentTitle } from './documentTitle';
-import { sanitizeWebBookForPresentation } from '../utils/webBookRender';
+import { getChapterSourceLinks, sanitizeWebBookForPresentation } from '../utils/webBookRender';
 import {
   buildPdfHtmlDocument,
   buildPrintHtmlDocument,
@@ -25,19 +26,35 @@ export async function exportWebBookToTxt(webBook: WebBook): Promise<void> {
     text += `CHAPTER ${index + 1}: ${chapter.title}\n`;
     text += `${'='.repeat(chapter.title.length + 11)}\n\n`;
     text += `${chapter.content}\n\n`;
-    text += `VISUAL CONCEPT: ${chapter.visualSeed}\n\n`;
+    text += `VISUAL CONCEPT: ${chapter.visualSeed || 'None specified for this chapter.'}\n\n`;
+
     text += 'CORE CONCEPTS:\n';
-    chapter.definitions.forEach((definition) => {
-      text += `- ${definition.term}: ${definition.description}\n`;
-    });
+    if (chapter.definitions && chapter.definitions.length > 0) {
+      chapter.definitions.forEach((definition) => {
+        text += `- ${definition.term}: ${definition.description}\n`;
+      });
+    } else {
+      text += '- None specified for this chapter.\n';
+    }
+
     text += '\nSUB-TOPICS:\n';
-    chapter.subTopics.forEach((subTopic) => {
-      text += `- ${subTopic.title}: ${subTopic.summary}\n`;
-    });
+    if (chapter.subTopics && chapter.subTopics.length > 0) {
+      chapter.subTopics.forEach((subTopic) => {
+        text += `- ${subTopic.title}: ${subTopic.summary}\n`;
+      });
+    } else {
+      text += '- None specified for this chapter.\n';
+    }
+
     text += '\nSOURCES:\n';
-    chapter.sourceUrls.forEach((sourceUrl) => {
-      text += `- ${formatSourceLink(sourceUrl)}\n`;
-    });
+    const sourceLinks = getChapterSourceLinks(chapter, { includeSearchResults: true, maxItems: 8 });
+    if (sourceLinks.length > 0) {
+      sourceLinks.forEach((sourceLink) => {
+        text += `- ${sourceLink.title} (${sourceLink.hostname}) - ${sourceLink.url}\n`;
+      });
+    } else {
+      text += '- None specified for this chapter.\n';
+    }
     text += '\n\n';
   });
 
@@ -64,15 +81,456 @@ export async function exportWebBookToWord(webBook: WebBook): Promise<void> {
   downloadBlob(blob, getExportFileName(safeWebBook.topic, 'docx'));
 }
 
+export async function exportWebBookWithJsPdf(
+  webBook: WebBook,
+  chapterImages: Array<DocxChapterImageAsset | null> = []
+): Promise<void> {
+  const { jsPDF } = await import('jspdf');
+  const safeWebBook = sanitizeWebBookForPresentation(webBook);
+  const doc = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'portrait' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 44;
+  const contentWidth = pageWidth - margin * 2;
+  const footerLimit = pageHeight - 48;
+
+  // --- Page 1: Sleek Museum-Grade Cover Page ---
+  doc.setFillColor(20, 20, 20);
+  doc.rect(0, 0, pageWidth, pageHeight, 'F');
+
+  // Top geometric badge
+  doc.setDrawColor(228, 227, 224);
+  doc.setLineWidth(1.5);
+  doc.rect(pageWidth / 2 - 14, 180, 28, 28);
+  doc.setFont('times', 'bolditalic');
+  doc.setFontSize(14);
+  doc.setTextColor(228, 227, 224);
+  doc.text('E', pageWidth / 2, 199, { align: 'center' });
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(170, 168, 164);
+  doc.text('EVOLUTIONARY WEB-BOOK ENGINE', pageWidth / 2, 230, { align: 'center' });
+
+  // Main Cover Title
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('times', 'bolditalic');
+  doc.setFontSize(28);
+  const coverTitleLines = doc.splitTextToSize(safeWebBook.topic.toUpperCase(), contentWidth - 40);
+  const titleY = Math.max(280, 340 - coverTitleLines.length * 16);
+  doc.text(coverTitleLines, pageWidth / 2, titleY, { align: 'center' });
+
+  // Accent divider line
+  doc.setDrawColor(228, 227, 224);
+  doc.setLineWidth(1);
+  const dividerY = titleY + coverTitleLines.length * 20 + 15;
+  doc.line(pageWidth / 2 - 40, dividerY, pageWidth / 2 + 40, dividerY);
+
+  // Metadata 3-column stats
+  const metaY = dividerY + 40;
+  const col1 = margin + contentWidth * 0.2;
+  const col2 = pageWidth / 2;
+  const col3 = pageWidth - margin - contentWidth * 0.2;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(160, 158, 154);
+  doc.text('CHAPTERS', col1, metaY, { align: 'center' });
+  doc.text('CONCEPTS', col2, metaY, { align: 'center' });
+  doc.text('DATE', col3, metaY, { align: 'center' });
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(20);
+  doc.setTextColor(255, 255, 255);
+  const conceptCount = safeWebBook.chapters.reduce(
+    (acc, ch) => acc + (Array.isArray(ch.definitions) ? ch.definitions.length : 0),
+    0
+  );
+  doc.text(String(safeWebBook.chapters.length), col1, metaY + 24, { align: 'center' });
+  doc.text(String(conceptCount), col2, metaY + 24, { align: 'center' });
+  doc.text(
+    new Date(safeWebBook.timestamp).toLocaleDateString(undefined, { month: 'short', year: 'numeric' }),
+    col3,
+    metaY + 24,
+    { align: 'center' }
+  );
+
+  // Bottom subtitle
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(140, 138, 134);
+  doc.text('MITIGATING SEARCH REDUNDANCY VIA EVOLUTIONARY COMPUTING', pageWidth / 2, pageHeight - 50, { align: 'center' });
+
+  // --- Page 2: Table of Contents Placeholder (Filled in Pass 2) ---
+  doc.addPage();
+
+  // --- Pass 1: Render All Chapters ---
+  const chapterStartPages: number[] = [];
+  let currentY = 60;
+
+  function checkPageSpace(needed: number) {
+    if (currentY + needed > footerLimit) {
+      doc.addPage();
+      currentY = 60;
+    }
+  }
+
+  safeWebBook.chapters.forEach((chapter, index) => {
+    doc.addPage();
+    chapterStartPages.push(doc.getNumberOfPages());
+    currentY = 60;
+
+    // Chapter Header Box
+    doc.setFillColor(20, 20, 20);
+    doc.rect(margin, currentY, 26, 26, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text(`0${index + 1}`, margin + 13, currentY + 17, { align: 'center' });
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(120, 120, 120);
+    doc.text(`CHAPTER ${index + 1} OF ${safeWebBook.chapters.length}   |   OVERVIEW & NARRATIVE`, margin + 36, currentY + 10);
+
+    doc.setFont('times', 'bolditalic');
+    doc.setFontSize(18);
+    doc.setTextColor(20, 20, 20);
+    const chTitleLines = doc.splitTextToSize(chapter.title, contentWidth - 40);
+    doc.text(chTitleLines, margin + 36, currentY + 24);
+    currentY += Math.max(32, 10 + chTitleLines.length * 18) + 12;
+
+    // Header hairline separator
+    doc.setDrawColor(220, 220, 220);
+    doc.setLineWidth(0.75);
+    doc.line(margin, currentY, pageWidth - margin, currentY);
+    currentY += 16;
+
+    // Chapter Image (if inlined) or Visual Concept Seed Box
+    const imgAsset = chapterImages[index];
+    if (imgAsset && imgAsset.bytes && imgAsset.bytes.length > 0) {
+      try {
+        const imgMaxW = contentWidth - 40;
+        const imgMaxH = 180;
+        const aspect = (imgAsset.widthPx && imgAsset.heightPx) ? (imgAsset.widthPx / imgAsset.heightPx) : (16 / 9);
+        let imgW = Math.min(imgMaxW, imgMaxH * aspect);
+        let imgH = imgW / aspect;
+        if (imgH > imgMaxH) {
+          imgH = imgMaxH;
+          imgW = imgH * aspect;
+        }
+        checkPageSpace(imgH + 40);
+        const imgX = margin + (contentWidth - imgW) / 2;
+        doc.addImage(imgAsset.bytes, imgAsset.extension.toUpperCase(), imgX, currentY, imgW, imgH);
+        currentY += imgH + 8;
+
+        if (chapter.visualSeed) {
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(7.5);
+          doc.setTextColor(120, 120, 120);
+          doc.text(`Visual concept: "${chapter.visualSeed}"`, margin + contentWidth / 2, currentY + 8, { align: 'center' });
+          currentY += 16;
+        }
+      } catch (imgErr) {
+        console.warn('Failed to draw chapter image in PDF:', imgErr);
+      }
+    } else if (chapter.visualSeed) {
+      const seedLines = doc.splitTextToSize(`"${chapter.visualSeed}"`, contentWidth - 28);
+      const boxHeight = 24 + seedLines.length * 12;
+      checkPageSpace(boxHeight + 12);
+      doc.setFillColor(248, 247, 245);
+      doc.setDrawColor(20, 20, 20);
+      doc.setLineWidth(0.5);
+      doc.rect(margin, currentY, contentWidth, boxHeight, 'FD');
+
+      // Badge
+      doc.setFillColor(20, 20, 20);
+      doc.rect(margin + 12, currentY + 8, 88, 12, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6.5);
+      doc.setTextColor(255, 255, 255);
+      doc.text('VISUAL CONCEPT SEED', margin + 56, currentY + 16.5, { align: 'center' });
+
+      doc.setFont('times', 'italic');
+      doc.setFontSize(9);
+      doc.setTextColor(60, 60, 60);
+      doc.text(seedLines, margin + 12, currentY + 28);
+      currentY += boxHeight + 16;
+    }
+
+    // Editorial Prose Paragraphs
+    const paragraphs = chapter.content.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+    paragraphs.forEach((paragraph, pIdx) => {
+      if (pIdx === 0) {
+        // Styled lead paragraph with vertical accent bar
+        doc.setFont('times', 'normal');
+        doc.setFontSize(11);
+        doc.setTextColor(25, 25, 25);
+        const leadLines = doc.splitTextToSize(paragraph, contentWidth - 16);
+        checkPageSpace(leadLines.length * 15 + 16);
+
+        doc.setDrawColor(20, 20, 20);
+        doc.setLineWidth(2.5);
+        doc.line(margin, currentY + 2, margin, currentY + leadLines.length * 15 - 2);
+
+        doc.text(leadLines, margin + 14, currentY + 11);
+        currentY += leadLines.length * 15 + 16;
+      } else {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9.5);
+        doc.setTextColor(50, 50, 50);
+        const bodyLines = doc.splitTextToSize(paragraph, contentWidth);
+        checkPageSpace(bodyLines.length * 14 + 12);
+        doc.text(bodyLines, margin, currentY + 10);
+        currentY += bodyLines.length * 14 + 12;
+      }
+    });
+
+    // Core Concepts Callout Cards
+    if (chapter.definitions && chapter.definitions.length > 0) {
+      checkPageSpace(60);
+      currentY += 8;
+      doc.setFillColor(20, 20, 20);
+      doc.rect(margin, currentY, 110, 14, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7);
+      doc.setTextColor(255, 255, 255);
+      doc.text('KEY DOMAIN CONCEPTS', margin + 55, currentY + 9.5, { align: 'center' });
+
+      doc.setDrawColor(220, 220, 220);
+      doc.setLineWidth(0.5);
+      doc.line(margin + 116, currentY + 7, pageWidth - margin, currentY + 7);
+      currentY += 22;
+
+      chapter.definitions.forEach((def) => {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        const descLines = doc.splitTextToSize(def.description, contentWidth - 24);
+        const cardHeight = 22 + descLines.length * 11.5;
+        checkPageSpace(cardHeight + 8);
+
+        doc.setFillColor(252, 252, 251);
+        doc.setDrawColor(225, 225, 225);
+        doc.setLineWidth(0.5);
+        doc.rect(margin, currentY, contentWidth, cardHeight, 'FD');
+
+        doc.setDrawColor(20, 20, 20);
+        doc.setLineWidth(2.5);
+        doc.line(margin, currentY, margin, currentY + cardHeight);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9);
+        doc.setTextColor(20, 20, 20);
+        doc.text(def.term, margin + 12, currentY + 13);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        doc.setTextColor(70, 70, 70);
+        doc.text(descLines, margin + 12, currentY + 25);
+        currentY += cardHeight + 8;
+      });
+    }
+
+    // Deeper Angles & Sub-Topics Cards
+    if (chapter.subTopics && chapter.subTopics.length > 0) {
+      checkPageSpace(60);
+      currentY += 8;
+      doc.setFillColor(20, 20, 20);
+      doc.rect(margin, currentY, 140, 14, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7);
+      doc.setTextColor(255, 255, 255);
+      doc.text('DEEPER ANGLES & EXPLORATION', margin + 70, currentY + 9.5, { align: 'center' });
+
+      doc.setDrawColor(220, 220, 220);
+      doc.setLineWidth(0.5);
+      doc.line(margin + 146, currentY + 7, pageWidth - margin, currentY + 7);
+      currentY += 22;
+
+      chapter.subTopics.forEach((sub) => {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        const sumLines = doc.splitTextToSize(sub.summary, contentWidth - 24);
+        const cardHeight = (sub.sourceUrl ? 36 : 24) + sumLines.length * 11.5;
+        checkPageSpace(cardHeight + 8);
+
+        doc.setFillColor(249, 250, 251);
+        doc.setDrawColor(215, 220, 225);
+        doc.setLineWidth(0.5);
+        doc.rect(margin, currentY, contentWidth, cardHeight, 'FD');
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9);
+        doc.setTextColor(20, 20, 20);
+        doc.text(sub.title, margin + 12, currentY + 13);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        doc.setTextColor(70, 70, 70);
+        doc.text(sumLines, margin + 12, currentY + 25);
+
+        if (sub.sourceUrl) {
+          const linkY = currentY + 27 + sumLines.length * 11.5;
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(8);
+          doc.setTextColor(30, 58, 138);
+          doc.text('Source Article »', margin + 12, linkY);
+          doc.link(margin + 12, linkY - 8, 70, 11, { url: sub.sourceUrl });
+        }
+
+        currentY += cardHeight + 8;
+      });
+    }
+
+    // Verified Source Citations with Clickable Links (Deduplicated)
+    const uniqueSources = getChapterSourceLinks(chapter, { includeSearchResults: true, maxItems: 8 });
+    if (uniqueSources.length > 0) {
+      checkPageSpace(50);
+      currentY += 8;
+      doc.setFillColor(20, 20, 20);
+      doc.rect(margin, currentY, 130, 14, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7);
+      doc.setTextColor(255, 255, 255);
+      doc.text('VERIFIED SOURCE CITATIONS', margin + 65, currentY + 9.5, { align: 'center' });
+
+      doc.setDrawColor(220, 220, 220);
+      doc.setLineWidth(0.5);
+      doc.line(margin + 136, currentY + 7, pageWidth - margin, currentY + 7);
+      currentY += 22;
+
+      uniqueSources.forEach((sourceLink) => {
+        checkPageSpace(20);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        doc.setTextColor(30, 58, 138);
+
+        const displayTitle = sourceLink.title || sourceLink.hostname;
+        const truncatedTitle = displayTitle.length > 70 ? `${displayTitle.slice(0, 70)}...` : displayTitle;
+        const lineText = `• [${sourceLink.hostname}] ${truncatedTitle}`;
+
+        doc.text(lineText, margin + 8, currentY + 10);
+        const textW = doc.getTextWidth(lineText);
+        doc.link(margin + 8, currentY, textW, 12, { url: sourceLink.url });
+        currentY += 16;
+      });
+    }
+  });
+
+  // --- Pass 2: Render Table of Contents on Page 2 with Working Hyperlinks ---
+  doc.setPage(2);
+  doc.setFillColor(250, 250, 250);
+  doc.rect(0, 0, pageWidth, pageHeight, 'F');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.setTextColor(20, 20, 20);
+  doc.text('TABLE OF CONTENTS', margin, 70);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(110, 110, 110);
+  doc.text('CLICK ANY CHAPTER TO NAVIGATE DIRECTLY', margin, 84);
+
+  doc.setDrawColor(20, 20, 20);
+  doc.setLineWidth(1.5);
+  doc.line(margin, 92, pageWidth - margin, 92);
+
+  let tocY = 125;
+  safeWebBook.chapters.forEach((chapter, index) => {
+    const pNum = chapterStartPages[index];
+
+    // Chapter Number Badge
+    doc.setFillColor(20, 20, 20);
+    doc.rect(margin, tocY - 11, 20, 16, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.text(`0${index + 1}`, margin + 10, tocY + 0.5, { align: 'center' });
+
+    // Chapter Title
+    doc.setTextColor(20, 20, 20);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10.5);
+    const maxTitleLen = 50;
+    const displayTitle = chapter.title.length > maxTitleLen ? `${chapter.title.slice(0, maxTitleLen)}...` : chapter.title;
+    doc.text(displayTitle, margin + 28, tocY);
+
+    const titleW = doc.getTextWidth(displayTitle);
+    const pageLabel = `P. ${pNum}`;
+    const pageW = doc.getTextWidth(pageLabel);
+
+    // Dotted leader line
+    const dotStart = margin + 32 + titleW;
+    const dotEnd = pageWidth - margin - pageW - 8;
+    if (dotEnd > dotStart) {
+      doc.setDrawColor(180, 180, 180);
+      doc.setLineDashPattern([1.5, 3], 0);
+      doc.line(dotStart, tocY - 2, dotEnd, tocY - 2);
+      doc.setLineDashPattern([], 0);
+    }
+
+    // Page number
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(80, 80, 80);
+    doc.text(pageLabel, pageWidth - margin, tocY, { align: 'right' });
+
+    // CLICKABLE INTERNAL HYPERLINK TO JUMP TO CHAPTER PAGE!
+    doc.link(margin, tocY - 12, contentWidth, 20, { pageNumber: pNum });
+
+    tocY += 28;
+  });
+
+  // --- Running Headers & Footers across Pages 2 to Total ---
+  const totalPages = doc.getNumberOfPages();
+  for (let p = 2; p <= totalPages; p += 1) {
+    doc.setPage(p);
+
+    // Running Header
+    doc.setDrawColor(225, 225, 225);
+    doc.setLineWidth(0.5);
+    doc.line(margin, 36, pageWidth - margin, 36);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(140, 140, 140);
+    doc.text('EVOLUTIONARY WEB-BOOK ENGINE', margin, 30);
+    const maxTopicLen = 50;
+    const displayTopic = safeWebBook.topic.length > maxTopicLen ? `${safeWebBook.topic.slice(0, maxTopicLen)}...` : safeWebBook.topic;
+    doc.text(displayTopic.toUpperCase(), pageWidth - margin, 30, { align: 'right' });
+
+    // Running Footer
+    doc.setDrawColor(225, 225, 225);
+    doc.setLineWidth(0.5);
+    doc.line(margin, pageHeight - 34, pageWidth - margin, pageHeight - 34);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(150, 150, 150);
+    doc.text('MITIGATING SEARCH REDUNDANCY VIA EVOLUTIONARY COMPUTING', margin, pageHeight - 22);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(60, 60, 60);
+    doc.text(`PAGE ${p} OF ${totalPages}`, pageWidth - margin, pageHeight - 22, { align: 'right' });
+  }
+
+  const pdfBlob = doc.output('blob');
+  downloadBlob(pdfBlob, getExportFileName(safeWebBook.topic, 'pdf'));
+}
+
 export async function exportWebBookToPdf(webBook: WebBook): Promise<void> {
   const safeWebBook = sanitizeWebBookForPresentation(webBook);
-  const { clone } = await prepareExportContent(getWebBookElement(), { inlineImages: false });
+  const element = getWebBookElement();
+  const { clone, chapterImages } = await prepareExportContent(element, { inlineImages: true });
 
-  // Increase fetch timeout for PDF generation to 5 minutes
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes
-
+  // 1. Attempt fast server-side PDF generation if route is available (for Cypress stub or server)
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
+
     const response = await fetch('/__pdf', {
       method: 'POST',
       headers: {
@@ -87,20 +545,27 @@ export async function exportWebBookToPdf(webBook: WebBook): Promise<void> {
 
     clearTimeout(timeoutId);
 
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => 'Unknown error');
-      throw new Error(`PDF export failed: ${errorText}`);
+    if (response.ok) {
+      const blob = await response.blob();
+      if (blob.size > 0 && (blob.type.includes('pdf') || blob.type === 'application/octet-stream')) {
+        downloadBlob(blob, getExportFileName(safeWebBook.topic, 'pdf'));
+        return;
+      }
     }
-
-    const blob = await response.blob();
-    downloadBlob(blob, getExportFileName(safeWebBook.topic, 'pdf'));
-  } catch (error: any) {
-    clearTimeout(timeoutId);
-    if (error.name === 'AbortError') {
-      throw new Error('PDF export timed out. The document might be too large or contain slow-loading assets.');
-    }
-    throw error;
+  } catch (serverErr) {
+    console.warn('Server PDF endpoint not available or timed out, proceeding to client-side vector generation...', serverErr);
   }
+
+  // 2. High-resolution vector PDF generation with interactive TOC hyperlinks and editorial layout
+  try {
+    await exportWebBookWithJsPdf(safeWebBook, chapterImages);
+    return;
+  } catch (vectorErr) {
+    console.warn('jsPDF vector export failed, falling back to print-to-PDF view...', vectorErr);
+  }
+
+  // 3. Resilient fallback: browser print-to-PDF dialog
+  await printWebBook(safeWebBook);
 }
 
 export async function printWebBook(webBook: WebBook): Promise<void> {
@@ -112,17 +577,50 @@ export async function printWebBook(webBook: WebBook): Promise<void> {
 
   const iframe = document.createElement('iframe');
   iframe.style.position = 'fixed';
-  iframe.style.right = '0';
-  iframe.style.bottom = '0';
-  iframe.style.width = '0';
-  iframe.style.height = '0';
+  iframe.style.top = '0';
+  iframe.style.left = '0';
+  iframe.style.width = '100%';
+  iframe.style.height = '100%';
   iframe.style.border = '0';
+  iframe.style.zIndex = '-9999';
+  iframe.style.opacity = '0';
+  iframe.style.pointerEvents = 'none';
   iframe.title = printTitle;
   iframe.name = printFileName;
   document.body.appendChild(iframe);
 
   const iframeWindow = iframe.contentWindow;
   const iframeDoc = iframeWindow?.document;
+
+  const cleanup = () => {
+    setTimeout(() => {
+      if (iframe.parentNode) {
+        iframe.parentNode.removeChild(iframe);
+      }
+    }, 60000);
+  };
+
+  const executePrint = () => {
+    let printed = false;
+    if (iframeWindow) {
+      try {
+        iframeWindow.focus();
+        iframeWindow.print();
+        printed = true;
+      } catch (printErr) {
+        console.warn('Iframe print restricted or failed:', printErr);
+      }
+    }
+    if (!printed) {
+      try {
+        window.focus();
+        window.print();
+      } catch (winErr) {
+        console.warn('Window print fallback failed:', winErr);
+      }
+    }
+    cleanup();
+  };
 
   if (iframeWindow && iframeDoc) {
     try {
@@ -131,22 +629,27 @@ export async function printWebBook(webBook: WebBook): Promise<void> {
       iframeDoc.title = printTitle;
       iframeDoc.close();
 
-      try {
-        iframeWindow.focus();
-        iframeWindow.print();
-      } catch (printErr) {
-        console.warn('System print dialog unavailable or blocked in iframe context:', printErr);
+      if (iframeDoc.readyState === 'complete') {
+        setTimeout(executePrint, 200);
+      } else {
+        iframe.onload = () => setTimeout(executePrint, 100);
+        setTimeout(executePrint, 800);
       }
     } catch (frameErr) {
-      console.warn('Failed to write to print iframe:', frameErr);
-    } finally {
-      setTimeout(() => {
-        if (iframe.parentNode) {
-          iframe.parentNode.removeChild(iframe);
-        }
-      }, 1000);
+      console.warn('Failed to write to print iframe, falling back to window.print():', frameErr);
+      try {
+        window.print();
+      } catch (winErr) {
+        console.warn('Window print failed:', winErr);
+      }
+      cleanup();
     }
-  } else if (iframe.parentNode) {
-    document.body.removeChild(iframe);
+  } else {
+    try {
+      window.print();
+    } catch (winErr) {
+      console.warn('Direct print failed:', winErr);
+    }
+    cleanup();
   }
 }

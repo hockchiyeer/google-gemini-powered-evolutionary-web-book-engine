@@ -138,6 +138,23 @@ function loadImageMetadata(src: string): Promise<{ width: number; height: number
   });
 }
 
+function createFallbackImagePlaceholder(text: string, width = 800, height = 450): string {
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    ctx.fillStyle = '#1c1c1c';
+    ctx.fillRect(0, 0, width, height);
+    ctx.fillStyle = '#e4e3e0';
+    ctx.font = 'bold 20px serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText((text || 'Chapter Visual').slice(0, 45), width / 2, height / 2);
+  }
+  return canvas.toDataURL('image/png');
+}
+
 async function inlineImageForExport(image: HTMLImageElement): Promise<void> {
   if (!image.src) {
     return;
@@ -172,8 +189,8 @@ async function inlineImageForExport(image: HTMLImageElement): Promise<void> {
       const loaded = await loadImageMetadata(exportSrc);
       metadata = { width: loaded.width, height: loaded.height };
     } catch (fallbackError) {
-      console.error('Failed to inline image for export', fallbackError);
-      return;
+      console.warn('Failed to inline image for export, using safe placeholder', fallbackError);
+      exportSrc = createFallbackImagePlaceholder(image.alt || 'Chapter Visual');
     }
   }
 
@@ -379,6 +396,7 @@ export function buildPrintHtmlDocument(webBook: WebBook, htmlContent: string): s
     getWebBookDocumentTitle(webBook.topic),
     htmlContent,
     `
+      <style>${PDF_TAILWIND_INLINE_CSS}</style>
       <style>
         html { scroll-behavior: smooth; }
         body { font-family: 'Inter', sans-serif; background: white; padding: 24px 0; margin: 0; }

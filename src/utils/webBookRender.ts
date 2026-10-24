@@ -273,18 +273,27 @@ function sanitizeChapterForPresentation(chapter: Chapter, index: number, topic =
   const sourceUrls = Array.isArray(chapter?.sourceUrls)
     ? chapter.sourceUrls
       .map((source) => {
-        if (typeof source === "string") {
-          return source.trim();
-        }
-
-        if (!source?.url?.trim()) {
+        const rawUrl = typeof source === "string" ? source.trim() : source?.url?.trim();
+        if (!rawUrl || !/^https?:\/\//i.test(rawUrl)) {
           return null;
         }
 
-        return {
-          title: sanitizeStructuredLabel(source.title, source.url),
-          url: source.url.trim(),
-        };
+        try {
+          const u = new URL(rawUrl);
+          const cleanHost = u.hostname.toLowerCase();
+          if (cleanHost.includes('source-') || cleanHost === 'knowledge-base.org' || cleanHost === 'localhost') {
+            return null;
+          }
+          if (typeof source === "string") {
+            return rawUrl;
+          }
+          return {
+            title: sanitizeStructuredLabel(source.title, rawUrl),
+            url: rawUrl,
+          };
+        } catch {
+          return null;
+        }
       })
       .filter((source): source is Chapter["sourceUrls"][number] => Boolean(source))
     : [];
@@ -667,6 +676,11 @@ export function normalizeSourceLink(source: Chapter["sourceUrls"][number]): Norm
   try {
     const url = new URL(rawUrl);
     if (!/^https?:$/.test(url.protocol)) {
+      return null;
+    }
+
+    const cleanHost = url.hostname.toLowerCase();
+    if (cleanHost.includes('source-') || cleanHost === 'knowledge-base.org' || cleanHost === 'localhost') {
       return null;
     }
 
