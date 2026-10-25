@@ -69,18 +69,22 @@ function runCommand(command, args) {
 async function main() {
   const options = parseArgs(process.argv.slice(2));
 
+  const envArgs = [
+    `ENVIRONMENT=${options.environment ?? "DEV"}`,
+    options.baseUrl ? `baseUrl=${options.baseUrl}` : null,
+  ]
+    .filter(Boolean)
+    .join(",");
+
   const cypressArgs = [
     "cypress",
     "run",
     "--config-file",
     "tests/cypress.config.cjs",
+    "--expose",
+    envArgs,
     "--env",
-    [
-      `ENVIRONMENT=${options.environment ?? "DEV"}`,
-      options.baseUrl ? `baseUrl=${options.baseUrl}` : null,
-    ]
-      .filter(Boolean)
-      .join(","),
+    envArgs,
   ];
 
   if (options.spec) {

@@ -41,6 +41,16 @@ module.exports = defineConfig({
     },
     specPattern: "tests/cypress/e2e/features/**/*.feature",
     supportFile: "tests/cypress/support/e2e.js",
+    expose: {
+      ...environmentConfig,
+      stepDefinitions: cucumberConfig.stepDefinitions,
+      htmlEnabled: cucumberConfig.html?.enabled,
+      htmlOutput: cucumberConfig.html?.output,
+      jsonEnabled: cucumberConfig.json?.enabled,
+      jsonOutput: cucumberConfig.json?.output,
+      messagesEnabled: cucumberConfig.messages?.enabled,
+      messagesOutput: cucumberConfig.messages?.output
+    },
     env: {
       ...environmentConfig,
       stepDefinitions: cucumberConfig.stepDefinitions,

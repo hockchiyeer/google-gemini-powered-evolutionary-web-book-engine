@@ -1,0 +1,3527 @@
+[
+  {
+    "description": "  As a principal system tester\n  I want reliable BDD coverage across ingestion, fallback routing, artifacts, exports, and history\n  So that the Evolutionary Web-Book Engine remains stable under deterministic Cypress runs",
+    "elements": [
+      {
+        "description": "",
+        "id": "web-book-engine-evolution-pipeline;idle-application-state-exposes-the-expected-controls-and-empty-history",
+        "keyword": "Scenario",
+        "line": 9,
+        "name": "Idle application state exposes the expected controls and empty history",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 87000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 7,
+            "name": "I clear Web browser cookies",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 2924000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 10,
+            "name": "I navigate to \"DEV\" URL and close cookies pop up window",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 160000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 11,
+            "name": "I verify title is \"Evolutionary Web Book Engine\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 75000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 12,
+            "name": "I should see \"engine_title\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 49000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 13,
+            "name": "I should see \"targeted_ingestion_section\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 52000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 14,
+            "name": "I should see \"search_input\" is enabled on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 30000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 15,
+            "name": "I should see \"search_button\" is enabled on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 31000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 16,
+            "name": "I should see \"fallback_mode_select\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 25000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 17,
+            "name": "I should see \"gemini_model_select\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 35000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 18,
+            "name": "I should see fallback mode is set to \"google_duckduckgo\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 49000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 19,
+            "name": "I should see Gemini model is set to \"gemini-3.8-flash\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 77000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 20,
+            "name": "I should see \"status_label\" text displayed in \"idle\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 29000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 21,
+            "name": "I should see \"generation_number\" text displayed in \"0\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 27000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 22,
+            "name": "I should see \"pop_size_number\" text displayed in \"0\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 40000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 23,
+            "name": "I should see \"evolutionary_metrics_section\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 51000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 24,
+            "name": "I should see \"webbook_viewer_placeholder\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 34000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 25,
+            "name": "I should not see \"export_menu_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 173000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 26,
+            "name": "I click \"history_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 25000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 27,
+            "name": "I should see \"history_drawer_title\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 82000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 28,
+            "name": "I should see \"history_empty_state\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 208000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 29,
+            "name": "I click \"close_history_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 76000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 30,
+            "name": "I should see \"engine_title\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          }
+        ],
+        "tags": [],
+        "type": "scenario"
+      },
+      {
+        "description": "",
+        "id": "web-book-engine-evolution-pipeline;fallback-selector-supports-every-supported-mode",
+        "keyword": "Scenario Outline",
+        "line": 41,
+        "name": "Fallback selector supports every supported mode",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 72000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 7,
+            "name": "I clear Web browser cookies",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 617000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 33,
+            "name": "I navigate to \"DEV\" URL and close cookies pop up window",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 149000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 34,
+            "name": "I select fallback mode \"google_duckduckgo\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 29000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 35,
+            "name": "I should see fallback mode is set to \"google_duckduckgo\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 49000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 36,
+            "name": "I verify the text \"Used only if Gemini needs recovery or supplemental search evidence.\" is displayed on the webpage",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 25000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 37,
+            "name": "I should see \"search_input\" is enabled on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          }
+        ],
+        "tags": [],
+        "type": "scenario"
+      },
+      {
+        "description": "",
+        "id": "web-book-engine-evolution-pipeline;fallback-selector-supports-every-supported-mode",
+        "keyword": "Scenario Outline",
+        "line": 42,
+        "name": "Fallback selector supports every supported mode",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 84000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 7,
+            "name": "I clear Web browser cookies",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 678000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 33,
+            "name": "I navigate to \"DEV\" URL and close cookies pop up window",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 179000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 34,
+            "name": "I select fallback mode \"google\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 25000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 35,
+            "name": "I should see fallback mode is set to \"google\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 34000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 36,
+            "name": "I verify the text \"Used only if Gemini needs recovery or supplemental search evidence.\" is displayed on the webpage",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 44000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 37,
+            "name": "I should see \"search_input\" is enabled on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          }
+        ],
+        "tags": [],
+        "type": "scenario"
+      },
+      {
+        "description": "",
+        "id": "web-book-engine-evolution-pipeline;fallback-selector-supports-every-supported-mode",
+        "keyword": "Scenario Outline",
+        "line": 43,
+        "name": "Fallback selector supports every supported mode",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 128000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 7,
+            "name": "I clear Web browser cookies",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 553000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 33,
+            "name": "I navigate to \"DEV\" URL and close cookies pop up window",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 179000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 34,
+            "name": "I select fallback mode \"duckduckgo\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 24000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 35,
+            "name": "I should see fallback mode is set to \"duckduckgo\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 31000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 36,
+            "name": "I verify the text \"Used only if Gemini needs recovery or supplemental search evidence.\" is displayed on the webpage",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 22000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 37,
+            "name": "I should see \"search_input\" is enabled on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          }
+        ],
+        "tags": [],
+        "type": "scenario"
+      },
+      {
+        "description": "",
+        "id": "web-book-engine-evolution-pipeline;fallback-selector-supports-every-supported-mode",
+        "keyword": "Scenario Outline",
+        "line": 44,
+        "name": "Fallback selector supports every supported mode",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 35000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 7,
+            "name": "I clear Web browser cookies",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 559000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 33,
+            "name": "I navigate to \"DEV\" URL and close cookies pop up window",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 181000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 34,
+            "name": "I select fallback mode \"off\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 51000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 35,
+            "name": "I should see fallback mode is set to \"off\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 43000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 36,
+            "name": "I verify the text \"Gemini-only mode. No Google Search or DuckDuckGo recovery will run if Gemini search or extraction fails.\" is displayed on the webpage",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 31000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 37,
+            "name": "I should see \"search_input\" is enabled on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          }
+        ],
+        "tags": [],
+        "type": "scenario"
+      },
+      {
+        "description": "",
+        "id": "web-book-engine-evolution-pipeline;gemini-model-selector-can-be-changed-independently-of-fallback-mode",
+        "keyword": "Scenario",
+        "line": 46,
+        "name": "Gemini model selector can be changed independently of fallback mode",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 27000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 7,
+            "name": "I clear Web browser cookies",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 563000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 47,
+            "name": "I navigate to \"DEV\" URL and close cookies pop up window",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 166000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 48,
+            "name": "I select Gemini model \"gemini-2.5-flash\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 22000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 49,
+            "name": "I should see Gemini model is set to \"gemini-2.5-flash\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 47000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 50,
+            "name": "I should see fallback mode is set to \"google_duckduckgo\"",
+            "match": {
+              "location": "not available:0"
+            }
+          }
+        ],
+        "tags": [],
+        "type": "scenario"
+      },
+      {
+        "description": "",
+        "id": "web-book-engine-evolution-pipeline;blank-searches-are-ignored-without-mutating-idle-state",
+        "keyword": "Scenario",
+        "line": 52,
+        "name": "Blank searches are ignored without mutating idle state",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 67000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 7,
+            "name": "I clear Web browser cookies",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 541000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 53,
+            "name": "I navigate to \"DEV\" URL and close cookies pop up window",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 85000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 54,
+            "name": "I click \"search_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 24000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 55,
+            "name": "I should see \"status_label\" text displayed in \"idle\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 39000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 56,
+            "name": "I should see \"webbook_viewer_placeholder\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 27000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 57,
+            "name": "I should not see \"export_menu_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          }
+        ],
+        "tags": [],
+        "type": "scenario"
+      },
+      {
+        "description": "",
+        "id": "web-book-engine-evolution-pipeline;long-multi-line-query-displays-the-full-query-preview",
+        "keyword": "Scenario",
+        "line": 59,
+        "name": "Long multi-line query displays the full query preview",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 31000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 7,
+            "name": "I clear Web browser cookies",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 594000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 60,
+            "name": "I navigate to \"DEV\" URL and close cookies pop up window",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 71000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 61,
+            "name": "I enter a long query in \"search_input\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 53000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 62,
+            "name": "I should see \"query_preview\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 29000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 63,
+            "name": "I verify the text \"Full Search Query Preview\" is displayed on the webpage",
+            "match": {
+              "location": "not available:0"
+            }
+          }
+        ],
+        "tags": [],
+        "type": "scenario"
+      },
+      {
+        "description": "",
+        "id": "web-book-engine-evolution-pipeline;generation-completes-through-each-live-fallback-mode",
+        "keyword": "Scenario Outline",
+        "line": 81,
+        "name": "Generation completes through each live fallback mode",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 67000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 7,
+            "name": "I clear Web browser cookies",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 40000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 66,
+            "name": "I stub fallback search results using fixture \"search-fallback-quantum-physics-live-shape.json\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 551000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 67,
+            "name": "I navigate to \"DEV\" URL and close cookies pop up window",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 141000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 68,
+            "name": "I select fallback mode \"google_duckduckgo\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 727000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 69,
+            "name": "I enter \"Quantum Physics\" in \"search_input\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 88000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 70,
+            "name": "I click \"search_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 141000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 71,
+            "name": "the fallback search API should be requested with mode \"google_duckduckgo\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 472000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 72,
+            "name": "I should see \"status_label\" text displayed in \"complete\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 32000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 73,
+            "name": "I should see \"generated_book_title\" text displayed in \"Quantum Physics\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 27000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 74,
+            "name": "I should see \"generated_book_content\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 53000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 75,
+            "name": "I should see \"table_of_contents\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 109000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 76,
+            "name": "I should see \"source_verification\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 34000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 77,
+            "name": "I should see at least 6 Web-book pages",
+            "match": {
+              "location": "not available:0"
+            }
+          }
+        ],
+        "tags": [],
+        "type": "scenario"
+      },
+      {
+        "description": "",
+        "id": "web-book-engine-evolution-pipeline;generation-completes-through-each-live-fallback-mode",
+        "keyword": "Scenario Outline",
+        "line": 82,
+        "name": "Generation completes through each live fallback mode",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 37000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 7,
+            "name": "I clear Web browser cookies",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 64000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 66,
+            "name": "I stub fallback search results using fixture \"search-fallback-quantum-physics.json\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 631000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 67,
+            "name": "I navigate to \"DEV\" URL and close cookies pop up window",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 162000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 68,
+            "name": "I select fallback mode \"google\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 682000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 69,
+            "name": "I enter \"Quantum Physics\" in \"search_input\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 83000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 70,
+            "name": "I click \"search_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 130000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 71,
+            "name": "the fallback search API should be requested with mode \"google\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 80000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 72,
+            "name": "I should see \"status_label\" text displayed in \"complete\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 35000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 73,
+            "name": "I should see \"generated_book_title\" text displayed in \"Quantum Physics\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 30000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 74,
+            "name": "I should see \"generated_book_content\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 106000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 75,
+            "name": "I should see \"table_of_contents\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 60000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 76,
+            "name": "I should see \"source_verification\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 69000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 77,
+            "name": "I should see at least 6 Web-book pages",
+            "match": {
+              "location": "not available:0"
+            }
+          }
+        ],
+        "tags": [],
+        "type": "scenario"
+      },
+      {
+        "description": "",
+        "id": "web-book-engine-evolution-pipeline;generation-completes-through-each-live-fallback-mode",
+        "keyword": "Scenario Outline",
+        "line": 83,
+        "name": "Generation completes through each live fallback mode",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 37000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 7,
+            "name": "I clear Web browser cookies",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 44000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 66,
+            "name": "I stub fallback search results using fixture \"search-fallback-quantum-physics.json\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 606000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 67,
+            "name": "I navigate to \"DEV\" URL and close cookies pop up window",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 174000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 68,
+            "name": "I select fallback mode \"duckduckgo\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 711000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 69,
+            "name": "I enter \"Quantum Physics\" in \"search_input\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 90000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 70,
+            "name": "I click \"search_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 129000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 71,
+            "name": "the fallback search API should be requested with mode \"duckduckgo\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 115000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 72,
+            "name": "I should see \"status_label\" text displayed in \"complete\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 50000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 73,
+            "name": "I should see \"generated_book_title\" text displayed in \"Quantum Physics\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 76000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 74,
+            "name": "I should see \"generated_book_content\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 31000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 75,
+            "name": "I should see \"table_of_contents\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 35000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 76,
+            "name": "I should see \"source_verification\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 60000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 77,
+            "name": "I should see at least 6 Web-book pages",
+            "match": {
+              "location": "not available:0"
+            }
+          }
+        ],
+        "tags": [],
+        "type": "scenario"
+      },
+      {
+        "description": "",
+        "id": "web-book-engine-evolution-pipeline;query-submission-works-from-the-enter-key",
+        "keyword": "Scenario",
+        "line": 85,
+        "name": "Query submission works from the Enter key",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 37000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 7,
+            "name": "I clear Web browser cookies",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 59000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 86,
+            "name": "I stub fallback search results using fixture \"search-fallback-quantum-physics.json\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 546000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 87,
+            "name": "I navigate to \"DEV\" URL and close cookies pop up window",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 722000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 88,
+            "name": "I enter \"Quantum Physics\" in \"search_input\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 128000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 89,
+            "name": "I press Enter in \"search_input\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 70000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 90,
+            "name": "the fallback search API should be requested with mode \"google_duckduckgo\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 27000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 91,
+            "name": "I should see \"status_label\" text displayed in \"complete\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 25000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 92,
+            "name": "I should see \"generated_book_content\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          }
+        ],
+        "tags": [],
+        "type": "scenario"
+      },
+      {
+        "description": "",
+        "id": "web-book-engine-evolution-pipeline;artifacts-panel-exposes-search-coverage,-population,-and-assembly-trace",
+        "keyword": "Scenario",
+        "line": 94,
+        "name": "Artifacts panel exposes search coverage, population, and assembly trace",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 39000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 7,
+            "name": "I clear Web browser cookies",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 57000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 95,
+            "name": "I stub fallback search results using fixture \"search-fallback-quantum-physics.json\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 528000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 96,
+            "name": "I navigate to \"DEV\" URL and close cookies pop up window",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 713000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 97,
+            "name": "I enter \"Quantum Physics\" in \"search_input\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 83000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 98,
+            "name": "I click \"search_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 104000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 99,
+            "name": "the fallback search API should be requested with mode \"google_duckduckgo\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 27000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 100,
+            "name": "I should see \"status_label\" text displayed in \"complete\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 119000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 101,
+            "name": "I click \"show_artifacts_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 98000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 102,
+            "name": "I should see \"artifacts_panel\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 51000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 103,
+            "name": "I should see \"search_coverage_summary\" text displayed in \"Quantum physics explains\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 24000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 104,
+            "name": "I should see \"raw_search_grounding\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 40000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 105,
+            "name": "I should see \"evolved_population\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 31000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 106,
+            "name": "I should see \"assembly_pipeline\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 43000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 107,
+            "name": "I verify the text \"Quantum mechanics | Definition, Development, and Equations\" is displayed on the webpage",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 152000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 108,
+            "name": "I click \"hide_artifacts_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 40000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 109,
+            "name": "I should see \"show_artifacts_button\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          }
+        ],
+        "tags": [],
+        "type": "scenario"
+      },
+      {
+        "description": "",
+        "id": "web-book-engine-evolution-pipeline;every-export-option-delegates-to-the-expected-browser-or-server-handler",
+        "keyword": "Scenario Outline",
+        "line": 126,
+        "name": "Every export option delegates to the expected browser or server handler",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 74000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 7,
+            "name": "I clear Web browser cookies",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 31000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 112,
+            "name": "I stub fallback search results using fixture \"search-fallback-quantum-physics.json\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 676000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 113,
+            "name": "I navigate to \"DEV\" URL and close cookies pop up window",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 65000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 114,
+            "name": "I stub Web-book export handlers",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 681000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 115,
+            "name": "I enter \"Quantum Physics\" in \"search_input\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 86000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 116,
+            "name": "I click \"search_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 145000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 117,
+            "name": "the fallback search API should be requested with mode \"google_duckduckgo\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 941000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 118,
+            "name": "I should see \"status_label\" text displayed in \"complete\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 281000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 119,
+            "name": "I click \"export_menu_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 286000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 120,
+            "name": "I should see \"export_high_res_pdf_button\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 4334000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 121,
+            "name": "I click \"export_high_res_pdf_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 3027000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 122,
+            "name": "the \"pdf\" export should be stubbed successfully",
+            "match": {
+              "location": "not available:0"
+            }
+          }
+        ],
+        "tags": [],
+        "type": "scenario"
+      },
+      {
+        "description": "",
+        "id": "web-book-engine-evolution-pipeline;every-export-option-delegates-to-the-expected-browser-or-server-handler",
+        "keyword": "Scenario Outline",
+        "line": 127,
+        "name": "Every export option delegates to the expected browser or server handler",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 54000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 7,
+            "name": "I clear Web browser cookies",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 24000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 112,
+            "name": "I stub fallback search results using fixture \"search-fallback-quantum-physics.json\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 563000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 113,
+            "name": "I navigate to \"DEV\" URL and close cookies pop up window",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 36000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 114,
+            "name": "I stub Web-book export handlers",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 683000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 115,
+            "name": "I enter \"Quantum Physics\" in \"search_input\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 83000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 116,
+            "name": "I click \"search_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 125000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 117,
+            "name": "the fallback search API should be requested with mode \"google_duckduckgo\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 44000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 118,
+            "name": "I should see \"status_label\" text displayed in \"complete\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 204000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 119,
+            "name": "I click \"export_menu_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 48000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 120,
+            "name": "I should see \"print_pdf_button\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 2481000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 121,
+            "name": "I click \"print_pdf_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 118000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 122,
+            "name": "the \"print\" export should be stubbed successfully",
+            "match": {
+              "location": "not available:0"
+            }
+          }
+        ],
+        "tags": [],
+        "type": "scenario"
+      },
+      {
+        "description": "",
+        "id": "web-book-engine-evolution-pipeline;every-export-option-delegates-to-the-expected-browser-or-server-handler",
+        "keyword": "Scenario Outline",
+        "line": 128,
+        "name": "Every export option delegates to the expected browser or server handler",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 28000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 7,
+            "name": "I clear Web browser cookies",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 26000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 112,
+            "name": "I stub fallback search results using fixture \"search-fallback-quantum-physics.json\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 354000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 113,
+            "name": "I navigate to \"DEV\" URL and close cookies pop up window",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 90000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 114,
+            "name": "I stub Web-book export handlers",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 654000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 115,
+            "name": "I enter \"Quantum Physics\" in \"search_input\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 82000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 116,
+            "name": "I click \"search_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 72000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 117,
+            "name": "the fallback search API should be requested with mode \"google_duckduckgo\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 106000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 118,
+            "name": "I should see \"status_label\" text displayed in \"complete\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 247000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 119,
+            "name": "I click \"export_menu_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 27000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 120,
+            "name": "I should see \"docx_export_button\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 3495000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 121,
+            "name": "I click \"docx_export_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 57000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 122,
+            "name": "the \"docx\" export should be stubbed successfully",
+            "match": {
+              "location": "not available:0"
+            }
+          }
+        ],
+        "tags": [],
+        "type": "scenario"
+      },
+      {
+        "description": "",
+        "id": "web-book-engine-evolution-pipeline;every-export-option-delegates-to-the-expected-browser-or-server-handler",
+        "keyword": "Scenario Outline",
+        "line": 129,
+        "name": "Every export option delegates to the expected browser or server handler",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 61000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 7,
+            "name": "I clear Web browser cookies",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 29000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 112,
+            "name": "I stub fallback search results using fixture \"search-fallback-quantum-physics.json\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 655000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 113,
+            "name": "I navigate to \"DEV\" URL and close cookies pop up window",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 33000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 114,
+            "name": "I stub Web-book export handlers",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 696000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 115,
+            "name": "I enter \"Quantum Physics\" in \"search_input\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 99000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 116,
+            "name": "I click \"search_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 69000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 117,
+            "name": "the fallback search API should be requested with mode \"google_duckduckgo\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 89000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 118,
+            "name": "I should see \"status_label\" text displayed in \"complete\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 1004000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 119,
+            "name": "I click \"export_menu_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 26000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 120,
+            "name": "I should see \"html_export_button\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 2585000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 121,
+            "name": "I click \"html_export_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 48000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 122,
+            "name": "the \"html\" export should be stubbed successfully",
+            "match": {
+              "location": "not available:0"
+            }
+          }
+        ],
+        "tags": [],
+        "type": "scenario"
+      },
+      {
+        "description": "",
+        "id": "web-book-engine-evolution-pipeline;every-export-option-delegates-to-the-expected-browser-or-server-handler",
+        "keyword": "Scenario Outline",
+        "line": 130,
+        "name": "Every export option delegates to the expected browser or server handler",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 38000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 7,
+            "name": "I clear Web browser cookies",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 28000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 112,
+            "name": "I stub fallback search results using fixture \"search-fallback-quantum-physics.json\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 585000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 113,
+            "name": "I navigate to \"DEV\" URL and close cookies pop up window",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 53000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 114,
+            "name": "I stub Web-book export handlers",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 681000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 115,
+            "name": "I enter \"Quantum Physics\" in \"search_input\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 101000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 116,
+            "name": "I click \"search_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 155000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 117,
+            "name": "the fallback search API should be requested with mode \"google_duckduckgo\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 81000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 118,
+            "name": "I should see \"status_label\" text displayed in \"complete\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 253000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 119,
+            "name": "I click \"export_menu_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 72000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 120,
+            "name": "I should see \"txt_export_button\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 300000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 121,
+            "name": "I click \"txt_export_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 26000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 122,
+            "name": "the \"txt\" export should be stubbed successfully",
+            "match": {
+              "location": "not available:0"
+            }
+          }
+        ],
+        "tags": [],
+        "type": "scenario"
+      },
+      {
+        "description": "",
+        "id": "web-book-engine-evolution-pipeline;new-search-clears-the-rendered-book,-query,-and-export-controls",
+        "keyword": "Scenario",
+        "line": 132,
+        "name": "New Search clears the rendered book, query, and export controls",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 38000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 7,
+            "name": "I clear Web browser cookies",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 56000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 133,
+            "name": "I stub fallback search results using fixture \"search-fallback-quantum-physics.json\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 485000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 134,
+            "name": "I navigate to \"DEV\" URL and close cookies pop up window",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 651000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 135,
+            "name": "I enter \"Quantum Physics\" in \"search_input\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 105000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 136,
+            "name": "I click \"search_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 95000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 137,
+            "name": "the fallback search API should be requested with mode \"google_duckduckgo\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 113000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 138,
+            "name": "I should see \"status_label\" text displayed in \"complete\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 134000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 139,
+            "name": "I click \"new_search_header_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 24000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 140,
+            "name": "I should see \"status_label\" text displayed in \"idle\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 24000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 141,
+            "name": "I should see \"search_input\" value is empty on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 48000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 142,
+            "name": "I should see \"webbook_viewer_placeholder\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 23000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 143,
+            "name": "I should not see \"export_menu_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          }
+        ],
+        "tags": [],
+        "type": "scenario"
+      },
+      {
+        "description": "",
+        "id": "web-book-engine-evolution-pipeline;history-can-load-and-delete-a-generated-web-book",
+        "keyword": "Scenario",
+        "line": 145,
+        "name": "History can load and delete a generated Web-book",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 29000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 7,
+            "name": "I clear Web browser cookies",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 32000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 146,
+            "name": "I stub fallback search results using fixture \"search-fallback-quantum-physics.json\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 554000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 147,
+            "name": "I navigate to \"DEV\" URL and close cookies pop up window",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 696000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 148,
+            "name": "I enter \"Quantum Physics\" in \"search_input\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 88000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 149,
+            "name": "I click \"search_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 136000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 150,
+            "name": "the fallback search API should be requested with mode \"google_duckduckgo\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 67000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 151,
+            "name": "I should see \"status_label\" text displayed in \"complete\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 189000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 152,
+            "name": "I click \"history_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 73000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 153,
+            "name": "I should see \"history_drawer_title\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 42000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 154,
+            "name": "I verify the text \"Quantum Physics\" is displayed on the webpage",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 222000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 155,
+            "name": "I open history book titled \"Quantum Physics\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 25000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 156,
+            "name": "I should see \"generated_book_title\" text displayed in \"Quantum Physics\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 179000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 157,
+            "name": "I click \"history_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 252000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 158,
+            "name": "I delete history book titled \"Quantum Physics\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 27000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 159,
+            "name": "I should see \"history_empty_state\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          }
+        ],
+        "tags": [],
+        "type": "scenario"
+      },
+      {
+        "description": "",
+        "id": "web-book-engine-evolution-pipeline;clear-all-history-asks-for-confirmation-and-empties-the-archive",
+        "keyword": "Scenario",
+        "line": 161,
+        "name": "Clear All History asks for confirmation and empties the archive",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 73000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 7,
+            "name": "I clear Web browser cookies",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 28000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 162,
+            "name": "I stub fallback search results using fixture \"search-fallback-quantum-physics.json\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 730000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 163,
+            "name": "I navigate to \"DEV\" URL and close cookies pop up window",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 672000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 164,
+            "name": "I enter \"Quantum Physics\" in \"search_input\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 94000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 165,
+            "name": "I click \"search_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 123000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 166,
+            "name": "the fallback search API should be requested with mode \"google_duckduckgo\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 68000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 167,
+            "name": "I should see \"status_label\" text displayed in \"complete\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 302000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 168,
+            "name": "I click \"history_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 27000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 169,
+            "name": "I should see \"clear_all_history_button\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 111000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 170,
+            "name": "I click \"clear_all_history_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 35000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 171,
+            "name": "I should see \"confirm_clear_all_history_button\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 25000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 172,
+            "name": "I accept browser confirmation dialogs",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 98000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 173,
+            "name": "I click \"confirm_clear_all_history_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 27000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 174,
+            "name": "I should see \"history_empty_state\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          }
+        ],
+        "tags": [],
+        "type": "scenario"
+      },
+      {
+        "description": "",
+        "id": "web-book-engine-evolution-pipeline;gemini-only-mode-surfaces-a-user-facing-error-when-gemini-rejects-the-key",
+        "keyword": "Scenario",
+        "line": 176,
+        "name": "Gemini-only mode surfaces a user-facing error when Gemini rejects the key",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 51000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 7,
+            "name": "I clear Web browser cookies",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 29000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 177,
+            "name": "I stub Gemini API calls to return 401",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 528000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 178,
+            "name": "I navigate to \"DEV\" URL and close cookies pop up window",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 157000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 179,
+            "name": "I select fallback mode \"off\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 672000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 180,
+            "name": "I enter \"Quantum Physics\" in \"search_input\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 106000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 181,
+            "name": "I click \"search_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 36000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 182,
+            "name": "I should see \"error_message\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 53000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 183,
+            "name": "I verify the text \"Gemini\" is displayed on the webpage",
+            "match": {
+              "location": "not available:0"
+            }
+          }
+        ],
+        "tags": [],
+        "type": "scenario"
+      },
+      {
+        "description": "",
+        "id": "web-book-engine-evolution-pipeline;fallback-transport-failure-surfaces-a-clear-error-state",
+        "keyword": "Scenario",
+        "line": 185,
+        "name": "Fallback transport failure surfaces a clear error state",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 31000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 7,
+            "name": "I clear Web browser cookies",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 40000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 186,
+            "name": "I stub fallback search to fail with status 503",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 509000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 187,
+            "name": "I navigate to \"DEV\" URL and close cookies pop up window",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 680000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 188,
+            "name": "I enter \"Quantum Physics\" in \"search_input\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 88000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 189,
+            "name": "I click \"search_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 76000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 190,
+            "name": "the fallback search API should be requested with mode \"google_duckduckgo\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 20000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 191,
+            "name": "I should see \"error_message\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 2473000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 192,
+            "name": "I verify the text \"fallback\" is displayed on the webpage",
+            "match": {
+              "location": "not available:0"
+            }
+          }
+        ],
+        "tags": [],
+        "type": "scenario"
+      },
+      {
+        "description": "",
+        "id": "web-book-engine-evolution-pipeline;empty-fallback-evidence-stops-generation-instead-of-rendering-placeholder-content",
+        "keyword": "Scenario",
+        "line": 194,
+        "name": "Empty fallback evidence stops generation instead of rendering placeholder content",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 51000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 7,
+            "name": "I clear Web browser cookies",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 56000000
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 195,
+            "name": "I stub fallback search results using fixture \"search-fallback-empty.json\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 574000000
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 196,
+            "name": "I navigate to \"DEV\" URL and close cookies pop up window",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 878000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 197,
+            "name": "I enter \"Empty Evidence Topic\" in \"search_input\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 85000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 198,
+            "name": "I click \"search_button\" on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 291000000
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 199,
+            "name": "the fallback search API should be requested with mode \"google_duckduckgo\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 83000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 200,
+            "name": "I should see \"error_message\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 40000000
+            },
+            "arguments": [],
+            "keyword": "And ",
+            "line": 201,
+            "name": "I should see \"webbook_viewer_placeholder\" is displayed on \"WebBookEngine_Page\"",
+            "match": {
+              "location": "not available:0"
+            }
+          }
+        ],
+        "tags": [],
+        "type": "scenario"
+      }
+    ],
+    "id": "web-book-engine-evolution-pipeline",
+    "line": 1,
+    "keyword": "Feature",
+    "name": "Web-Book Engine Evolution Pipeline",
+    "tags": [],
+    "uri": "tests/cypress/e2e/features/webbook-generation.feature"
+  }
+]

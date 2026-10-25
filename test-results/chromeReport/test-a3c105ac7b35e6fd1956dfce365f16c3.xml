@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="Mocha Tests" time="85.484" tests="24" failures="0">
+  <testsuite name="Root Suite" timestamp="2026-10-25T06:19:22" tests="0" file="tests/cypress/e2e/features/webbook-generation.feature" time="0.000" failures="0">
+  </testsuite>
+  <testsuite name="Web-Book Engine Evolution Pipeline" timestamp="2026-10-25T06:19:22" tests="24" time="85.478" failures="0">
+    <testcase name="Web-Book Engine Evolution Pipeline Idle application state exposes the expected controls and empty history" time="6.432" classname="Idle application state exposes the expected controls and empty history">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Fallback selector supports every supported mode (example #1)" time="1.267" classname="Fallback selector supports every supported mode (example #1)">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Fallback selector supports every supported mode (example #2)" time="1.326" classname="Fallback selector supports every supported mode (example #2)">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Fallback selector supports every supported mode (example #3)" time="1.340" classname="Fallback selector supports every supported mode (example #3)">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Fallback selector supports every supported mode (example #4)" time="1.080" classname="Fallback selector supports every supported mode (example #4)">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Gemini model selector can be changed independently of fallback mode" time="1.082" classname="Gemini model selector can be changed independently of fallback mode">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Blank searches are ignored without mutating idle state" time="1.100" classname="Blank searches are ignored without mutating idle state">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Long multi-line query displays the full query preview" time="1.101" classname="Long multi-line query displays the full query preview">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Generation completes through each live fallback mode (example #1)" time="2.840" classname="Generation completes through each live fallback mode (example #1)">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Generation completes through each live fallback mode (example #2)" time="2.982" classname="Generation completes through each live fallback mode (example #2)">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Generation completes through each live fallback mode (example #3)" time="2.608" classname="Generation completes through each live fallback mode (example #3)">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Query submission works from the Enter key" time="2.083" classname="Query submission works from the Enter key">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Artifacts panel exposes search coverage, population, and assembly trace" time="3.100" classname="Artifacts panel exposes search coverage, population, and assembly trace">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Every export option delegates to the expected browser or server handler (example #1)" time="13.305" classname="Every export option delegates to the expected browser or server handler (example #1)">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Every export option delegates to the expected browser or server handler (example #2)" time="6.465" classname="Every export option delegates to the expected browser or server handler (example #2)">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Every export option delegates to the expected browser or server handler (example #3)" time="7.954" classname="Every export option delegates to the expected browser or server handler (example #3)">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Every export option delegates to the expected browser or server handler (example #4)" time="6.591" classname="Every export option delegates to the expected browser or server handler (example #4)">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Every export option delegates to the expected browser or server handler (example #5)" time="3.471" classname="Every export option delegates to the expected browser or server handler (example #5)">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline New Search clears the rendered book, query, and export controls" time="2.390" classname="New Search clears the rendered book, query, and export controls">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline History can load and delete a generated Web-book" time="3.139" classname="History can load and delete a generated Web-book">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Clear All History asks for confirmation and empties the archive" time="3.046" classname="Clear All History asks for confirmation and empties the archive">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Gemini-only mode surfaces a user-facing error when Gemini rejects the key" time="2.086" classname="Gemini-only mode surfaces a user-facing error when Gemini rejects the key">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Fallback transport failure surfaces a clear error state" time="4.269" classname="Fallback transport failure surfaces a clear error state">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Empty fallback evidence stops generation instead of rendering placeholder content" time="1.910" classname="Empty fallback evidence stops generation instead of rendering placeholder content">
+    </testcase>
+  </testsuite>
+</testsuites>

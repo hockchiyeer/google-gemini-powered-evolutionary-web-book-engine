@@ -1,7 +1,7 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const report = require("multiple-cucumber-html-reporter");
+// dynamically imported in main for ESM compatibility
 
 const cucumberConfig = require("../.cypress-cucumber-preprocessorrc.json");
 
@@ -48,6 +48,7 @@ async function main() {
   await stageJsonFile(jsonPath);
   await fs.promises.rm(reportPath, { recursive: true, force: true });
 
+  const report = await import("multiple-cucumber-html-reporter");
   report.generate({
     jsonDir: stagedJsonDir,
     reportPath,

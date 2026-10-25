@@ -103,15 +103,18 @@ An advanced AI-powered engine that synthesizes comprehensive, authoritative, mul
 │       └── webBookRender.ts             # Pagination planner and source link sanitizers
 │
 └── tests/
+    ├── .cypress-cucumber-preprocessorrc.json # Cucumber BDD preprocessor configuration
     ├── cypress.config.cjs               # Cypress test configuration
-    └── cypress/
-        ├── fixtures/                    # Test fixtures for deterministic search mock data
-        ├── support/                     # Cypress commands and export stubs
-        └── e2e/
-            ├── features/
-            │   └── webbook-generation.feature # BDD feature specifications
-            ├── common/                  # Cucumber step definitions (Given, When, Then)
-            └── pageObjects/             # Page object locators
+    ├── cypress/
+    │   ├── fixtures/                    # Test fixtures for deterministic search mock data
+    │   ├── support/                     # Cypress commands and export stubs
+    │   └── e2e/
+    │       ├── features/
+    │       │   └── webbook-generation.feature # BDD feature specifications
+    │       ├── common/                  # Cucumber step definitions (Given, When, Then)
+    │       └── pageObjects/             # Page object locators
+    ├── scripts/                         # Server lifecycle and HTML report generator scripts
+    └── server/                          # Server-side unit and regression tests
 ```
 
 ---
@@ -127,6 +130,21 @@ An advanced AI-powered engine that synthesizes comprehensive, authoritative, mul
 
 ```bash
 npm install
+```
+
+If inter-dependency conflicts occur during package installation:
+```bash
+# Workaround to enable installation given potential inter-dependencies conflicts
+npm install --legacy-peer-deps
+```
+
+To inspect and resolve package security vulnerabilities:
+```bash
+# Check vulnerabilities
+npm audit
+
+# Fix vulnerabilities
+npm audit fix --force
 ```
 
 ### 3. Environment Setup
@@ -157,14 +175,57 @@ npm run build
 npm run preview
 ```
 
-### 6. Code Verification
+### 6. Automated Testing
+
+The project includes an end-to-end Cypress BDD test suite with automated server lifecycle handling and visual HTML reporting.
+
+#### Seamless Execution for Non-Technical Users (No Manual Server Setup)
+
+You do **not** need to manually launch the local application server, configure ports, or provide a Gemini API key. Simply run:
+
+```bash
+npm test
+# (or: npm run test)
+```
+
+**How the automated flow works:**
+1. **Local Server Detection & Auto-Launch**: The runner checks whether `http://localhost:3000` is active. If not running, it automatically boots the local App server in the background and waits until it is ready.
+2. **Deterministic & Safe Execution**: All 24 BDD test scenarios execute headlessly against mocked fixtures. **No Gemini API key or paid quota is required**, ensuring fast, reliable execution with zero risk to content integrity.
+3. **Automated Server Teardown**: Automatically terminates the background server process once testing completes.
+4. **HTML Report Generation**: Automatically compiles the visual, interactive HTML test report.
+
+#### Viewing the Visual Test Report
+
+After the test run completes, open the interactive HTML report in any web browser to view pass/fail metrics, step durations, and feature details:
+
+- **Report Path**: `test-results/chromeReport/multiple-cucumber-html-report/index.html`
+
+Convenient one-line commands to open the report directly:
+- **macOS**: `open test-results/chromeReport/multiple-cucumber-html-report/index.html`
+- **Windows**: `start test-results/chromeReport/multiple-cucumber-html-report/index.html`
+- **Linux**: `xdg-open test-results/chromeReport/multiple-cucumber-html-report/index.html`
+
+#### Test CLI Commands & Server Launch Matrix
+
+The table below clarifies whether each `npm` / `npm run` command manages the local App server automatically or expects a pre-running server:
+
+| Command | Local Server Launch | Purpose / Description |
+| :--- | :--- | :--- |
+| `npm test`<br>*(or `npm run test`)* | **Automatic** *(Self-managed; no manual start required)* | **Recommended primary command**. Automatically boots local server if not active, runs all 24 BDD scenarios headlessly, stops server, and compiles HTML report. |
+| `npm run test:e2e`<br>*(or `npm run cy:run:local`)* | **Requires Running Server**<br>*(Run `npm run dev` first)* | Runs the full BDD test suite headlessly and compiles the HTML report against an already running local server. |
+| `npm run cy:run` | **Requires Running Server**<br>*(Run `npm run dev` first)* | Runs Cypress headlessly against an already running server without re-generating HTML report. |
+| `npm run cy:open` | **Requires Running Server**<br>*(Run `npm run dev` first)* | Opens the interactive Cypress GUI for visual step-by-step browser testing. |
+| `npm run test:server` | **Not Required** *(Standalone)* | Runs server-side unit and regression tests (title extraction, search fallback routing, and evolution algorithms). |
+| `npm run report:generate` | **Not Required** *(Standalone)* | Compiles the visual HTML report from existing Cucumber JSON test result artifacts. |
+
+### 7. Code Verification
 
 ```bash
 # Type check without emitting files
 npm run lint
 ```
 
-### 7. Google AI Studio Upload Packaging
+### 8. Google AI Studio Upload Packaging
 
 ```bash
 # Package application source archive for Google AI Studio / external deployment

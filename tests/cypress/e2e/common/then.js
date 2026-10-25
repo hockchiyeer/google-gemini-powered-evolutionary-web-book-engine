@@ -12,12 +12,27 @@ Then("I should see {string} is disabled on {string}", (locator_name, page_name) 
   cy.verifyElementIsDisabled(locator_name, page_name);
 });
 
+function getExposedOrEnv(key) {
+  if (typeof Cypress.expose === 'function') {
+    try {
+      const val = Cypress.expose(key);
+      if (val !== undefined) return val;
+    } catch {}
+  }
+  if (typeof Cypress.env === 'function') {
+    try {
+      return Cypress.env(key);
+    } catch {}
+  }
+  return undefined;
+}
+
 Then("I should see {string} is enabled on {string}", (locator_name, page_name) => {
   cy.verifyElementIsEnabled(locator_name, page_name);
 });
 
 Then("I should see {string} text displayed in {string} on {string}", (locator_name, value, page_name) => {
-  let expectedValue = Cypress.env(value) || value;
+  let expectedValue = getExposedOrEnv(value) || value;
   cy.verifyTextIsDisplayed(locator_name, page_name, expectedValue);
 });
 
@@ -30,7 +45,7 @@ Then("I should see {string} value is empty on {string}", (locator_name, page_nam
 });
 
 Then("I should not see {string} text displayed in {string} on {string}", (locator_name, value, page_name) => {
-  let expectedValue = Cypress.env(value) || value;
+  let expectedValue = getExposedOrEnv(value) || value;
   cy.verifyTextIsNotDisplayed(locator_name, page_name, expectedValue);
 });
 
@@ -39,12 +54,12 @@ Then("I verify title is {string}", (title) => {
 });
 
 Then("I verify the text {string} is displayed on the webpage", (text) => {
-  let expectedText = Cypress.env(text) || text;
+  let expectedText = getExposedOrEnv(text) || text;
   cy.pageContainsText(expectedText);
 });
 
 Then("I verify the text {string} is not displayed on the webpage", (text) => {
-  let expectedText = Cypress.env(text) || text;
+  let expectedText = getExposedOrEnv(text) || text;
   cy.pageNotContainsText(expectedText);
 });
 

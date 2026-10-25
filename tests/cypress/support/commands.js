@@ -36,10 +36,25 @@ function getElement(pageName, locatorName, options = { timeout: 60000 }) {
     : cy.get(locatorStr, options);
 }
 
+function getExposedOrEnv(key) {
+  if (typeof Cypress.expose === 'function') {
+    try {
+      const val = Cypress.expose(key);
+      if (val !== undefined) return val;
+    } catch {}
+  }
+  if (typeof Cypress.env === 'function') {
+    try {
+      return Cypress.env(key);
+    } catch {}
+  }
+  return undefined;
+}
+
 function resolveTargetUrl(urlOrEnvironment) {
   return (
-    Cypress.env(urlOrEnvironment) ||
-    Cypress.env('baseUrl') ||
+    getExposedOrEnv(urlOrEnvironment) ||
+    getExposedOrEnv('baseUrl') ||
     Cypress.config('baseUrl') ||
     urlOrEnvironment
   );
@@ -209,7 +224,7 @@ Cypress.Commands.add('clickOnElementContainsText', (locatorName, value, pageName
 });
 
 Cypress.Commands.add('enterTheValue', (locatorName, pageName, value) => {
-  const selectedValue = Cypress.env(value) || value;
+  const selectedValue = getExposedOrEnv(value) || value;
   getElement(pageName, locatorName).clear({ force: true }).type(selectedValue, { force: true });
 });
 
@@ -294,7 +309,7 @@ Cypress.Commands.add('verifyElementIsDisabled', (locatorName, pageName) => {
 });
 
 Cypress.Commands.add('verifyElementValue', (locatorName, pageName, value) => {
-  const expectedValue = Cypress.env(value) || value;
+  const expectedValue = getExposedOrEnv(value) || value;
   getElement(pageName, locatorName).should('have.value', expectedValue);
 });
 
@@ -310,11 +325,11 @@ Cypress.Commands.add('verifyTitle', (title) => {
 });
 
 Cypress.Commands.add('pageContainsText', (text) => {
-  cy.contains(text.trim(), { timeout: 60000 }).should('be.visible');
+  cy.contains(':not(option):not(script):not(style)', text.trim(), { timeout: 60000 }).should('be.visible');
 });
 
 Cypress.Commands.add('pageNotContainsText', (text) => {
-  cy.contains(text.trim(), { timeout: 10000 }).should('not.exist');
+  cy.contains(':not(option):not(script):not(style)', text.trim(), { timeout: 10000 }).should('not.exist');
 });
 
 Cypress.Commands.add('selectFallbackMode', (modeValue) => {

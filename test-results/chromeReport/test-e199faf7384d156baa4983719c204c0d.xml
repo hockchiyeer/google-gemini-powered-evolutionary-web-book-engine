@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="Mocha Tests" time="156.953" tests="24" failures="1">
+  <testsuite name="Root Suite" timestamp="2026-10-25T06:15:20" tests="0" file="tests/cypress/e2e/features/webbook-generation.feature" time="0.000" failures="0">
+  </testsuite>
+  <testsuite name="Web-Book Engine Evolution Pipeline" timestamp="2026-10-25T06:15:20" tests="24" time="156.945" failures="1">
+    <testcase name="Web-Book Engine Evolution Pipeline Idle application state exposes the expected controls and empty history" time="6.982" classname="Idle application state exposes the expected controls and empty history">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Fallback selector supports every supported mode (example #1)" time="1.364" classname="Fallback selector supports every supported mode (example #1)">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Fallback selector supports every supported mode (example #2)" time="1.397" classname="Fallback selector supports every supported mode (example #2)">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Fallback selector supports every supported mode (example #3)" time="1.292" classname="Fallback selector supports every supported mode (example #3)">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Fallback selector supports every supported mode (example #4)" time="1.196" classname="Fallback selector supports every supported mode (example #4)">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Gemini model selector can be changed independently of fallback mode" time="1.380" classname="Gemini model selector can be changed independently of fallback mode">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Blank searches are ignored without mutating idle state" time="1.229" classname="Blank searches are ignored without mutating idle state">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Long multi-line query displays the full query preview" time="1.295" classname="Long multi-line query displays the full query preview">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Generation completes through each live fallback mode (example #1)" time="3.821" classname="Generation completes through each live fallback mode (example #1)">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Generation completes through each live fallback mode (example #2)" time="3.427" classname="Generation completes through each live fallback mode (example #2)">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Generation completes through each live fallback mode (example #3)" time="3.235" classname="Generation completes through each live fallback mode (example #3)">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Query submission works from the Enter key" time="2.481" classname="Query submission works from the Enter key">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Artifacts panel exposes search coverage, population, and assembly trace" time="3.597" classname="Artifacts panel exposes search coverage, population, and assembly trace">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Every export option delegates to the expected browser or server handler (example #1)" time="14.981" classname="Every export option delegates to the expected browser or server handler (example #1)">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Every export option delegates to the expected browser or server handler (example #2)" time="9.679" classname="Every export option delegates to the expected browser or server handler (example #2)">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Every export option delegates to the expected browser or server handler (example #3)" time="8.609" classname="Every export option delegates to the expected browser or server handler (example #3)">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Every export option delegates to the expected browser or server handler (example #4)" time="7.677" classname="Every export option delegates to the expected browser or server handler (example #4)">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Every export option delegates to the expected browser or server handler (example #5)" time="3.797" classname="Every export option delegates to the expected browser or server handler (example #5)">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline New Search clears the rendered book, query, and export controls" time="2.313" classname="New Search clears the rendered book, query, and export controls">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline History can load and delete a generated Web-book" time="3.497" classname="History can load and delete a generated Web-book">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Clear All History asks for confirmation and empties the archive" time="2.826" classname="Clear All History asks for confirmation and empties the archive">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Gemini-only mode surfaces a user-facing error when Gemini rejects the key" time="0.000" classname="Gemini-only mode surfaces a user-facing error when Gemini rejects the key">
+      <failure message="Timed out retrying after 60000ms: expected &apos;&lt;option&gt;&apos; to be &apos;visible&apos;
+
+This element `&lt;option&gt;` is not visible per `Element.checkVisibility()`. Computed: `display: block`, `visibility: visible`, `opacity: 1`, `content-visibility: visible`." type="AssertionError"><![CDATA[AssertionError: Timed out retrying after 60000ms: expected '<option>' to be 'visible'
+
+This element `<option>` is not visible per `Element.checkVisibility()`. Computed: `display: block`, `visibility: visible`, `opacity: 1`, `content-visibility: visible`.
+    at Context.eval (http://localhost:3000/__cypress/tests?p=tests/cypress/support/e2e.js:446:48)
+    at wrapped (http://localhost:3000/__cypress/runner/cypress_runner.js:154957:43)]]></failure>
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Fallback transport failure surfaces a clear error state" time="4.089" classname="Fallback transport failure surfaces a clear error state">
+    </testcase>
+    <testcase name="Web-Book Engine Evolution Pipeline Empty fallback evidence stops generation instead of rendering placeholder content" time="1.727" classname="Empty fallback evidence stops generation instead of rendering placeholder content">
+    </testcase>
+  </testsuite>
+</testsuites>
