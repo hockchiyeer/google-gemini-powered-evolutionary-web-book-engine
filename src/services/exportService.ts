@@ -137,22 +137,41 @@ export async function exportWebBookWithJsPdf(
   doc.setTextColor(170, 168, 164);
   doc.text('EVOLUTIONARY WEB-BOOK ENGINE', pageWidth / 2, 230, { align: 'center' });
 
-  // Main Cover Title
+  // Main Cover Title - dynamic font size and line spacing to elegantly accommodate long topics without collision
   doc.setTextColor(255, 255, 255);
   doc.setFont('times', 'bolditalic');
-  doc.setFontSize(28);
-  const coverTitleLines = doc.splitTextToSize(safeWebBook.topic.toUpperCase(), contentWidth - 40);
-  const titleY = Math.max(280, 340 - coverTitleLines.length * 16);
+
+  const rawTopic = safeWebBook.topic.trim();
+  let titleFontSize = 28;
+  if (rawTopic.length > 200) {
+    titleFontSize = 16;
+  } else if (rawTopic.length > 120) {
+    titleFontSize = 18;
+  } else if (rawTopic.length > 60) {
+    titleFontSize = 22;
+  }
+
+  doc.setFontSize(titleFontSize);
+  const lineHeightFactor = 1.35;
+  doc.setLineHeightFactor(lineHeightFactor);
+  const lineHeight = titleFontSize * lineHeightFactor;
+
+  const coverTitleLines = doc.splitTextToSize(rawTopic.toUpperCase(), contentWidth - 40);
+  const totalTitleHeight = (coverTitleLines.length - 1) * lineHeight;
+
+  // Vertically position title with adequate clearance below top badge (Y=230)
+  const titleY = Math.max(265, 345 - totalTitleHeight / 2);
   doc.text(coverTitleLines, pageWidth / 2, titleY, { align: 'center' });
 
-  // Accent divider line
+  // Accent divider line - positioned with guaranteed margin below the actual rendered title bottom
   doc.setDrawColor(228, 227, 224);
   doc.setLineWidth(1);
-  const dividerY = titleY + coverTitleLines.length * 20 + 15;
+  const titleBottomY = titleY + totalTitleHeight;
+  const dividerY = titleBottomY + 30;
   doc.line(pageWidth / 2 - 40, dividerY, pageWidth / 2 + 40, dividerY);
 
-  // Metadata 3-column stats
-  const metaY = dividerY + 40;
+  // Metadata 3-column stats - guaranteed spacing below divider
+  const metaY = dividerY + 35;
   const col1 = margin + contentWidth * 0.2;
   const col2 = pageWidth / 2;
   const col3 = pageWidth - margin - contentWidth * 0.2;
