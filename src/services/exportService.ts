@@ -88,22 +88,29 @@ export async function exportWebBookWithJsPdf(
   const safeWebBook = sanitizeWebBookForPresentation(webBook);
   const doc = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'portrait' });
 
-  // Hook internal.write so external URI link annotations are emitted with /NewWindow true
-  // and JavaScript launch actions (app.launchURL), while keeping jsPDF's internal byte
-  // counter and xref table 100% accurate and uncorrupted.
+  // Hook internal.write so every external URI link annotation is emitted with /NewWindow true.
+  // The hook runs before jsPDF counts the bytes it writes, so offsets and the xref table stay valid.
+  //
+  // jsPDF writes an external link as one string ending in `/A <</S /URI /URI (<escaped url>) >>`.
+  // The url is a PDF literal string in which jsPDF has already escaped `\`, `(` and `)`, so the match
+  // must consume backslash escapes (`\\.`); a plain `[^)]+` stopped at the first `\)` and silently
+  // skipped URLs such as https://en.wikipedia.org/wiki/Qubit_(quantum).
+  // Internal links (TOC chapter jumps, Back to Top) are written as `/Dest [...]`, never match, and
+  // are left untouched.
+  //
+  // Limitation: /NewWindow is not defined for URI actions in ISO 32000, so most viewers ignore it.
+  // The URI action stays the primary action so the link remains clickable in every viewer.
+  const EXTERNAL_URI_ACTION = /\/A\s*<<\s*\/S\s*\/URI\s*\/URI\s*\(((?:\\.|[^\\)])*)\)\s*>>/;
   const docInternal = doc.internal as any;
   const origWrite = docInternal.write.bind(docInternal);
   docInternal.write = function (...args: any[]) {
-    const modifiedArgs = args.map((arg) => {
-      if (typeof arg === 'string' && arg.includes('/A <</S /URI /URI (')) {
-        return arg.replace(
-          /\/A\s*<<\/S\s*\/URI\s*\/URI\s*\(([^)]+)\)\s*>>/,
-          '/A <</S /URI /NewWindow true /URI ($1) >> /AA <</U <</S /JavaScript /JS (app.launchURL("$1", true);) >> >>'
-        );
-      }
-      return arg;
-    });
-    return origWrite(...modifiedArgs);
+    return origWrite(
+      ...args.map((arg) =>
+        typeof arg === 'string'
+          ? arg.replace(EXTERNAL_URI_ACTION, (_match, uri) => `/A <</S /URI /URI (${uri}) /NewWindow true >>`)
+          : arg
+      )
+    );
   };
 
   const pageWidth = doc.internal.pageSize.getWidth();

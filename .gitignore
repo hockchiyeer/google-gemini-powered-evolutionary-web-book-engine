@@ -21,4 +21,8 @@ cypress/videos/
 .aistudio/
 .tempmediaStorage/
 
+# Generated build and packaging archives
+artifacts/
 
+# AI Studio runtime prompt uploads and attachments
+public/assets/aistudio/
