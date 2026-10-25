@@ -568,7 +568,15 @@ export async function exportWebBookToPdf(webBook: WebBook): Promise<void> {
   await printWebBook(safeWebBook);
 }
 
+let isPrintingInProgress = false;
+
 export async function printWebBook(webBook: WebBook): Promise<void> {
+  if (isPrintingInProgress) {
+    console.warn('Print operation is already in progress.');
+    return;
+  }
+  isPrintingInProgress = true;
+
   const safeWebBook = sanitizeWebBookForPresentation(webBook);
   const { clone } = await prepareExportContent(getWebBookElement());
   const htmlContent = buildPrintHtmlDocument(safeWebBook, clone.outerHTML);
@@ -592,34 +600,74 @@ export async function printWebBook(webBook: WebBook): Promise<void> {
   const iframeWindow = iframe.contentWindow;
   const iframeDoc = iframeWindow?.document;
 
+  let hasExecuted = false;
+  let isCleanedUp = false;
+  let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
+  let readyTimer: ReturnType<typeof setTimeout> | null = null;
+
   const cleanup = () => {
+    if (isCleanedUp) return;
+    isCleanedUp = true;
+    isPrintingInProgress = false;
+
+    if (fallbackTimer) {
+      clearTimeout(fallbackTimer);
+      fallbackTimer = null;
+    }
+    if (readyTimer) {
+      clearTimeout(readyTimer);
+      readyTimer = null;
+    }
+
+    try {
+      iframeWindow?.removeEventListener?.('afterprint', cleanup);
+    } catch {}
+    try {
+      window.removeEventListener?.('afterprint', cleanup);
+    } catch {}
+
+    // Allow the browser print preview UI to fully settle before detaching iframe
     setTimeout(() => {
-      if (iframe.parentNode) {
-        iframe.parentNode.removeChild(iframe);
-      }
-    }, 60000);
+      try {
+        if (iframe.parentNode) {
+          iframe.parentNode.removeChild(iframe);
+        }
+      } catch {}
+    }, 300);
   };
 
   const executePrint = () => {
-    let printed = false;
-    if (iframeWindow) {
-      try {
+    if (hasExecuted) return;
+    hasExecuted = true;
+
+    if (fallbackTimer) {
+      clearTimeout(fallbackTimer);
+      fallbackTimer = null;
+    }
+    if (readyTimer) {
+      clearTimeout(readyTimer);
+      readyTimer = null;
+    }
+
+    try {
+      if (iframeWindow) {
+        try {
+          iframeWindow.addEventListener('afterprint', cleanup, { once: true });
+        } catch {}
+        try {
+          window.addEventListener('afterprint', cleanup, { once: true });
+        } catch {}
+
         iframeWindow.focus();
         iframeWindow.print();
-        printed = true;
-      } catch (printErr) {
-        console.warn('Iframe print restricted or failed:', printErr);
-      }
-    }
-    if (!printed) {
-      try {
-        window.focus();
+      } else {
         window.print();
-      } catch (winErr) {
-        console.warn('Window print fallback failed:', winErr);
+        cleanup();
       }
+    } catch (printErr) {
+      console.warn('Iframe print failed:', printErr);
+      cleanup();
     }
-    cleanup();
   };
 
   if (iframeWindow && iframeDoc) {
@@ -629,11 +677,17 @@ export async function printWebBook(webBook: WebBook): Promise<void> {
       iframeDoc.title = printTitle;
       iframeDoc.close();
 
+      // Fallback timer: trigger print if onload doesn't fire within 800ms
+      fallbackTimer = setTimeout(() => {
+        executePrint();
+      }, 800);
+
       if (iframeDoc.readyState === 'complete') {
-        setTimeout(executePrint, 200);
+        readyTimer = setTimeout(executePrint, 150);
       } else {
-        iframe.onload = () => setTimeout(executePrint, 100);
-        setTimeout(executePrint, 800);
+        iframe.onload = () => {
+          readyTimer = setTimeout(executePrint, 100);
+        };
       }
     } catch (frameErr) {
       console.warn('Failed to write to print iframe, falling back to window.print():', frameErr);
