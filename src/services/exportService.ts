@@ -26,36 +26,35 @@ export async function exportWebBookToTxt(webBook: WebBook): Promise<void> {
     text += `CHAPTER ${index + 1}: ${chapter.title}\n`;
     text += `${'='.repeat(chapter.title.length + 11)}\n\n`;
     text += `${chapter.content}\n\n`;
-    text += `VISUAL CONCEPT: ${chapter.visualSeed || 'None specified for this chapter.'}\n\n`;
+    if (chapter.visualSeed?.trim()) {
+      text += `VISUAL CONCEPT: ${chapter.visualSeed.trim()}\n\n`;
+    }
 
-    text += 'CORE CONCEPTS:\n';
     if (chapter.definitions && chapter.definitions.length > 0) {
+      text += 'CORE CONCEPTS:\n';
       chapter.definitions.forEach((definition) => {
         text += `- ${definition.term}: ${definition.description}\n`;
       });
-    } else {
-      text += '- None specified for this chapter.\n';
+      text += '\n';
     }
 
-    text += '\nSUB-TOPICS:\n';
     if (chapter.subTopics && chapter.subTopics.length > 0) {
+      text += 'SUB-TOPICS:\n';
       chapter.subTopics.forEach((subTopic) => {
         text += `- ${subTopic.title}: ${subTopic.summary}\n`;
       });
-    } else {
-      text += '- None specified for this chapter.\n';
+      text += '\n';
     }
 
-    text += '\nSOURCES:\n';
     const sourceLinks = getChapterSourceLinks(chapter, { includeSearchResults: true, maxItems: 8 });
     if (sourceLinks.length > 0) {
+      text += 'SOURCES:\n';
       sourceLinks.forEach((sourceLink) => {
         text += `- ${sourceLink.title} (${sourceLink.hostname}) - ${sourceLink.url}\n`;
       });
-    } else {
-      text += '- None specified for this chapter.\n';
+      text += '\n';
     }
-    text += '\n\n';
+    text += '\n';
   });
 
   downloadBlob(

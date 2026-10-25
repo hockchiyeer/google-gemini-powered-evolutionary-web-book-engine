@@ -258,18 +258,20 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
               >
                 <div className="flex items-center justify-between gap-4 mb-10 border-b border-[#141414]/10 pb-5">
                   <div className="min-w-0">
-                    <div className="text-[10px] uppercase tracking-[0.28em] font-bold text-[#141414]/45 mb-3">Technical Glossary</div>
+                    <div className="text-[10px] uppercase tracking-[0.28em] font-bold text-[#141414]/45 mb-3">
+                      {glossaryDefinitions.length > 0 ? 'Technical Glossary' : 'Reference & Sources'}
+                    </div>
                     <h4 className="text-2xl md:text-3xl font-serif italic font-bold break-words">{chapter.title}</h4>
                   </div>
                   <div className="text-[10px] uppercase font-bold tracking-widest opacity-35">Reference Page</div>
                 </div>
 
-                <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1.55fr_0.9fr] gap-8">
-                  <div className="bg-[#141414] text-white p-8 shadow-xl">
-                    <h4 className="text-[10px] uppercase font-bold tracking-[0.3em] mb-8 flex items-center gap-3 opacity-70 border-b border-white/10 pb-5">
-                      <BookOpen size={16} /> Core Terms
-                    </h4>
-                    {glossaryDefinitions.length > 0 ? (
+                {glossaryDefinitions.length > 0 ? (
+                  <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1.55fr_0.9fr] gap-8">
+                    <div className="bg-[#141414] text-white p-8 shadow-xl">
+                      <h4 className="text-[10px] uppercase font-bold tracking-[0.3em] mb-8 flex items-center gap-3 opacity-70 border-b border-white/10 pb-5">
+                        <BookOpen size={16} /> Core Terms
+                      </h4>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-8">
                         {glossaryDefinitions.map((definition, definitionIndex) => {
                           const words = (definition.description || '').split(/\s+/);
@@ -300,18 +302,70 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                           );
                         })}
                       </div>
-                    ) : (
-                      <p className="text-sm opacity-80 leading-relaxed font-light">
-                        The engine did not extract stable glossary entries for this chapter, so the reading trail on the right is the best verification path.
-                      </p>
-                    )}
-                  </div>
+                    </div>
 
-                  <div className="space-y-6">
-                    <div className="border border-[#141414] bg-[#F7F4EE] p-6">
-                      <div className="text-[10px] uppercase font-bold tracking-[0.24em] text-[#141414]/60 mb-4 flex items-center gap-2">
-                        <Globe2 size={12} /> Credible Reading Trail
+                    <div className="space-y-6">
+                      <div className="border border-[#141414] bg-[#F7F4EE] p-6">
+                        <div className="text-[10px] uppercase font-bold tracking-[0.24em] text-[#141414]/60 mb-4 flex items-center gap-2">
+                          <Globe2 size={12} /> Credible Reading Trail
+                        </div>
+                        <div className="space-y-4">
+                          {readingTrailLinks.map((sourceLink, sourceIndex) => (
+                            <a
+                              key={sourceLink.url + sourceIndex}
+                              href={sourceLink.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="block border border-[#141414] bg-white px-4 py-4 hover:bg-[#141414] hover:text-white transition-colors group"
+                              title="Open the supporting article in a new tab"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="font-semibold text-sm uppercase tracking-wide break-words">{sourceLink.title}</div>
+                                  <div className="text-[11px] opacity-60 mt-2 break-all">{sourceLink.hostname}</div>
+                                </div>
+                                <ArrowUpRight size={16} className="shrink-0 mt-0.5 opacity-70 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+                              </div>
+                            </a>
+                          ))}
+                        </div>
                       </div>
+
+                      <div className="border border-[#141414]/10 p-6 bg-white">
+                        <div className="text-[10px] uppercase font-bold tracking-[0.24em] text-[#141414]/60 mb-4">Source Verification</div>
+                        <div className="text-sm leading-relaxed text-gray-600 font-light">
+                          {verificationSource ? (
+                            readingTrailLinks.some((sourceLink) => sourceLink.url === verificationSource.url) ? (
+                              <span className="font-semibold text-[#141414] break-words">
+                                {verificationSource.title}
+                              </span>
+                            ) : (
+                              <a
+                                href={verificationSource.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title="Verify this chapter at a supporting source"
+                                className="inline-flex items-center gap-2 font-semibold text-[#141414] hover:underline break-all"
+                              >
+                                {verificationSource.title} <ArrowUpRight size={14} />
+                              </a>
+                            )
+                          ) : (
+                            'No supporting source link is available for this chapter.'
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+                    <div className="border border-[#141414] bg-[#F7F4EE] p-6 shadow-sm">
+                      <div className="text-[10px] uppercase font-bold tracking-[0.24em] text-[#141414]/60 mb-4 flex items-center gap-2">
+                        <Globe2 size={14} /> Credible Reading Trail
+                      </div>
+                      <p className="text-xs text-gray-600 font-light mb-4 leading-relaxed">
+                        Curated source materials and primary references synthesized for this chapter.
+                      </p>
                       <div className="space-y-4">
                         {readingTrailLinks.map((sourceLink, sourceIndex) => (
                           <a
@@ -334,32 +388,64 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                       </div>
                     </div>
 
-                    <div className="border border-[#141414]/10 p-6 bg-white">
-                      <div className="text-[10px] uppercase font-bold tracking-[0.24em] text-[#141414]/60 mb-4">Source Verification</div>
-                      <div className="text-sm leading-relaxed text-gray-600 font-light">
-                        {verificationSource ? (
-                          readingTrailLinks.some((sourceLink) => sourceLink.url === verificationSource.url) ? (
-                            <span className="font-semibold text-[#141414] break-words">
-                              {verificationSource.title}
-                            </span>
+                    <div className="space-y-6">
+                      <div className="border border-[#141414] bg-white p-6 shadow-sm">
+                        <div className="text-[10px] uppercase font-bold tracking-[0.24em] text-[#141414]/60 mb-3 flex items-center gap-2">
+                          <CheckCircle2 size={14} className="text-green-600" /> Primary Source Verification
+                        </div>
+                        <div className="text-sm leading-relaxed text-gray-700 font-light mb-4">
+                          {verificationSource ? (
+                            readingTrailLinks.some((sourceLink) => sourceLink.url === verificationSource.url) ? (
+                              <span className="font-semibold text-[#141414] break-words">
+                                {verificationSource.title}
+                              </span>
+                            ) : (
+                              <a
+                                href={verificationSource.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title="Verify this chapter at a supporting source"
+                                className="inline-flex items-center gap-2 font-semibold text-[#141414] hover:underline break-all"
+                              >
+                                {verificationSource.title} <ArrowUpRight size={14} />
+                              </a>
+                            )
                           ) : (
+                            'No supporting source link is available for this chapter.'
+                          )}
+                        </div>
+                        {verificationSource?.url && (
+                          <div className="pt-3 border-t border-[#141414]/10 flex items-center justify-between text-[11px]">
+                            <span className="font-mono opacity-50 truncate mr-2">{verificationSource.hostname}</span>
                             <a
                               href={verificationSource.url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              title="Verify this chapter at a supporting source"
-                              className="inline-flex items-center gap-2 font-semibold text-[#141414] hover:underline break-all"
+                              className="font-bold uppercase tracking-wider text-[10px] hover:underline inline-flex items-center gap-1 shrink-0"
                             >
-                              {verificationSource.title} <ArrowUpRight size={14} />
+                              Inspect Source <ArrowUpRight size={12} />
                             </a>
-                          )
-                        ) : (
-                          'No supporting source link is available for this chapter.'
+                          </div>
                         )}
                       </div>
+
+                      {hostnames.length > 0 && (
+                        <div className="border border-[#141414]/10 bg-[#FAFAFA] p-6">
+                          <div className="text-[10px] uppercase font-bold tracking-[0.24em] text-[#141414]/60 mb-3">
+                            Verified Source Domains
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {hostnames.map((hostname) => (
+                              <span key={hostname} className="px-3 py-1.5 border border-[#141414]/15 bg-white text-[10px] uppercase font-bold tracking-[0.16em] text-[#141414]/75">
+                                {hostname}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
-                </div>
+                )}
 
                 <div className="mt-auto pt-10 flex justify-between items-center border-t border-[#141414]/5 text-[10px] font-mono opacity-40 print:hidden">
                   <span>Evolutionary Node {index + 1}.{chapter.visualSeed?.length || 0}</span>
