@@ -215,6 +215,17 @@ export async function prepareExportContent(
   const clone = root.cloneNode(true) as HTMLElement;
   clone.querySelectorAll(EXPORT_CLEANUP_SELECTOR).forEach((node) => node.remove());
 
+  // Ensure all external hyperlinks open in a new tab page, while internal links remain in the same document
+  clone.querySelectorAll('a[href]').forEach((anchor) => {
+    const href = anchor.getAttribute('href');
+    if (href && (href.startsWith('http://') || href.startsWith('https://') || href.startsWith('//'))) {
+      anchor.setAttribute('target', '_blank');
+      anchor.setAttribute('rel', 'noopener noreferrer');
+    } else if (href && href.startsWith('#')) {
+      anchor.setAttribute('target', '_self');
+    }
+  });
+
   const images = Array.from(clone.querySelectorAll('img'));
 
   if (inlineImages) {

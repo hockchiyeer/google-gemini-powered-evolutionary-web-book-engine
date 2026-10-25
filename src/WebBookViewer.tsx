@@ -66,7 +66,7 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
         <h3 className="text-[14px] uppercase font-bold mb-16 tracking-[0.3em] border-b-2 border-[#141414] pb-6 inline-block self-start">Table of Contents</h3>
         <div className="space-y-8 flex-1 print:space-y-0">
           {chapterRenderPlan.map(({ chapter, titlePageNumber }, index) => (
-            <a key={chapter.title + index} href={`#chapter-${index}`} data-pdf-target-page={titlePageNumber} title={`Navigate to Chapter ${index + 1}`} className="flex items-end gap-4 md:gap-6 group">
+            <a key={chapter.title + index} href={`#chapter-${index}`} target="_self" data-pdf-target-page={titlePageNumber} title={`Navigate to Chapter ${index + 1}`} className="flex items-end gap-4 md:gap-6 group">
               <span className="font-mono text-base opacity-40">0{index + 1}</span>
               <span className="text-lg md:text-xl font-medium group-hover:underline underline-offset-8 decoration-1 break-words">{chapter.title}</span>
               <div className="flex-1 border-b border-dotted border-[#141414] opacity-20 mb-2" />
@@ -470,6 +470,7 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
           </div>
           <a
             href="#top"
+            target="_self"
             data-pdf-target-page={1}
             title="Scroll back to the beginning of the book"
             className="shrink-0 text-[10px] uppercase font-bold hover:underline inline-flex items-center justify-end gap-2 text-right"

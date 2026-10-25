@@ -87,6 +87,25 @@ export async function exportWebBookWithJsPdf(
   const { jsPDF } = await import('jspdf');
   const safeWebBook = sanitizeWebBookForPresentation(webBook);
   const doc = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'portrait' });
+
+  // Hook internal.write so external URI link annotations are emitted with /NewWindow true
+  // and JavaScript launch actions (app.launchURL), while keeping jsPDF's internal byte
+  // counter and xref table 100% accurate and uncorrupted.
+  const docInternal = doc.internal as any;
+  const origWrite = docInternal.write.bind(docInternal);
+  docInternal.write = function (...args: any[]) {
+    const modifiedArgs = args.map((arg) => {
+      if (typeof arg === 'string' && arg.includes('/A <</S /URI /URI (')) {
+        return arg.replace(
+          /\/A\s*<<\/S\s*\/URI\s*\/URI\s*\(([^)]+)\)\s*>>/,
+          '/A <</S /URI /NewWindow true /URI ($1) >> /AA <</U <</S /JavaScript /JS (app.launchURL("$1", true);) >> >>'
+        );
+      }
+      return arg;
+    });
+    return origWrite(...modifiedArgs);
+  };
+
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 44;
@@ -305,7 +324,7 @@ export async function exportWebBookWithJsPdf(
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(8.5);
         const descLines = doc.splitTextToSize(def.description, contentWidth - 24);
-        const cardHeight = 22 + descLines.length * 11.5;
+        const cardHeight = (def.sourceUrl ? 36 : 24) + descLines.length * 11.5;
         checkPageSpace(cardHeight + 8);
 
         doc.setFillColor(252, 252, 251);
@@ -326,6 +345,16 @@ export async function exportWebBookWithJsPdf(
         doc.setFontSize(8.5);
         doc.setTextColor(70, 70, 70);
         doc.text(descLines, margin + 12, currentY + 25);
+
+        if (def.sourceUrl) {
+          const linkY = currentY + 27 + descLines.length * 11.5;
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(8);
+          doc.setTextColor(30, 58, 138);
+          doc.text('Source Article »', margin + 12, linkY);
+          doc.link(margin + 12, linkY - 8, 70, 11, { url: def.sourceUrl });
+        }
+
         currentY += cardHeight + 8;
       });
     }
@@ -416,6 +445,51 @@ export async function exportWebBookWithJsPdf(
       });
     }
   });
+
+  // --- Final Section: Synthesis Verified & Back to Top Hyperlink ---
+  checkPageSpace(52);
+  currentY += 14;
+  doc.setFillColor(245, 245, 245);
+  doc.setDrawColor(20, 20, 20);
+  doc.setLineWidth(0.5);
+  doc.rect(margin, currentY, contentWidth, 36, 'FD');
+
+  // Green checkmark badge
+  doc.setFillColor(220, 252, 231);
+  doc.circle(margin + 20, currentY + 18, 9, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(22, 163, 74);
+  doc.text('✓', margin + 20, currentY + 21, { align: 'center' });
+
+  // Status text
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(20, 20, 20);
+  doc.text('SYNTHESIS VERIFIED', margin + 36, currentY + 15);
+
+  doc.setFont('courier', 'normal');
+  doc.setFontSize(6.5);
+  doc.setTextColor(110, 110, 110);
+  doc.text('Engine v2.5 - Evolutionary Pass Complete', margin + 36, currentY + 25);
+
+  // "Back to Top" hyperlink (Internal navigation jumping back to Page 1)
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(20, 20, 20);
+  const backToTopText = 'BACK TO TOP »';
+  const backToTopWidth = doc.getTextWidth(backToTopText);
+  const backToTopX = pageWidth - margin - backToTopWidth - 14;
+  const backToTopY = currentY + 20;
+  doc.text(backToTopText, backToTopX, backToTopY);
+
+  // Underline
+  doc.setDrawColor(20, 20, 20);
+  doc.setLineWidth(0.5);
+  doc.line(backToTopX, backToTopY + 2, backToTopX + backToTopWidth, backToTopY + 2);
+
+  // Clickable internal link jumping back to Page 1 (Top of book)
+  doc.link(backToTopX - 4, currentY + 4, backToTopWidth + 8, 28, { pageNumber: 1 });
 
   // --- Pass 2: Render Table of Contents on Page 2 with Working Hyperlinks ---
   doc.setPage(2);

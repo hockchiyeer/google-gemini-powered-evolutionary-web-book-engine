@@ -6,3 +6,19 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Test execution outputs, reports, and generated artifacts
+test-results/
+test-results/chromeReport
+test-result/
+test-result/chromeReport
+tests/cypress/screenshots/
+tests/cypress/videos/
+cypress/screenshots/
+cypress/videos/
+
+# AI Studio internal runtime artifacts and temporary storage
+.aistudio/
+.tempmediaStorage/
+
+

@@ -80,6 +80,7 @@ export function AppHeader({
                 <a
                   key={chapter.title + index}
                   href={`#chapter-${index}`}
+                  target="_self"
                   className="w-7 h-7 flex items-center justify-center font-mono text-[10px] border border-[#141414]/10 hover:bg-[#141414] hover:text-white transition-all"
                   title={`Jump to Chapter ${index + 1}: ${chapter.title}`}
                 >
