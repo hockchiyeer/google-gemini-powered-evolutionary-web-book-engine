@@ -576,133 +576,201 @@ export async function printWebBook(webBook: WebBook): Promise<void> {
   }
   isPrintingInProgress = true;
 
+  const isCypress = typeof window !== 'undefined' && Boolean((window as unknown as { Cypress?: unknown }).Cypress);
+
+  // Synchronously open a dedicated window/tab when not in Cypress to preserve the user gesture.
+  // In Google AI Studio GUI (where the app runs inside a sandboxed iframe), opening a top-level
+  // window escapes nested iframe printing restrictions and allows native window.print() to run cleanly.
+  let printWindow: Window | null = null;
+  if (!isCypress) {
+    try {
+      printWindow = window.open('', '_blank');
+    } catch (openErr) {
+      console.warn('Dedicated print window open was blocked or unavailable:', openErr);
+    }
+  }
+
   const safeWebBook = sanitizeWebBookForPresentation(webBook);
-  const { clone } = await prepareExportContent(getWebBookElement());
-  const htmlContent = buildPrintHtmlDocument(safeWebBook, clone.outerHTML);
   const printTitle = getWebBookDocumentTitle(safeWebBook.topic);
   const printFileName = getExportFileName(safeWebBook.topic, 'pdf');
 
-  const iframe = document.createElement('iframe');
-  iframe.style.position = 'fixed';
-  iframe.style.top = '0';
-  iframe.style.left = '0';
-  iframe.style.width = '100%';
-  iframe.style.height = '100%';
-  iframe.style.border = '0';
-  iframe.style.zIndex = '-9999';
-  iframe.style.opacity = '0';
-  iframe.style.pointerEvents = 'none';
-  iframe.title = printTitle;
-  iframe.name = printFileName;
-  document.body.appendChild(iframe);
+  try {
+    const { clone } = await prepareExportContent(getWebBookElement());
+    const htmlContent = buildPrintHtmlDocument(safeWebBook, clone.outerHTML);
 
-  const iframeWindow = iframe.contentWindow;
-  const iframeDoc = iframeWindow?.document;
-
-  let hasExecuted = false;
-  let isCleanedUp = false;
-  let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
-  let readyTimer: ReturnType<typeof setTimeout> | null = null;
-
-  const cleanup = () => {
-    if (isCleanedUp) return;
-    isCleanedUp = true;
-    isPrintingInProgress = false;
-
-    if (fallbackTimer) {
-      clearTimeout(fallbackTimer);
-      fallbackTimer = null;
-    }
-    if (readyTimer) {
-      clearTimeout(readyTimer);
-      readyTimer = null;
-    }
-
-    try {
-      iframeWindow?.removeEventListener?.('afterprint', cleanup);
-    } catch {}
-    try {
-      window.removeEventListener?.('afterprint', cleanup);
-    } catch {}
-
-    // Allow the browser print preview UI to fully settle before detaching iframe
-    setTimeout(() => {
+    if (printWindow && printWindow.document) {
       try {
-        if (iframe.parentNode) {
-          iframe.parentNode.removeChild(iframe);
-        }
+        const printScript = `
+          <script>
+            document.title = ${JSON.stringify(printTitle)};
+            const triggerPrint = () => {
+              setTimeout(() => {
+                window.print();
+              }, 750);
+            };
+            if (document.readyState === 'complete') {
+              triggerPrint();
+            } else {
+              window.addEventListener('load', triggerPrint, { once: true });
+            }
+          </script>
+        `;
+        const popupHtml = htmlContent.includes('</body>')
+          ? htmlContent.replace('</body>', `${printScript}</body>`)
+          : `${htmlContent}${printScript}`;
+
+        printWindow.document.open();
+        printWindow.document.write(popupHtml);
+        printWindow.document.title = printTitle;
+        printWindow.document.close();
+
+        // Print operation delegated to dedicated top-level window
+        isPrintingInProgress = false;
+        return;
+      } catch (writeErr) {
+        console.warn('Failed writing to dedicated print window, falling back to iframe print:', writeErr);
+        try {
+          printWindow.close();
+        } catch {}
+      }
+    }
+
+    // Fallback path: hidden iframe print approach (used in Cypress test harness or strict popup blockers)
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.top = '0';
+    iframe.style.left = '0';
+    iframe.style.width = '100%';
+    iframe.style.height = '100%';
+    iframe.style.border = '0';
+    iframe.style.zIndex = '-9999';
+    iframe.style.opacity = '0';
+    iframe.style.pointerEvents = 'none';
+    iframe.title = printTitle;
+    iframe.name = printFileName;
+    document.body.appendChild(iframe);
+
+    const iframeWindow = iframe.contentWindow;
+    const iframeDoc = iframeWindow?.document;
+
+    let hasExecuted = false;
+    let isCleanedUp = false;
+    let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
+    let readyTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const cleanup = () => {
+      if (isCleanedUp) return;
+      isCleanedUp = true;
+      isPrintingInProgress = false;
+
+      if (fallbackTimer) {
+        clearTimeout(fallbackTimer);
+        fallbackTimer = null;
+      }
+      if (readyTimer) {
+        clearTimeout(readyTimer);
+        readyTimer = null;
+      }
+
+      try {
+        iframeWindow?.removeEventListener?.('afterprint', cleanup);
       } catch {}
-    }, 300);
-  };
+      try {
+        window.removeEventListener?.('afterprint', cleanup);
+      } catch {}
 
-  const executePrint = () => {
-    if (hasExecuted) return;
-    hasExecuted = true;
-
-    if (fallbackTimer) {
-      clearTimeout(fallbackTimer);
-      fallbackTimer = null;
-    }
-    if (readyTimer) {
-      clearTimeout(readyTimer);
-      readyTimer = null;
-    }
-
-    try {
-      if (iframeWindow) {
+      // Allow the browser print preview UI to fully settle before detaching iframe
+      setTimeout(() => {
         try {
-          iframeWindow.addEventListener('afterprint', cleanup, { once: true });
+          if (iframe.parentNode) {
+            iframe.parentNode.removeChild(iframe);
+          }
         } catch {}
-        try {
-          window.addEventListener('afterprint', cleanup, { once: true });
-        } catch {}
+      }, 300);
+    };
 
-        iframeWindow.focus();
-        iframeWindow.print();
-      } else {
-        window.print();
+    const executePrint = () => {
+      if (hasExecuted) return;
+      hasExecuted = true;
+
+      if (fallbackTimer) {
+        clearTimeout(fallbackTimer);
+        fallbackTimer = null;
+      }
+      if (readyTimer) {
+        clearTimeout(readyTimer);
+        readyTimer = null;
+      }
+
+      try {
+        if (iframeWindow) {
+          try {
+            iframeWindow.addEventListener('afterprint', cleanup, { once: true });
+          } catch {}
+          try {
+            window.addEventListener('afterprint', cleanup, { once: true });
+          } catch {}
+
+          iframeWindow.focus();
+          iframeWindow.print();
+        } else {
+          window.print();
+          cleanup();
+        }
+      } catch (printErr) {
+        console.warn('Iframe print failed, falling back to window.print():', printErr);
+        try {
+          window.print();
+        } catch (winErr) {
+          console.warn('Direct window print also failed:', winErr);
+        }
         cleanup();
       }
-    } catch (printErr) {
-      console.warn('Iframe print failed:', printErr);
-      cleanup();
-    }
-  };
+    };
 
-  if (iframeWindow && iframeDoc) {
-    try {
-      iframeDoc.open();
-      iframeDoc.write(htmlContent);
-      iframeDoc.title = printTitle;
-      iframeDoc.close();
+    if (iframeWindow && iframeDoc) {
+      try {
+        iframeDoc.open();
+        iframeDoc.write(htmlContent);
+        iframeDoc.title = printTitle;
+        iframeDoc.close();
 
-      // Fallback timer: trigger print if onload doesn't fire within 800ms
-      fallbackTimer = setTimeout(() => {
-        executePrint();
-      }, 800);
+        // Fallback timer: trigger print if onload doesn't fire within 800ms
+        fallbackTimer = setTimeout(() => {
+          executePrint();
+        }, 800);
 
-      if (iframeDoc.readyState === 'complete') {
-        readyTimer = setTimeout(executePrint, 150);
-      } else {
-        iframe.onload = () => {
-          readyTimer = setTimeout(executePrint, 100);
-        };
+        if (iframeDoc.readyState === 'complete') {
+          readyTimer = setTimeout(executePrint, 150);
+        } else {
+          iframe.onload = () => {
+            readyTimer = setTimeout(executePrint, 100);
+          };
+        }
+      } catch (frameErr) {
+        console.warn('Failed to write to print iframe, falling back to window.print():', frameErr);
+        try {
+          window.print();
+        } catch (winErr) {
+          console.warn('Window print failed:', winErr);
+        }
+        cleanup();
       }
-    } catch (frameErr) {
-      console.warn('Failed to write to print iframe, falling back to window.print():', frameErr);
+    } else {
       try {
         window.print();
       } catch (winErr) {
-        console.warn('Window print failed:', winErr);
+        console.warn('Direct print failed:', winErr);
       }
       cleanup();
     }
-  } else {
-    try {
-      window.print();
-    } catch (winErr) {
-      console.warn('Direct print failed:', winErr);
+  } catch (err) {
+    console.error('printWebBook encountered an error:', err);
+    isPrintingInProgress = false;
+    if (printWindow) {
+      try {
+        printWindow.close();
+      } catch {}
     }
-    cleanup();
   }
 }
