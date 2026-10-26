@@ -15,6 +15,7 @@ import {
 import { fetchGoogleSearchFallback } from "./googleSearchFallbackClient";
 import { buildGeminiUserFacingErrorMessage, GeminiFailureReason } from "./geminiUserFacingErrors";
 import { isNonJsonResponseText } from "./safeResponse";
+import { SYNTHETIC_FALLBACK_DIAGNOSTIC, describeFallbackEvidence, isSyntheticFallbackPayload } from "./searchFallbackShared";
 
 export function buildSyntheticFallbackPayload(query: string, mode: SearchFallbackMode = 'google_duckduckgo'): SearchFallbackPayload {
   const provider = mode === 'duckduckgo' ? 'duckduckgo' : 'google';
@@ -32,7 +33,7 @@ export function buildSyntheticFallbackPayload(query: string, mode: SearchFallbac
       },
     ],
     extractedAt: Date.now(),
-    diagnostics: ['Synthetic fallback payload generated due to limited search evidence.'],
+    diagnostics: [SYNTHETIC_FALLBACK_DIAGNOSTIC],
   };
 }
 
@@ -324,7 +325,6 @@ function resolveVerifiedSource(
     return { url: picked.uri, title: picked.title || rawTitle };
   }
 
-  // 6. Valid external URL fallback (ensuring not a placeholder like source-1.org)
   if (rawUrl && /^https?:\/\//i.test(rawUrl)) {
     try {
       const u = new URL(rawUrl);
@@ -339,11 +339,71 @@ function resolveVerifiedSource(
   return { url: '', title: rawTitle || 'Source Article' };
 }
 
+// Why the Gemini search step did not supply the evidence (drives the notice and fallbackReason).
+type GeminiSearchCause = GeminiFailureReason | 'no_content';
+
+const GEMINI_SEARCH_CAUSE_PHRASES: Record<GeminiSearchCause, string> = {
+  quota_or_rate_limit: 'usage limit reached',
+  invalid_api_key: 'API key rejected',
+  missing_api_key: 'API key missing',
+  service_unavailable: 'service temporarily unavailable',
+  network_unreachable: 'could not be reached',
+  no_content: 'no usable sources returned',
+};
+
+const GEMINI_SEARCH_CAUSE_TO_FALLBACK_REASON: Record<GeminiSearchCause, SearchFallbackReason> = {
+  quota_or_rate_limit: 'quota_exhausted',
+  invalid_api_key: 'unreachable',
+  missing_api_key: 'unreachable',
+  service_unavailable: 'unreachable',
+  network_unreachable: 'network_unreachable',
+  no_content: 'no_content',
+};
+
+function classifyGeminiSearchFailure(err: any): GeminiSearchCause {
+  const message = String(err?.message || err || '');
+  // Gemini answered but its text could not be parsed (e.g. cut off): a content problem, not an outage.
+  if (err instanceof SyntaxError && !/<|doctype/i.test(message)) {
+    return 'no_content';
+  }
+  return detectGeminiFailureReason(err);
+}
+
+function describeFallbackProviders(mode: SearchFallbackMode): string {
+  switch (mode) {
+    case 'google':
+      return 'The Google fallback search';
+    case 'duckduckgo':
+      return 'The DuckDuckGo fallback search';
+    default:
+      return 'The Google and DuckDuckGo fallback searches';
+  }
+}
+
+// Graceful stop shown in the existing error box. It must keep the phrase "no external evidence could be
+// gathered": useWebBookEngine uses it to avoid rewriting messages that mention "quota"/"429" as a rate limit.
+function buildNoLiveEvidenceMessage(
+  query: string,
+  mode: SearchFallbackMode,
+  model: string,
+  cause: GeminiSearchCause
+): string {
+  return [
+    `Search stopped: ${describeFallbackProviders(mode)} returned no live results (selected Gemini model ${model}: ${GEMINI_SEARCH_CAUSE_PHRASES[cause]}), so no external evidence could be gathered for "${query}". No Web-book was generated.`,
+    '',
+    'What you can do next:',
+    '• Search again with the same wording - search engines often recover within a minute.',
+    '• Refine the wording - use fewer, more specific keywords, name the key people, places or terms, or drop time-sensitive phrasing.',
+  ].join('\n');
+}
+
 export async function searchAndExtract(
   query: string,
   options: EngineOptions = { mode: 'google_duckduckgo', geminiModel: 'gemini-3.8-flash' }
 ): Promise<SearchExtractionResult> {
   const fallbackEnabled = options.mode !== 'off';
+  const selectedModel = options.geminiModel || 'gemini-3.8-flash';
+  let geminiCause: GeminiSearchCause = 'no_content';
 
   try {
     const ai = getAI();
@@ -457,6 +517,7 @@ export async function searchAndExtract(
     }
   } catch (geminiError: any) {
     console.warn("Gemini search failed or unavailable, checking fallback...", geminiError);
+    geminiCause = classifyGeminiSearchFailure(geminiError);
 
     if (!fallbackEnabled) {
       const reason = detectGeminiFailureReason(geminiError);
@@ -466,9 +527,18 @@ export async function searchAndExtract(
 
   // Fallback search execution
   const fallbackPayload = await fetchGoogleSearchFallback(query, options);
-  if (!fallbackPayload || !Array.isArray(fallbackPayload.results) || fallbackPayload.results.length === 0) {
-    throw new Error(`No usable external evidence was gathered for "${query}", so WebBook assembly was skipped.`);
+  // A synthetic payload is a placeholder the server fabricates when Google and DuckDuckGo both return nothing.
+  // Building a book from it would present generic filler as researched evidence, so stop and let the user retry or refine.
+  if (
+    !fallbackPayload
+    || !Array.isArray(fallbackPayload.results)
+    || fallbackPayload.results.length === 0
+    || isSyntheticFallbackPayload(fallbackPayload)
+  ) {
+    throw new Error(buildNoLiveEvidenceMessage(query, options.mode, selectedModel, geminiCause));
   }
+
+  const fallbackEvidence = describeFallbackEvidence(fallbackPayload, options.mode);
 
   const fallbackPopulation: WebPageGenotype[] = fallbackPayload.results.map((res, index) => {
     const rawContent = [res.snippet, res.excerpt].filter(Boolean).join(' ');
@@ -511,10 +581,10 @@ export async function searchAndExtract(
       groundingChunks: fallbackPayload.results.map(r => ({ web: { uri: r.url, title: r.title } })),
       searchSummary: fallbackPayload.summary || `Live fallback search retrieved ${fallbackPayload.results.length} sources via ${fallbackPayload.provider}.`,
     },
-    generationNote: `Gemini search unavailable; gathered evidence via ${fallbackPayload.provider} fallback.`,
+    generationNote: `Selected Gemini model (${selectedModel}) unavailable (${GEMINI_SEARCH_CAUSE_PHRASES[geminiCause]}); gathered evidence via ${fallbackEvidence.label}.`,
     sourceMode: 'fallback_search',
-    fallbackSource: fallbackPayload.provider,
-    fallbackReason: 'quota_exhausted',
+    fallbackSource: fallbackEvidence.source,
+    fallbackReason: GEMINI_SEARCH_CAUSE_TO_FALLBACK_REASON[geminiCause],
   };
 }
 

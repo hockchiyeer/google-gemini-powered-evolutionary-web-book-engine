@@ -238,7 +238,7 @@ Generates a deployable source ZIP archive at `artifacts/evolutionary-web-book-en
 
 ## How It Works
 
-1. **Targeted Ingestion**: Gathers initial candidate sources via Gemini with Google Search grounding, preserving verified search URLs and domain citations. If quotas or rate limits are reached, the query transparently routes through the selected fallback provider (`Google + DuckDuckGo`, `Google`, or `DuckDuckGo`).
+1. **Targeted Ingestion**: Gathers initial candidate sources via Gemini with Google Search grounding, preserving verified search URLs and domain citations. If quotas or rate limits are reached, the query transparently routes through the selected fallback provider (`Google + DuckDuckGo`, `Google`, or `DuckDuckGo`), and the notice reports the selected Gemini model, why it was unavailable, and which fallback providers actually supplied evidence. If the fallback providers also return nothing, generation stops with a message (instead of building a book from placeholder content) and the query stays in the search box so you can retry it as-is or refine the wording.
 2. **Evolutionary Optimization**:
    - **Fitness Function**: Evaluates candidate text based on Informative Value $I(w)$, Source Authority $A(w)$, and a Redundancy Penalty $R(w, S)$.
    - **Selection & Crossover**: Selects top-scoring genotypes across successive generations to eliminate redundant boilerplate while preserving novel technical facts.

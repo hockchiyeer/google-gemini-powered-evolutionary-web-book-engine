@@ -42,7 +42,7 @@ export const GEMINI_MODELS = [
 
 export type SearchFallbackMode = 'off' | 'duckduckgo' | 'google' | 'google_duckduckgo';
 export type SearchFallbackSource = 'google' | 'duckduckgo' | 'google_duckduckgo' | 'gemini';
-export type SearchFallbackReason = 'quota_exhausted' | 'rate_limited' | 'unreachable' | 'network_unreachable' | 'manual' | 'no_content';
+export type SearchFallbackReason = 'quota_exhausted' | 'rate_limited' | 'unreachable' | 'network_unreachable' | 'manual' | 'no_content' | 'invalid_api_key' | 'missing_api_key' | 'service_unavailable';
 export type WebBookSourceMode = 'gemini' | 'fallback_search' | 'hybrid' | 'search-fallback';
 export type SearchFallbackProvider = 'google' | 'duckduckgo';
 
@@ -86,7 +86,7 @@ export function isSearchFallbackMode(val: unknown): val is SearchFallbackMode {
 }
 
 export function isSearchFallbackReason(val: unknown): val is SearchFallbackReason {
-  return typeof val === 'string' && ['quota_exhausted', 'rate_limited', 'unreachable', 'network_unreachable', 'manual', 'no_content'].includes(val);
+  return typeof val === 'string' && ['quota_exhausted', 'rate_limited', 'unreachable', 'network_unreachable', 'manual', 'no_content', 'invalid_api_key', 'missing_api_key', 'service_unavailable'].includes(val);
 }
 
 export function isSearchFallbackSource(val: unknown): val is SearchFallbackSource {

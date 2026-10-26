@@ -1,11 +1,14 @@
 import type {
   SearchArtifact,
+  SearchFallbackMode,
   SearchFallbackPayload,
   SearchFallbackProvider,
 } from '../types';
 
 const GOOGLE_SEARCH_URL = 'https://www.google.com/search';
 const DUCKDUCKGO_PUBLIC_SEARCH_URL = 'https://duckduckgo.com/';
+// Marks a placeholder payload that was fabricated because no live search evidence was found.
+export const SYNTHETIC_FALLBACK_DIAGNOSTIC = 'Synthetic fallback payload generated due to limited search evidence.';
 export const FALLBACK_STOPWORDS = new Set([
   'about',
   'after',
@@ -82,13 +85,21 @@ export function getFallbackResultCount(
   payload: SearchFallbackPayload,
   provider: SearchFallbackProvider
 ): number {
-  const diagnostic = payload.diagnostics?.find((entry) => entry.startsWith(`${provider}-results:`));
-  if (!diagnostic) {
+  // DuckDuckGo evidence can come from its HTML, Lite or Instant Answer endpoints, each reported separately.
+  const prefixes = provider === 'duckduckgo'
+    ? ['duckduckgo-results:', 'duckduckgo-lite-results:', 'duckduckgo-instant-results:']
+    : [`${provider}-results:`];
+  const counts = (payload.diagnostics || []).flatMap((entry) => (
+    prefixes
+      .filter((prefix) => entry.startsWith(prefix))
+      .map((prefix) => Number.parseInt(entry.slice(prefix.length), 10))
+  )).filter((count) => Number.isFinite(count));
+
+  if (counts.length === 0) {
     return payload.provider === provider ? payload.results.length : 0;
   }
 
-  const count = Number.parseInt(diagnostic.split(':')[1] || '0', 10);
-  return Number.isFinite(count) ? count : 0;
+  return counts.reduce((total, count) => total + count, 0);
 }
 
 export function hasDuckDuckGoFallbackEvidence(payload: SearchFallbackPayload): boolean {
@@ -97,6 +108,41 @@ export function hasDuckDuckGoFallbackEvidence(payload: SearchFallbackPayload): b
 
 export function hasGoogleFallbackEvidence(payload: SearchFallbackPayload): boolean {
   return payload.source === 'google-ai-overview' || getFallbackResultCount(payload, 'google') > 0;
+}
+
+export function isSyntheticFallbackPayload(payload?: SearchFallbackPayload): boolean {
+  return Boolean(payload?.diagnostics?.includes(SYNTHETIC_FALLBACK_DIAGNOSTIC));
+}
+
+/** Reports which fallback providers actually contributed evidence, for user-facing notices and metadata. */
+export function describeFallbackEvidence(
+  payload: SearchFallbackPayload,
+  mode: SearchFallbackMode
+): { label: string; source: 'google' | 'duckduckgo' | 'google_duckduckgo' } {
+  let google = hasGoogleFallbackEvidence(payload);
+  let duckduckgo = hasDuckDuckGoFallbackEvidence(payload);
+
+  if (!google && !duckduckgo) {
+    // Payloads without per-provider diagnostics: fall back to the declared provider.
+    google = payload.provider !== 'duckduckgo';
+    duckduckgo = payload.provider === 'duckduckgo' || payload.provider === 'google_duckduckgo';
+  }
+
+  if (google && duckduckgo) {
+    return { label: 'Google fallback + DuckDuckGo fallback', source: 'google_duckduckgo' };
+  }
+
+  if (google) {
+    return {
+      label: mode === 'google_duckduckgo' ? 'Google fallback (DuckDuckGo contributed no results)' : 'Google fallback',
+      source: 'google',
+    };
+  }
+
+  return {
+    label: mode === 'google_duckduckgo' ? 'DuckDuckGo fallback (Google contributed no results)' : 'DuckDuckGo fallback',
+    source: 'duckduckgo',
+  };
 }
 
 export function buildFallbackOverviewTitle(payload: SearchFallbackPayload): string {
