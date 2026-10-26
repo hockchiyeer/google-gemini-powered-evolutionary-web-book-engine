@@ -13,7 +13,7 @@
     "package:aistudio": "node scripts/package-google-ai-studio.mjs",
     "test": "node tests/scripts/run-local-cypress.cjs",
     "test:e2e": "node tests/scripts/run-cypress-with-reports.cjs",
-    "test:server": "tsx tests/server/documentTitle.test.ts && tsx tests/server/evolutionService.test.ts && tsx tests/server/googleSearchFallback.test.ts && tsx tests/server/hyperlinkExport.test.ts",
+    "test:server": "tsx tests/server/documentTitle.test.ts && tsx tests/server/evolutionService.test.ts && tsx tests/server/googleSearchFallback.test.ts && tsx tests/server/hyperlinkExport.test.ts && tsx tests/server/googleSearchFallbackClient.test.ts",
     "cy:run": "cypress run --config-file tests/cypress.config.cjs",
     "cy:run:local": "node tests/scripts/run-cypress-with-reports.cjs",
     "cy:open": "cypress open --config-file tests/cypress.config.cjs",

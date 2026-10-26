@@ -1,3 +1,5 @@
+import { isNonJsonResponseText, looksLikeHtml, toPlainTextPreview } from './safeResponse';
+
 export type GeminiFailureReason =
   | 'missing_api_key'
   | 'invalid_api_key'
@@ -36,6 +38,13 @@ function extractStructuredErrorMessage(value: unknown, seen = new Set<unknown>()
     const parsed = tryParseStructuredErrorPayload(trimmed);
     if (parsed !== null) {
       return extractStructuredErrorMessage(parsed, seen) || trimmed;
+    }
+
+    // An HTML page (proxy/gateway/auth error) or the browser's "Unexpected token '<'" parse
+    // error is not a useful message for the user, so summarise it instead of echoing it.
+    if (isNonJsonResponseText(trimmed)) {
+      const preview = looksLikeHtml(trimmed) ? toPlainTextPreview(trimmed, 120) : '';
+      return `The service returned a non-JSON (HTML) response instead of the expected JSON${preview ? ` (${preview})` : ''}.`;
     }
 
     return trimmed;

@@ -14,6 +14,7 @@ import {
 } from "../types";
 import { fetchGoogleSearchFallback } from "./googleSearchFallbackClient";
 import { buildGeminiUserFacingErrorMessage, GeminiFailureReason } from "./geminiUserFacingErrors";
+import { isNonJsonResponseText } from "./safeResponse";
 
 export function buildSyntheticFallbackPayload(query: string, mode: SearchFallbackMode = 'google_duckduckgo'): SearchFallbackPayload {
   const provider = mode === 'duckduckgo' ? 'duckduckgo' : 'google';
@@ -125,6 +126,11 @@ function detectGeminiFailureReason(err: any): GeminiFailureReason {
     return 'quota_or_rate_limit';
   }
   if (status === 503 || message.includes('503') || message.includes('unavailable')) {
+    return 'service_unavailable';
+  }
+  // An HTML page where JSON was expected (proxy/gateway/auth page) means the service is
+  // reachable but not answering properly, which is not a connectivity problem on the user's side.
+  if (isNonJsonResponseText(String(err?.message || err?.statusText || err || ''))) {
     return 'service_unavailable';
   }
   return 'network_unreachable';
