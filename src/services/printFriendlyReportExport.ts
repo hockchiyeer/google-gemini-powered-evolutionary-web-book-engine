@@ -1,6 +1,7 @@
 import type { Chapter, Definition, SubTopic, WebBook } from '../types';
 import { getChapterSourceLinks, sanitizeWebBookForPresentation } from '../utils/webBookRender';
 import { downloadBlob, getExportFileName } from './exportDocument';
+import { getWebBookDocumentTitle } from './documentTitle';
 
 function escapeHtml(text: string): string {
   if (!text) return '';
@@ -12,7 +13,6 @@ function escapeHtml(text: string): string {
     .replace(/'/g, '&#039;');
 }
 
-// The chapter cards below carry the complete text, so the brief deliberately does not repeat chapter 1.
 function getExecutiveOverview(webBook: WebBook): string {
   if (webBook.generationNote) {
     return webBook.generationNote;
@@ -21,37 +21,55 @@ function getExecutiveOverview(webBook: WebBook): string {
 }
 
 // ---------------------------------------------------------------------------
-// A4 page geometry (CSS px @ 96dpi) and pagination
+// A4 page geometry & Reader-mode typography (modelled on Edge / LinkedIn reader view)
 // ---------------------------------------------------------------------------
-// Full, untruncated text has unpredictable length, so pages are filled by height rather than by a fixed
-// chapter count. Heights are estimated here (works without a DOM) and verified against the real layout
-// in renderPrintFriendlyReportCanvases, which searches for the largest capacity whose pages all fit.
+// Design:
+//   * Generous 15px text with 1.63 line-height, left-aligned for high readability
+//   * Plain, accessible system sans-serif stack across all languages
+//   * Clean headings, definition lists for core concepts, and source links
+//   * Protected headings (never orphaned alone at the bottom of a page)
+//   * 3x render scale (~288 DPI) for crisp text in both PDF & JPG exports
 
 const PAGE_WIDTH_PX = 794;
 const PAGE_HEIGHT_PX = 1123;
-const PAGE_PADDING_X_PX = 38;
-const PAGE_PADDING_Y_PX = 34;
+const PAGE_PADDING_X_PX = 44;
+const PAGE_PADDING_Y_PX = 36;
 const PAGE_BODY_WIDTH_PX = PAGE_WIDTH_PX - PAGE_PADDING_X_PX * 2;
-const CARD_INNER_WIDTH_PX = PAGE_BODY_WIDTH_PX - 26; // card padding (12 * 2) + border (1 * 2)
-const DETAIL_COLUMN_WIDTH_PX = (CARD_INNER_WIDTH_PX - 6) / 2 - 16; // grid gap, cell padding and border
-const FOOTER_RESERVE_PX = 30;
+const CARD_INNER_WIDTH_PX = PAGE_BODY_WIDTH_PX;
+const DETAIL_COLUMN_WIDTH_PX = Math.floor((CARD_INNER_WIDTH_PX - 12) / 2);
+const FOOTER_RESERVE_PX = 32;
 const CARD_GAP_PX = 8;
 const SEED_BADGE_MAX_WIDTH_PX = Math.floor(CARD_INNER_WIDTH_PX * 0.4);
 const MAX_ITEMS_PER_DETAIL_BLOCK = 4;
-const LATIN_CHAR_EM = 0.52; // average advance width of Latin text in Inter/Georgia, in em (slightly pessimistic)
-// Journal-style typography: a serif ~8.25pt justified body with comfortable leading, 6.75pt detail text.
-const BODY_FONT_PX = 11;
-const BODY_LINE_PX = 16.5;
-const BODY_PARAGRAPH_GAP_PX = 6;
-const DETAIL_FONT_PX = 9;
-const DETAIL_LINE_PX = 12.2;
+const LATIN_CHAR_EM = 0.54;
+
+const BODY_FONT_PX = 15;
+const BODY_LINE_PX = 24.5;
+const BODY_PARAGRAPH_GAP_PX = 10;
+const DETAIL_FONT_PX = 12.5;
+const DETAIL_LINE_PX = 17;
 const MAX_PARAGRAPH_CHARS = 2400;
 const MAX_CAPACITY_SCALE = 1.8;
 const MIN_CAPACITY_SCALE = 0.5;
 const CAPACITY_SEARCH_STEPS = 7;
-const MAX_COMPOSITE_CANVAS_PIXELS = 16_000_000;
+const MAX_COMPOSITE_CANVAS_PIXELS = 24_000_000;
 const MAX_COMPOSITE_CANVAS_SIDE_PX = 32_000;
+const IMAGE_RENDER_SCALE = 3;
+const JPEG_QUALITY = 0.95;
 
+const READER_FONT_STACK = [
+  "'Segoe UI'",
+  '-apple-system',
+  'BlinkMacSystemFont',
+  'Roboto',
+  "'Helvetica Neue'",
+  'Arial',
+  "'Noto Sans'",
+  'system-ui',
+  'sans-serif',
+].join(', ');
+
+const CONCLUSION_TITLE = 'Evolutionary Synthesis & Evidence Verification';
 const CONCLUSION_TEXT =
   'This full-text report was produced using multi-generational genetic algorithms that evaluate informative novelty while pruning repetitive search fragments. All references have been normalized and validated against primary source hostnames.';
 
@@ -74,7 +92,6 @@ interface ReportPageLayout {
   includeConclusion: boolean;
 }
 
-// Slightly pessimistic width model (Latin ~0.52em, CJK 1em per character); the renderer verifies the real layout.
 function estimateLines(text: string, fontPx: number, widthPx: number): number {
   let lines = 0;
   for (const segment of text.split('\n')) {
@@ -130,13 +147,13 @@ interface DetailItem {
 
 function estimateDetailColumnHeight(items: DetailItem[], emptyText: string | null): number {
   if (items.length === 0) {
-    return emptyText === null ? 0 : 24 + estimateLines(emptyText, DETAIL_FONT_PX, DETAIL_COLUMN_WIDTH_PX) * DETAIL_LINE_PX;
+    return emptyText === null ? 0 : 26 + estimateLines(emptyText, DETAIL_FONT_PX, DETAIL_COLUMN_WIDTH_PX) * DETAIL_LINE_PX;
   }
   const itemsHeight = items.reduce(
-    (sum, item) => sum + estimateLines(`${item.label}: ${item.text}`, DETAIL_FONT_PX, DETAIL_COLUMN_WIDTH_PX) * DETAIL_LINE_PX + 2,
+    (sum, item) => sum + estimateLines(`${item.label}: ${item.text}`, DETAIL_FONT_PX, DETAIL_COLUMN_WIDTH_PX) * DETAIL_LINE_PX + 4,
     0
   );
-  return 24 + itemsHeight;
+  return 26 + itemsHeight;
 }
 
 function renderDetailColumn(heading: string, items: DetailItem[], emptyText: string | null): string {
@@ -145,17 +162,17 @@ function renderDetailColumn(heading: string, items: DetailItem[], emptyText: str
   }
   const body =
     items.length === 0
-      ? `<div style="font-family: 'Inter', sans-serif; font-size: ${DETAIL_FONT_PX}px; color: #888; font-style: italic;">${escapeHtml(emptyText ?? '')}</div>`
+      ? `<div style="font-family: ${READER_FONT_STACK}; font-size: ${DETAIL_FONT_PX}px; color: #777; font-style: italic;">${escapeHtml(emptyText ?? '')}</div>`
       : items
           .map(
             (item) =>
-              `<div style="font-family: 'Inter', sans-serif; font-size: ${DETAIL_FONT_PX}px; line-height: ${DETAIL_LINE_PX}px; color: #333; margin-bottom: 2px; word-break: break-word;">
-          <strong style="color: #141414;">${escapeHtml(item.label)}:</strong> ${escapeHtml(item.text)}
+              `<div style="font-family: ${READER_FONT_STACK}; font-size: ${DETAIL_FONT_PX}px; line-height: ${DETAIL_LINE_PX}px; color: #222; margin-bottom: 4px; word-break: break-word;">
+          <strong style="color: #111;">${escapeHtml(item.label)}:</strong> ${escapeHtml(item.text)}
         </div>`
           )
           .join('');
-  return `<div style="background: #FAFAFA; border: 1px solid rgba(20,20,20,0.06); padding: 5px 7px; border-radius: 2px;">
-          <div style="font-family: 'JetBrains Mono', monospace; font-size: 7.5px; font-weight: 700; text-transform: uppercase; color: #666; margin-bottom: 2px;">
+  return `<div style="background: #fafaf9; border-left: 3px solid #141414; padding: 6px 10px; border-radius: 0 2px 2px 0;">
+          <div style="font-family: ${READER_FONT_STACK}; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #555; margin-bottom: 4px;">
             ${escapeHtml(heading)}
           </div>
           ${body}
@@ -172,13 +189,12 @@ function buildDetailBlocks(chapter: Chapter): ReportBlock[] {
     const to = from + MAX_ITEMS_PER_DETAIL_BLOCK;
     const conceptChunk = concepts.slice(from, to);
     const dimensionChunk = dimensions.slice(from, to);
-    // Placeholders only describe a chapter that has no items at all, never an exhausted continuation chunk.
     const conceptEmpty = chunkIndex === 0 ? 'Domain terminology integrated in narrative' : null;
     const dimensionEmpty = chunkIndex === 0 ? 'Synthesized across primary narrative' : null;
 
     return {
       html: `
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 4px;">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 6px;">
         ${renderDetailColumn('Core Concepts', conceptChunk, conceptEmpty)}
         ${renderDetailColumn('Key Dimensions', dimensionChunk, dimensionEmpty)}
       </div>`,
@@ -186,7 +202,7 @@ function buildDetailBlocks(chapter: Chapter): ReportBlock[] {
         Math.max(
           estimateDetailColumnHeight(conceptChunk, conceptEmpty),
           estimateDetailColumnHeight(dimensionChunk, dimensionEmpty)
-        ) + 4,
+        ) + 6,
     };
   });
 }
@@ -199,30 +215,30 @@ function buildSourcesBlock(chapter: Chapter): ReportBlock | null {
   const badges = labels
     .map(
       (label) =>
-        `<span style="display: inline-flex; align-items: center; background: #EEEEEB; border: 1px solid rgba(20,20,20,0.1); border-radius: 2px; padding: 2px 5px; line-height: 1.2; font-family: 'JetBrains Mono', monospace; font-size: 7.5px; color: #444; margin-right: 4px; margin-bottom: 2px; word-break: break-all; box-sizing: border-box;">
+        `<span style="display: inline-flex; align-items: center; background: #f0f0ee; border: 1px solid rgba(20,20,20,0.12); border-radius: 2px; padding: 2px 6px; line-height: 1.25; font-family: ${READER_FONT_STACK}; font-size: 10.5px; color: #333; margin-right: 5px; margin-bottom: 3px; word-break: break-all; box-sizing: border-box;">
           ${escapeHtml(label)}
         </span>`
     )
     .join('');
-  const rowWidth = 50 + labels.reduce((sum, label) => sum + label.length * 4.5 + 16, 0);
-  const rows = Math.max(1, Math.ceil((rowWidth * 1.1) / CARD_INNER_WIDTH_PX));
+  const rowWidth = 60 + labels.reduce((sum, label) => sum + label.length * 6.2 + 18, 0);
+  const rows = Math.max(1, Math.ceil((rowWidth * 1.05) / CARD_INNER_WIDTH_PX));
 
   return {
     html: `
-    <div style="display: flex; align-items: center; flex-wrap: wrap; margin-top: 4px; padding-top: 4px; border-top: 1px dashed rgba(20,20,20,0.08);">
-      <span style="font-family: 'JetBrains Mono', monospace; font-size: 7.5px; font-weight: 700; text-transform: uppercase; color: #777; margin-right: 6px;">
+    <div style="display: flex; align-items: center; flex-wrap: wrap; margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(20,20,20,0.12);">
+      <span style="font-family: ${READER_FONT_STACK}; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #555; margin-right: 6px;">
         Sources:
       </span>
       ${badges}
     </div>
   `,
-    height: 9 + rows * 15,
+    height: 12 + rows * 20,
   };
 }
 
 function getChapterBlocks(chapter: Chapter): ReportBlock[] {
   const narrativeBlocks = splitIntoParagraphs(chapter.content).map((paragraph) => ({
-    html: `<div style="font-family: Georgia, 'Times New Roman', serif; font-size: ${BODY_FONT_PX}px; line-height: ${BODY_LINE_PX}px; color: #222222; margin-bottom: ${BODY_PARAGRAPH_GAP_PX}px; text-align: justify; white-space: pre-line; word-break: break-word; overflow-wrap: anywhere;">${escapeHtml(paragraph)}</div>`,
+    html: `<div style="font-family: ${READER_FONT_STACK}; font-size: ${BODY_FONT_PX}px; line-height: ${BODY_LINE_PX}px; color: #1f1f1f; margin-bottom: ${BODY_PARAGRAPH_GAP_PX}px; text-align: left; white-space: pre-line; word-break: break-word; overflow-wrap: anywhere;">${escapeHtml(paragraph)}</div>`,
     height: estimateLines(paragraph, BODY_FONT_PX, CARD_INNER_WIDTH_PX) * BODY_LINE_PX + BODY_PARAGRAPH_GAP_PX,
   }));
   const sourcesBlock = buildSourcesBlock(chapter);
@@ -236,25 +252,27 @@ function getCardTitle(chapter: Chapter, isContinuation: boolean): string {
 function estimateCardChromeHeight(chapter: Chapter, isContinuation: boolean): number {
   const showSeed = !isContinuation && Boolean(chapter.visualSeed);
   const titleWidth = CARD_INNER_WIDTH_PX - 45 - (showSeed ? SEED_BADGE_MAX_WIDTH_PX : 0);
-  const titleHeight = estimateLines(getCardTitle(chapter, isContinuation), 13, titleWidth) * 18;
-  const seedHeight = showSeed ? estimateLines(`Seed: ${chapter.visualSeed}`, 7.5, SEED_BADGE_MAX_WIDTH_PX - 10) * 10 + 4 : 0;
-  return 20 + 9 + Math.max(titleHeight, seedHeight);
+  const titleHeight = estimateLines(getCardTitle(chapter, isContinuation), 16, titleWidth) * 21;
+  const seedHeight = showSeed ? estimateLines(`Seed: ${chapter.visualSeed}`, 10, SEED_BADGE_MAX_WIDTH_PX - 12) * 13 + 4 : 0;
+  return 18 + 6 + Math.max(titleHeight, seedHeight);
 }
 
 function renderChapterCard(fragment: ChapterFragment): string {
   const { chapter, chapterIndex, isContinuation } = fragment;
+  const badgeNum = String(chapterIndex + 1).padStart(2, '0');
+  const titleText = getCardTitle(chapter, isContinuation);
   return `
-    <div style="border: 1px solid rgba(20,20,20,0.14); border-radius: 3px; padding: 9px 12px; background: #ffffff; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
-      <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 5px; border-bottom: 1px solid rgba(20,20,20,0.08); padding-bottom: 3px;">
-        <div style="display: flex; align-items: center; gap: 7px; min-width: 0;">
-          <span style="display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 18px; line-height: 1; text-align: center; padding: 0 4px; box-sizing: border-box; background: #141414; color: #ffffff; font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 8.5px; font-weight: 700; border-radius: 2px; letter-spacing: 0.02em;">${String(chapterIndex + 1).padStart(2, '0')}</span>
-          <h3 style="font-family: 'Playfair Display', Georgia, serif; font-style: italic; font-weight: 700; font-size: 13px; line-height: 1.3; color: #141414; margin: 0; word-break: break-word;">
-            ${escapeHtml(getCardTitle(chapter, isContinuation))}
-          </h3>
+    <div style="margin-bottom: 4px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 6px; border-bottom: 1.5px solid rgba(20,20,20,0.12); padding-bottom: 4px;">
+        <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
+          <span style="display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 20px; line-height: 1; text-align: center; padding: 0 4px; box-sizing: border-box; background: #141414; color: #ffffff; font-family: ${READER_FONT_STACK}; font-size: 10px; font-weight: 700; border-radius: 2px; letter-spacing: 0.02em;">${badgeNum}</span>
+          <h2 style="font-family: ${READER_FONT_STACK}; font-weight: 700; font-size: 16px; line-height: 1.3; color: #111111; margin: 0; word-break: break-word;">
+            ${escapeHtml(titleText)}
+          </h2>
         </div>
         ${
           !isContinuation && chapter.visualSeed
-            ? `<span style="display: inline-flex; align-items: center; max-width: ${SEED_BADGE_MAX_WIDTH_PX}px; font-family: 'JetBrains Mono', monospace; font-size: 7.5px; line-height: 1.25; text-transform: uppercase; color: #666; background: #f0f0ee; padding: 2px 5px; border-radius: 2px; text-align: right; word-break: break-word; box-sizing: border-box;">
+            ? `<span style="display: inline-flex; align-items: center; max-width: ${SEED_BADGE_MAX_WIDTH_PX}px; font-family: ${READER_FONT_STACK}; font-size: 10px; line-height: 1.25; color: #666; background: #f0f0ee; padding: 2px 6px; border-radius: 2px; text-align: right; word-break: break-word; box-sizing: border-box;">
                 Seed: ${escapeHtml(chapter.visualSeed)}
               </span>`
             : ''
@@ -268,29 +286,29 @@ function renderChapterCard(fragment: ChapterFragment): string {
 
 function renderConclusionBox(): string {
   return `
-    <div style="border: 1px solid #141414; background: #F8F8F6; padding: 9px 12px; border-radius: 2px; margin-top: 4px;">
-      <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(20,20,20,0.15); padding-bottom: 3px; margin-bottom: 5px;">
-        <div style="font-family: 'JetBrains Mono', monospace; font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #141414;">
-          Evolutionary Synthesis & Evidence Verification
+    <div style="border-top: 2px solid #141414; background: #fafaf9; padding: 8px 12px; border-radius: 0 0 2px 2px; margin-top: 6px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(20,20,20,0.12); padding-bottom: 3px; margin-bottom: 4px;">
+        <div style="font-family: ${READER_FONT_STACK}; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #141414;">
+          ${escapeHtml(CONCLUSION_TITLE)}
         </div>
-        <div style="font-family: 'JetBrains Mono', monospace; font-size: 7.5px; color: #666;">
+        <div style="font-family: ${READER_FONT_STACK}; font-size: 9.5px; color: #666;">
           Redundancy Mitigation Algorithm
         </div>
       </div>
-      <div style="font-family: 'Inter', sans-serif; font-size: 8.5px; line-height: 1.4; color: #333;">
-        ${CONCLUSION_TEXT}
+      <div style="font-family: ${READER_FONT_STACK}; font-size: 11.5px; line-height: 1.45; color: #333;">
+        ${escapeHtml(CONCLUSION_TEXT)}
       </div>
     </div>
   `;
 }
 
 function estimateConclusionHeight(): number {
-  return 4 + 32 + estimateLines(CONCLUSION_TEXT, 8.5, CARD_INNER_WIDTH_PX) * 11.9;
+  return 12 + 24 + estimateLines(CONCLUSION_TEXT, 11.5, CARD_INNER_WIDTH_PX) * 16.5;
 }
 
 function renderFooter(pageNum: number, totalPages: number): string {
   return `
-    <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(20,20,20,0.15); padding-top: 7px; font-family: 'JetBrains Mono', monospace; font-size: 8px; color: #666;">
+    <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(20,20,20,0.15); padding-top: 6px; font-family: ${READER_FONT_STACK}; font-size: 10px; color: #666;">
       <div>Evolutionary Web-Book Engine • Mitigating Search Redundancy</div>
       <div style="font-weight: 700; color: #141414;">Page ${pageNum} of ${totalPages}</div>
     </div>
@@ -298,21 +316,19 @@ function renderFooter(pageNum: number, totalPages: number): string {
 }
 
 function estimateFirstPageHeaderHeight(webBook: WebBook): number {
-  const titleLines = estimateLines(webBook.topic, 22, PAGE_BODY_WIDTH_PX);
-  const overviewLines = estimateLines(getExecutiveOverview(webBook), 9, PAGE_BODY_WIDTH_PX - 23);
-  // top bar + title + stat tiles + executive brief (including their bottom margins)
-  return 32 + titleLines * 27 + 10 + 52 + (25 + overviewLines * 12.8 + 10);
+  const titleLines = estimateLines(webBook.topic, 24, PAGE_BODY_WIDTH_PX);
+  const overviewLines = estimateLines(getExecutiveOverview(webBook), 12, PAGE_BODY_WIDTH_PX - 20);
+  return 24 + titleLines * 30 + 8 + 24 + (20 + overviewLines * 17.5 + 10);
 }
 
 function estimateContinuationHeaderHeight(webBook: WebBook): number {
-  return 17 + estimateLines(webBook.topic, 11, 480) * 14;
+  return 16 + estimateLines(webBook.topic, 12, 500) * 16 + 8;
 }
 
 /**
  * Packs the full, untruncated chapter content onto A4 pages. A chapter that does not fit in the space left on
  * a page continues on the next page in a "(cont.)" card, so no text is ever clipped or shortened.
- * `capacityScale` scales the usable page height assumed while packing; the renderer picks the largest value
- * whose pages all fit in the real layout.
+ * Heading orphan protection ensures a chapter title is never stranded at the bottom of a page alone.
  */
 function paginatePrintFriendlyReport(webBook: WebBook, capacityScale = 1): ReportPageLayout[] {
   const chapters = webBook.chapters || [];
@@ -336,20 +352,24 @@ function paginatePrintFriendlyReport(webBook: WebBook, capacityScale = 1): Repor
 
   chapters.forEach((chapter, chapterIndex) => {
     let hasPlacedBlock = false;
+    const blocks = getChapterBlocks(chapter);
 
-    getChapterBlocks(chapter).forEach((block) => {
-      const costIn = (page: ReportPageLayout) => {
-        const lastFragment = page.fragments[page.fragments.length - 1];
+    blocks.forEach((block) => {
+      let page = pages[pages.length - 1];
+      const isFirstBlockOfChapter = !hasPlacedBlock;
+      const chromeHeight = estimateCardChromeHeight(chapter, hasPlacedBlock);
+      const gap = page.fragments.length > 0 ? CARD_GAP_PX : 0;
+
+      const costIn = (pageLayout: ReportPageLayout) => {
+        const lastFragment = pageLayout.fragments[pageLayout.fragments.length - 1];
         if (lastFragment?.chapterIndex === chapterIndex) return block.height;
-        return (
-          block.height +
-          estimateCardChromeHeight(chapter, hasPlacedBlock) +
-          (page.fragments.length > 0 ? CARD_GAP_PX : 0)
-        );
+        return block.height + chromeHeight + gap;
       };
 
-      let page = pages[pages.length - 1];
-      if (page.fragments.length > 0 && used + costIn(page) > capacityOf(pages.length - 1)) {
+      // Heading orphan protection: keep heading together with initial content
+      const orphanReserve = isFirstBlockOfChapter && blocks.length > 1 ? Math.min(blocks[1].height, 80) : 0;
+
+      if (page.fragments.length > 0 && used + costIn(page) + orphanReserve > capacityOf(pages.length - 1)) {
         startNewPage();
         page = pages[pages.length - 1];
       }
@@ -374,9 +394,13 @@ function paginatePrintFriendlyReport(webBook: WebBook, capacityScale = 1): Repor
   return pages;
 }
 
-export function buildPrintFriendlyReportPagesHtml(webBook: WebBook, capacityScale = 1): string[] {
+export function buildPrintFriendlyReportPagesHtml(
+  webBook: WebBook,
+  capacityScaleOrHeights: number | number[] = 1
+): string[] {
   const safeWebBook = sanitizeWebBookForPresentation(webBook);
   const chapters = safeWebBook.chapters || [];
+  const capacityScale = typeof capacityScaleOrHeights === 'number' ? capacityScaleOrHeights : 1;
   const layouts = paginatePrintFriendlyReport(safeWebBook, capacityScale);
   const totalPages = layouts.length;
 
@@ -401,42 +425,33 @@ export function buildPrintFriendlyReportPagesHtml(webBook: WebBook, capacityScal
       return `
         <div class="a4-report-page" style="width: ${PAGE_WIDTH_PX}px; height: ${PAGE_HEIGHT_PX}px; min-height: ${PAGE_HEIGHT_PX}px; max-height: ${PAGE_HEIGHT_PX}px; box-sizing: border-box; padding: ${PAGE_PADDING_Y_PX}px ${PAGE_PADDING_X_PX}px; background-color: #ffffff; color: #141414; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; position: relative;">
           <div>
-            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #141414; padding-bottom: 5px; margin-bottom: 10px;">
-              <div style="font-family: 'JetBrains Mono', monospace; font-size: 8.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.15em; line-height: 1.3; color: #141414;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #141414; padding-bottom: 4px; margin-bottom: 8px;">
+              <div style="font-family: ${READER_FONT_STACK}; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; line-height: 1.3; color: #141414;">
                 Evolutionary Web-Book Engine
               </div>
             </div>
 
-            <h1 style="font-family: 'Playfair Display', Georgia, serif; font-style: italic; font-weight: 700; font-size: 22px; line-height: 1.22; margin: 0 0 10px 0; color: #141414; word-break: break-word;">
+            <h1 style="font-family: ${READER_FONT_STACK}; font-weight: 700; font-size: 24px; line-height: 1.25; margin: 0 0 8px 0; color: #111111; word-break: break-word;">
               ${escapeHtml(safeWebBook.topic)}
             </h1>
 
-            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; margin-bottom: 10px;">
-              <div style="border: 1px solid rgba(20,20,20,0.18); padding: 5px 8px; background: #fafafa; border-radius: 2px;">
-                <div style="font-family: 'JetBrains Mono', monospace; font-size: 7px; text-transform: uppercase; color: #666; font-weight: 700;">Chapters</div>
-                <div style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: #141414;">${totalChapters}</div>
-              </div>
-              <div style="border: 1px solid rgba(20,20,20,0.18); padding: 5px 8px; background: #fafafa; border-radius: 2px;">
-                <div style="font-family: 'JetBrains Mono', monospace; font-size: 7px; text-transform: uppercase; color: #666; font-weight: 700;">Core Concepts</div>
-                <div style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: #141414;">${totalConcepts}</div>
-              </div>
-              <div style="border: 1px solid rgba(20,20,20,0.18); padding: 5px 8px; background: #fafafa; border-radius: 2px;">
-                <div style="font-family: 'JetBrains Mono', monospace; font-size: 7px; text-transform: uppercase; color: #666; font-weight: 700;">Generated Date</div>
-                <div style="font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700; color: #141414; padding-top: 2px;">${escapeHtml(dateStr)}</div>
-              </div>
-              <div style="border: 1px solid rgba(20,20,20,0.18); padding: 5px 8px; background: #fafafa; border-radius: 2px;">
-                <div style="font-family: 'JetBrains Mono', monospace; font-size: 7px; text-transform: uppercase; color: #666; font-weight: 700;">Optimization</div>
-                <div style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; font-weight: 700; color: #141414; padding-top: 2px;">
-                  ${escapeHtml(safeWebBook.sourceMode === 'fallback_search' ? 'Fallback Search' : 'Grounded AI')}
-                </div>
-              </div>
+            <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; font-family: ${READER_FONT_STACK}; font-size: 12px; color: #555;">
+              <span style="font-weight: 600; color: #111;">${totalChapters} ${totalChapters === 1 ? 'chapter' : 'chapters'}</span>
+              <span>•</span>
+              <span style="font-weight: 600; color: #111;">${totalConcepts} core concepts</span>
+              <span>•</span>
+              <span>${escapeHtml(dateStr)}</span>
+              <span>•</span>
+              <span style="background: #eef2f6; color: #1e3a5f; padding: 1px 6px; border-radius: 2px; font-weight: 600; font-size: 10.5px;">
+                ${escapeHtml(safeWebBook.sourceMode === 'fallback_search' ? 'Fallback Search' : 'Grounded AI')}
+              </span>
             </div>
 
-            <div style="border-left: 3px solid #141414; background: #F8F8F7; padding: 7px 10px; margin-bottom: 10px; border-radius: 0 2px 2px 0;">
-              <div style="font-family: 'JetBrains Mono', monospace; font-size: 7.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #141414; margin-bottom: 2px;">
+            <div style="border-left: 3px solid #141414; background: #fafaf9; padding: 6px 10px; margin-bottom: 10px; border-radius: 0 2px 2px 0;">
+              <div style="font-family: ${READER_FONT_STACK}; font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #141414; margin-bottom: 2px;">
                 Abstract
               </div>
-              <div style="font-family: 'Inter', sans-serif; font-size: 9px; line-height: 1.42; color: #2B2B2B; word-break: break-word;">
+              <div style="font-family: ${READER_FONT_STACK}; font-size: 12px; line-height: 1.45; color: #2b2b2b; word-break: break-word;">
                 ${escapeHtml(getExecutiveOverview(safeWebBook))}
               </div>
             </div>
@@ -454,11 +469,11 @@ export function buildPrintFriendlyReportPagesHtml(webBook: WebBook, capacityScal
 
     return `
       <div class="a4-report-page" style="width: ${PAGE_WIDTH_PX}px; height: ${PAGE_HEIGHT_PX}px; min-height: ${PAGE_HEIGHT_PX}px; max-height: ${PAGE_HEIGHT_PX}px; box-sizing: border-box; padding: ${PAGE_PADDING_Y_PX}px ${PAGE_PADDING_X_PX}px; background-color: #ffffff; color: #141414; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; position: relative;">
-        <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; border-bottom: 1.5px solid #141414; padding-bottom: 5px; margin-bottom: 10px;">
-          <div style="font-family: 'Playfair Display', Georgia, serif; font-style: italic; font-size: 11px; font-weight: 700; line-height: 1.35; color: #141414; max-width: 480px; min-width: 0; word-break: break-word;">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; border-bottom: 1.5px solid #141414; padding-bottom: 4px; margin-bottom: 8px;">
+          <div style="font-family: ${READER_FONT_STACK}; font-size: 12px; font-weight: 700; line-height: 1.3; color: #141414; max-width: 500px; min-width: 0; word-break: break-word;">
             ${escapeHtml(safeWebBook.topic)}
           </div>
-          <div style="font-family: 'JetBrains Mono', monospace; font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; line-height: 1.35; color: #666; white-space: nowrap;">
+          <div style="font-family: ${READER_FONT_STACK}; font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; line-height: 1.35; color: #666; white-space: nowrap;">
             A4 Full Report • Section ${pageNum}
           </div>
         </div>
@@ -474,6 +489,33 @@ export function buildPrintFriendlyReportPagesHtml(webBook: WebBook, capacityScal
   });
 }
 
+/** Standalone HTML document for the reader-mode report. */
+export function buildPrintFriendlyReportHtml(webBook: WebBook): string {
+  const safeWebBook = sanitizeWebBookForPresentation(webBook);
+  const title = getWebBookDocumentTitle(safeWebBook.topic);
+  const pagesHtml = buildPrintFriendlyReportPagesHtml(safeWebBook);
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(title)}</title>
+<style>
+  body { margin: 0; padding: 20px; background: #f0f0f0; display: flex; flex-direction: column; align-items: center; gap: 20px; }
+  .a4-report-page { background: #ffffff; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+  @media print {
+    body { margin: 0; padding: 0; background: none; }
+    .a4-report-page { box-shadow: none; page-break-after: always; }
+  }
+</style>
+</head>
+<body>
+${pagesHtml.join('\n')}
+</body>
+</html>`;
+}
+
 export async function renderPrintFriendlyReportCanvases(webBook: WebBook): Promise<HTMLCanvasElement[]> {
   const isBrowserDom =
     typeof window !== 'undefined' &&
@@ -484,8 +526,8 @@ export async function renderPrintFriendlyReportCanvases(webBook: WebBook): Promi
   if (!isBrowserDom) {
     // Graceful fallback for non-browser/Node testing environments
     const mockCanvas = {
-      width: PAGE_WIDTH_PX,
-      height: PAGE_HEIGHT_PX,
+      width: PAGE_WIDTH_PX * IMAGE_RENDER_SCALE,
+      height: PAGE_HEIGHT_PX * IMAGE_RENDER_SCALE,
       toDataURL: () => 'data:image/jpeg;base64,/9j/4AAQSkZJRg==',
       toBlob: (callback: (blob: Blob | null) => void) =>
         callback(new Blob(['mock-print-friendly-report'], { type: 'image/jpeg' })),
@@ -515,9 +557,6 @@ export async function renderPrintFriendlyReportCanvases(webBook: WebBook): Promi
   const canvases: HTMLCanvasElement[] = [];
 
   try {
-    // Pages are packed from estimated heights, which depend on the actual font. Search for the roomiest packing
-    // whose pages all measure as fitting inside A4 in this browser, so no text is ever clipped and pages are
-    // filled as fully as the real layout allows. Only measured-to-fit candidates are ever accepted.
     container.innerHTML = buildPrintFriendlyReportPagesHtml(webBook)[0];
     if (document.fonts?.ready) {
       await document.fonts.ready;
@@ -550,7 +589,7 @@ export async function renderPrintFriendlyReportCanvases(webBook: WebBook): Promi
       const pageEl = container.firstElementChild as HTMLElement;
 
       const canvas = await html2canvas(pageEl, {
-        scale: 2,
+        scale: IMAGE_RENDER_SCALE,
         useCORS: true,
         allowTaint: true,
         logging: false,
@@ -570,6 +609,16 @@ export async function renderPrintFriendlyReportCanvases(webBook: WebBook): Promi
   return canvases;
 }
 
+function canvasToJpgBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => (blob ? resolve(blob) : reject(new Error('Failed to generate JPG blob'))),
+      'image/jpeg',
+      JPEG_QUALITY
+    );
+  });
+}
+
 export function compositeCanvasesToJpg(canvases: HTMLCanvasElement[]): Promise<Blob> {
   return new Promise((resolve, reject) => {
     if (canvases.length === 0) {
@@ -578,17 +627,12 @@ export function compositeCanvasesToJpg(canvases: HTMLCanvasElement[]): Promise<B
     }
 
     if (canvases.length === 1) {
-      canvases[0].toBlob(
-        (blob) => (blob ? resolve(blob) : reject(new Error('Failed to generate JPG blob'))),
-        'image/jpeg',
-        0.95
-      );
+      canvasToJpgBlob(canvases[0]).then(resolve, reject);
       return;
     }
 
     const sourceWidth = canvases[0].width;
     const sourceHeight = canvases.reduce((sum, c) => sum + c.height, 0);
-    // Browsers cap canvas size (notably Safari/iOS), so long reports are scaled down to stay within it.
     const shrink = Math.min(
       1,
       Math.sqrt(MAX_COMPOSITE_CANVAS_PIXELS / (sourceWidth * sourceHeight)),
@@ -618,18 +662,48 @@ export function compositeCanvasesToJpg(canvases: HTMLCanvasElement[]): Promise<B
     compositeCanvas.toBlob(
       (blob) => (blob ? resolve(blob) : reject(new Error('Failed to generate composite JPG blob'))),
       'image/jpeg',
-      0.95
+      JPEG_QUALITY
     );
   });
 }
 
+/**
+ * JPG export: outputs crisp A4 images (~288 DPI). Single-page reports download as
+ * `<topic>_PrintFriendly_Report.jpg`; multi-page reports download high-resolution individual page files.
+ */
 export async function exportPrintFriendlyWebBookToImage(webBook: WebBook): Promise<void> {
   const safeWebBook = sanitizeWebBookForPresentation(webBook);
   const canvases = await renderPrintFriendlyReportCanvases(safeWebBook);
-  const jpgBlob = await compositeCanvasesToJpg(canvases);
-  downloadBlob(jpgBlob, getExportFileName(`${safeWebBook.topic}_PrintFriendly_Report`, 'jpg'));
+  if (canvases.length === 0) {
+    throw new Error('No canvases available to export.');
+  }
+
+  const baseName = `${safeWebBook.topic}_PrintFriendly_Report`;
+  const pad = (n: number) => String(n).padStart(2, '0');
+
+  if (canvases.length === 1) {
+    const blob = await canvasToJpgBlob(canvases[0]);
+    downloadBlob(blob, getExportFileName(baseName, 'jpg'));
+    return;
+  }
+
+  for (let index = 0; index < canvases.length; index += 1) {
+    const blob = await canvasToJpgBlob(canvases[index]);
+    const name = getExportFileName(
+      `${baseName}_page_${pad(index + 1)}_of_${pad(canvases.length)}`,
+      'jpg'
+    );
+    downloadBlob(blob, name);
+    if (index < canvases.length - 1) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 250));
+    }
+  }
 }
 
+/**
+ * PDF export: writes crisp, high-resolution 3x canvases into a standard A4 PDF document
+ * and downloads directly as `<topic>_PrintFriendly_Report.pdf`.
+ */
 export async function exportPrintFriendlyWebBookToPdf(webBook: WebBook): Promise<void> {
   const safeWebBook = sanitizeWebBookForPresentation(webBook);
   const canvases = await renderPrintFriendlyReportCanvases(safeWebBook);
@@ -642,7 +716,7 @@ export async function exportPrintFriendlyWebBookToPdf(webBook: WebBook): Promise
     if (index > 0) {
       doc.addPage('a4', 'portrait');
     }
-    const imgData = canvases[index].toDataURL('image/jpeg', 0.95);
+    const imgData = canvases[index].toDataURL('image/jpeg', JPEG_QUALITY);
     doc.addImage(imgData, 'JPEG', 0, 0, a4WidthPt, a4HeightPt, undefined, 'FAST');
   }
 
