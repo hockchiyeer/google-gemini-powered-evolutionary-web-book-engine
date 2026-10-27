@@ -14,6 +14,8 @@ import { WebBookErrorBoundary } from './WebBookErrorBoundary';
 import { useWebBookEngine } from './hooks/useWebBookEngine';
 import { getWebBookDocumentTitle } from './services/documentTitle';
 import {
+  exportPrintFriendlyWebBookToImage,
+  exportPrintFriendlyWebBookToPdf,
   exportWebBookToHtml,
   exportWebBookToPdf,
   exportWebBookToTxt,
@@ -75,6 +77,8 @@ export default function App() {
         onToggleHistory={() => setShowHistory(true)}
         onExportPdf={() => webBook ? runExport(() => exportWebBookToPdf(webBook)) : Promise.resolve()}
         onExportPrint={() => webBook ? runExport(() => printWebBook(webBook)) : Promise.resolve()}
+        onExportPrintFriendlyPdf={() => webBook ? runExport(() => exportPrintFriendlyWebBookToPdf(webBook)) : Promise.resolve()}
+        onExportPrintFriendlyImage={() => webBook ? runExport(() => exportPrintFriendlyWebBookToImage(webBook)) : Promise.resolve()}
         onExportWord={() => webBook ? runExport(() => exportWebBookToWord(webBook)) : Promise.resolve()}
         onExportHtml={() => webBook ? runExport(() => exportWebBookToHtml(webBook)) : Promise.resolve()}
         onExportTxt={() => webBook ? runExport(() => exportWebBookToTxt(webBook)) : Promise.resolve()}
@@ -128,7 +132,7 @@ export default function App() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="h-full flex flex-col items-center justify-center bg-white border border-[#141414] p-20 text-center shadow-[8px_8px_0px_0px_rgba(20,20,20,1)]"
+                className="h-full flex flex-col items-center justify-center bg-white border border-[#141414] p-6 sm:p-20 text-center shadow-[8px_8px_0px_0px_rgba(20,20,20,1)]"
               >
                 <div className="relative">
                   <Loader2 size={60} className="animate-spin text-[#141414]" />
@@ -138,7 +142,7 @@ export default function App() {
                 <p className="mt-4 text-sm opacity-60 max-w-md mx-auto">
                   The engine is currently mining concepts, evaluating informative value, and pruning redundant data structures...
                 </p>
-                <div className="mt-10 grid grid-cols-3 gap-8 w-full max-w-lg">
+                <div className="mt-10 grid grid-cols-3 gap-2 sm:gap-8 w-full max-w-lg">
                   {['Crawling', 'Evolving', 'Assembling'].map((step, index) => (
                     <div key={step} className="flex flex-col items-center gap-2">
                       <div className={`w-3 h-3 rounded-full border border-[#141414] ${state.status === step.toLowerCase() || (state.status === 'searching' && index === 0) || (state.status === 'evolving' && index === 1) || (state.status === 'assembling' && index === 2) ? 'bg-[#141414]' : 'bg-transparent'}`} />

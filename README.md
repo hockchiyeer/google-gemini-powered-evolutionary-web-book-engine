@@ -22,6 +22,8 @@ An advanced AI-powered engine that synthesizes comprehensive, authoritative, mul
 - **Comprehensive Multi-Format Export**:
   - **PDF Document (High Res)**: Vector-grade document featuring a museum-grade cover, an interactive Table of Contents with clickable hyperlinks that jump directly to each chapter, and an editorial chapter layout (lead paragraph accent bars, key concept callout cards, deeper angle cards, and verified clickable source citations).
   - **Print / Save as PDF**: Responsive print-to-PDF formatting utilizing clean `@media print` rules, dedicated page breaks, and iframe + window print resilience.
+  - **Print Friendly PDF**: A4-optimized, journal-style full report layout that flows the complete, untruncated WebBook text (all chapter paragraphs, key concepts, key dimensions, and source citations) across height-balanced A4 pages with overview metrics; long chapters continue on the next page instead of being cut with an ellipsis.
+  - **Print Friendly Image (JPG)**: High-resolution composite JPG image export of the same full-text, journal-style A4 report for quick sharing and mobile review.
   - **Word (.docx)**: Fully editable OpenXML document with preserved tables, glossaries, and embedded images.
   - **HTML Webpage**: Standalone responsive document with self-contained styling and navigational anchors.
   - **Plain Text (.txt)**: Clean, unformatted hierarchical text.
@@ -92,6 +94,7 @@ An advanced AI-powered engine that synthesizes comprehensive, authoritative, mul
 │   │   ├── evolutionService.ts          # Genetic algorithm, fitness evaluation, and Gemini assembly
 │   │   ├── exportDocument.ts            # Document prep, inlining, and HTML print shells
 │   │   ├── exportService.ts             # Multi-format export coordinator (PDF, Print, Word, HTML, TXT)
+│   │   ├── printFriendlyReportExport.ts # A4 print-friendly journal-style full report generator (PDF & JPG)
 │   │   ├── fallbackPayloadHeuristics.ts # Heuristic quality scorers for search results
 │   │   ├── geminiUserFacingErrors.ts    # Friendly error translation for API responses
 │   │   ├── googleSearchFallbackClient.ts# Client interface to fallback search middleware

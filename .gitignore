@@ -24,5 +24,8 @@ cypress/videos/
 # Generated build and packaging archives
 artifacts/
 
+# Public folder and its contents
+public/
+
 # AI Studio runtime prompt uploads and attachments
 public/assets/aistudio/

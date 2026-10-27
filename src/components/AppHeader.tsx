@@ -7,6 +7,7 @@ import {
   FileCode,
   FileText,
   History,
+  Image as ImageIcon,
   Loader2,
   Printer,
 } from 'lucide-react';
@@ -20,6 +21,8 @@ interface AppHeaderProps {
   onToggleHistory: () => void;
   onExportPdf: () => Promise<void>;
   onExportPrint: () => Promise<void>;
+  onExportPrintFriendlyPdf: () => Promise<void>;
+  onExportPrintFriendlyImage: () => Promise<void>;
   onExportWord: () => Promise<void>;
   onExportHtml: () => Promise<void>;
   onExportTxt: () => Promise<void>;
@@ -33,12 +36,16 @@ export function AppHeader({
   onToggleHistory,
   onExportPdf,
   onExportPrint,
+  onExportPrintFriendlyPdf,
+  onExportPrintFriendlyImage,
   onExportWord,
   onExportHtml,
   onExportTxt,
 }: AppHeaderProps) {
   const [showExportOptions, setShowExportOptions] = useState(false);
   const exportDropdownRef = useRef<HTMLDivElement>(null);
+
+
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -129,7 +136,7 @@ export function AppHeader({
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: 10 }}
-                      className="absolute top-full right-0 mt-2 w-48 bg-white border border-[#141414] shadow-2xl z-50 overflow-hidden print:hidden"
+                      className="absolute top-full left-0 right-auto md:left-auto md:right-0 mt-2 w-56 bg-white border border-[#141414] shadow-2xl z-50 overflow-hidden print:hidden"
                     >
                       <button
                         onClick={() => void runExport(onExportPdf)}
@@ -144,6 +151,20 @@ export function AppHeader({
                         className="w-full px-4 py-3 text-left text-[10px] uppercase font-bold hover:bg-[#F5F5F5] flex items-center gap-3 border-b border-[#141414]/10"
                       >
                         <Printer size={14} className="text-green-600" /> Print / Save as PDF
+                      </button>
+                      <button
+                        onClick={() => void runExport(onExportPrintFriendlyPdf)}
+                        title="Export A4 size print-friendly full-text report as PDF"
+                        className="w-full px-4 py-3 text-left text-[10px] uppercase font-bold hover:bg-[#F5F5F5] flex items-center gap-3 border-b border-[#141414]/10"
+                      >
+                        <FileText size={14} className="text-emerald-600" /> Print Friendly PDF
+                      </button>
+                      <button
+                        onClick={() => void runExport(onExportPrintFriendlyImage)}
+                        title="Export A4 size print-friendly full-text report as JPG image"
+                        className="w-full px-4 py-3 text-left text-[10px] uppercase font-bold hover:bg-[#F5F5F5] flex items-center gap-3 border-b border-[#141414]/10"
+                      >
+                        <ImageIcon size={14} className="text-purple-600" /> Print Friendly Image (JPG)
                       </button>
                       <button
                         onClick={() => void runExport(onExportWord)}

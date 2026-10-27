@@ -874,3 +874,8 @@ export async function printWebBook(webBook: WebBook): Promise<void> {
     }
   }
 }
+
+export {
+  exportPrintFriendlyWebBookToImage,
+  exportPrintFriendlyWebBookToPdf,
+} from './printFriendlyReportExport';

@@ -122,12 +122,14 @@ Feature: Web-Book Engine Evolution Pipeline
     Then the "<export_type>" export should be stubbed successfully
 
     Examples:
-      | button                     | export_type |
-      | export_high_res_pdf_button | pdf         |
-      | print_pdf_button           | print       |
-      | docx_export_button         | docx        |
-      | html_export_button         | html        |
-      | txt_export_button          | txt         |
+      | button                      | export_type   |
+      | export_high_res_pdf_button  | pdf           |
+      | print_pdf_button            | print         |
+      | print_friendly_pdf_button   | print_friendly_pdf |
+      | print_friendly_image_button | print_friendly_jpg |
+      | docx_export_button          | docx          |
+      | html_export_button          | html          |
+      | txt_export_button           | txt           |
 
   Scenario: New Search clears the rendered book, query, and export controls
     Given I stub fallback search results using fixture "search-fallback-quantum-physics.json"
