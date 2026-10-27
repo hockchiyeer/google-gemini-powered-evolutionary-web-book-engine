@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { buildGoogleSearchFallbackPayload } from '../../server/googleSearchFallback.ts';
-import { searchAndExtract } from '../../src/services/evolutionService.ts';
+import { assembleWebBook, searchAndExtract } from '../../src/services/evolutionService.ts';
 import {
   describeFallbackEvidence,
   getFallbackResultCount,
@@ -34,13 +34,13 @@ const DDG_OK = `<html><body>
 </body></html>`;
 const EMPTY = '<html><body>nothing</body></html>';
 
-type Scenario = { google: 'ok' | 'blocked' | 'empty'; ddg: 'ok' | 'empty'; gemini: 429 | 401 | 200 };
+type Scenario = { google: 'ok' | 'blocked' | 'empty'; ddg: 'ok' | 'empty'; gemini: 429 | 401 | 200 | 404 | 'search_ok_then_503' };
 let scenario: Scenario = { google: 'ok', ddg: 'ok', gemini: 429 };
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 const html = (body: string, status = 200) => new Response(body, { status, headers: { 'content-type': 'text/html' } });
 
-globals.fetch = async (input: unknown) => {
+globals.fetch = async (input: unknown, init?: { body?: unknown }) => {
   const url = new URL(typeof input === 'string' ? input : (input as { url?: string }).url ?? String(input));
   if (url.hostname === 'localhost') {
     const payload = await buildGoogleSearchFallbackPayload(url.searchParams.get('query')!, url.searchParams.get('mode') as SearchFallbackMode);
@@ -48,6 +48,15 @@ globals.fetch = async (input: unknown) => {
   }
   if (url.hostname.endsWith('googleapis.com')) {
     if (scenario.gemini === 429) return json({ error: { code: 429, message: 'You exceeded your current quota', status: 'RESOURCE_EXHAUSTED' } }, 429);
+    if (scenario.gemini === 404) return json({ error: { code: 404, message: 'models/x is not found', status: 'NOT_FOUND' } }, 404);
+    if (scenario.gemini === 'search_ok_then_503') {
+      const isSearch = String(init?.body ?? '').includes('googleSearch');
+      if (isSearch) {
+        const sources = [{ url: 'https://g.example.org/a', title: 'A', content: 'Alpha content', definitions: [], subTopics: [], informativeScore: 0.8, authorityScore: 0.8 }];
+        return json({ candidates: [{ content: { parts: [{ text: JSON.stringify(sources) }] } }] });
+      }
+      return json({ error: { code: 503, message: 'The service is unavailable', status: 'UNAVAILABLE' } }, 503);
+    }
     if (scenario.gemini === 401) return json({ error: { code: 401, message: 'API key not valid', status: 'UNAUTHENTICATED' } }, 401);
     return json({ candidates: [{ content: { parts: [{ text: '[]' }] } }] });
   }
@@ -78,7 +87,7 @@ async function stopMessage(next: Scenario, mode: SearchFallbackMode = 'google_du
   const result = await run({ google: 'ok', ddg: 'ok', gemini: 429 });
   assert.equal(
     result.generationNote,
-    `Selected Gemini model (${MODEL}) unavailable (usage limit reached); gathered evidence via Google fallback + DuckDuckGo fallback.`
+    `Selected Gemini model: ${MODEL} unavailable (usage limit reached); gathered evidence via Google fallback + DuckDuckGo fallback.`
   );
   assert.equal(result.fallbackSource, 'google_duckduckgo');
   assert.equal(result.fallbackReason, 'quota_exhausted');
@@ -91,7 +100,7 @@ async function stopMessage(next: Scenario, mode: SearchFallbackMode = 'google_du
   const result = await run({ google: 'blocked', ddg: 'ok', gemini: 429 });
   assert.equal(
     result.generationNote,
-    `Selected Gemini model (${MODEL}) unavailable (usage limit reached); gathered evidence via DuckDuckGo fallback (Google contributed no results).`
+    `Selected Gemini model: ${MODEL} unavailable (usage limit reached); gathered evidence via DuckDuckGo fallback (Google contributed no results).`
   );
   assert.equal(result.fallbackSource, 'duckduckgo');
 }
@@ -158,6 +167,34 @@ async function stopMessage(next: Scenario, mode: SearchFallbackMode = 'google_du
   const fixtureShape = { ...base, provider: 'google', diagnostics: ['provider:google', 'result-count:8'] } as SearchFallbackPayload;
   assert.equal(describeFallbackEvidence(fixtureShape, 'google_duckduckgo').label, 'Google fallback (DuckDuckGo contributed no results)');
   assert.equal(describeFallbackEvidence({ ...base, diagnostics: undefined }, 'duckduckgo').label, 'DuckDuckGo fallback');
+}
+
+// I. Selected model not found -> never swapped silently; reported as the cause (fallback) or as an error (off).
+{
+  const result = await run({ google: 'ok', ddg: 'ok', gemini: 404 });
+  assert.match(result.generationNote || '', new RegExp(`Selected Gemini model: ${MODEL} unavailable \\(model not available\\)`));
+  assert.equal(result.sourceMode, 'fallback_search');
+  assert.match(await stopMessage({ google: 'ok', ddg: 'ok', gemini: 404 }, 'off'), /is not available/);
+}
+
+// J. Gemini search succeeds but book assembly fails: the notice must not claim Gemini synthesized the book.
+{
+  const q = QUERY;
+  const search = async (mode: SearchFallbackMode) => {
+    scenario = { google: 'ok', ddg: 'ok', gemini: 'search_ok_then_503' };
+    return searchAndExtract(q, { mode, geminiModel: MODEL });
+  };
+  for (const mode of ['google_duckduckgo', 'google', 'duckduckgo'] as SearchFallbackMode[]) {
+    const found = await search(mode);
+    assert.equal(found.sourceMode, 'gemini');
+    assert.match(found.generationNote || '', /Evidence gathered via Google Search grounding/);
+    const book = await assembleWebBook(found.results, q, found, { mode, geminiModel: MODEL });
+    assert.equal(book.sourceMode, 'hybrid');
+    assert.match(book.generationNote || '', /unavailable for book assembly \(service temporarily unavailable\); book text assembled offline/);
+    assert.doesNotMatch(book.generationNote || '', /Synthesized from Google Search grounding via Gemini/);
+  }
+  const found = await search('off');
+  await assert.rejects(assembleWebBook(found.results, q, found, { mode: 'off', geminiModel: MODEL }), /Gemini is temporarily unavailable/);
 }
 
 console.log('fallbackNotice regression tests passed');

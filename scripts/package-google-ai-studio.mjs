@@ -63,7 +63,15 @@ async function collectFiles(relativePath, files) {
   }
 
   const absolutePath = path.join(rootDir, relativePath);
-  const fileStat = await stat(absolutePath);
+  let fileStat;
+  try {
+    fileStat = await stat(absolutePath);
+  } catch (err) {
+    if (err && typeof err === 'object' && 'code' in err && err.code === 'ENOENT') {
+      return;
+    }
+    throw err;
+  }
 
   if (fileStat.isDirectory()) {
     const entries = await readdir(absolutePath, { withFileTypes: true });

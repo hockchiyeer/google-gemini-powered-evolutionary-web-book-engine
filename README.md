@@ -11,7 +11,7 @@ An advanced AI-powered engine that synthesizes comprehensive, authoritative, mul
   - **Stage 2 (Parallel Chapter Expansion)**: Concurrently expands each chapter with rigorous technical definitions, sub-topic deep dives, and generative visual seeds.
 - **Configurable AI Models**:
   - Dynamic model selection supporting modern Gemini models (`gemini-3.8-flash`, `gemini-2.5-flash`, `gemini-3-flash-preview`, `gemini-flash-latest`).
-  - Runtime model capability discovery and automated candidate failover.
+  - Runtime model capability discovery. The selected model is always the one used; it is never silently swapped, and an unavailable model is reported in the notice (or as an error in `Off (Gemini only)` mode).
 - **Multi-Tier Search Fallback Resilience**:
   - Graceful degradation when Gemini API quotas or rate limits are reached.
   - Configurable fallback routing: `Google + DuckDuckGo`, `Google only`, `DuckDuckGo only`, or `Off (Gemini only)`.
@@ -165,13 +165,16 @@ npm run dev
 
 The application will be accessible at `http://localhost:3000`.
 
-### 5. Production Build & Preview
+### 5. Production Build & Deployment
 
 ```bash
 # Type check and build production assets
 npm run build
 
-# Preview production build locally
+# Start full-stack production server (serves frontend & API fallback routes)
+npm start
+
+# (Optional) Preview production client build locally
 npm run preview
 ```
 

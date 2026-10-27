@@ -43,6 +43,8 @@ const CANDIDATE_MODELS = [
   ...GEMINI_MODELS,
 ];
 
+const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
+
 const getAI = () => new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
 async function withRetry<T>(fn: () => Promise<T>, retries = 2, delay = 1500): Promise<T> {
@@ -137,46 +139,20 @@ function detectGeminiFailureReason(err: any): GeminiFailureReason {
   return 'network_unreachable';
 }
 
+// Calls Gemini with exactly the model the user selected. It never silently substitutes another model,
+// so the notice and the actual behaviour always agree; an unavailable model surfaces as an error instead.
 async function generateWithModelFallback(
   ai: GoogleGenAI,
   requestParams: any,
   preferredModel?: string
 ): Promise<any> {
-  const modelsToTry: string[] = [];
-  if (preferredModel && !modelsToTry.includes(preferredModel)) {
-    modelsToTry.push(preferredModel);
-  }
-  for (const m of CANDIDATE_MODELS) {
-    if (!modelsToTry.includes(m)) {
-      modelsToTry.push(m);
-    }
-  }
-
-  let lastError: any = null;
-  for (const model of modelsToTry) {
-    try {
-      return await withRetry(() =>
-        ai.models.generateContent({
-          ...requestParams,
-          model,
-        })
-      );
-    } catch (err: any) {
-      lastError = err;
-      const msg = String(err?.message || '').toLowerCase();
-      if (
-        err.status === 404 ||
-        msg.includes('not found') ||
-        msg.includes('is not supported') ||
-        msg.includes('unknown model')
-      ) {
-        console.warn(`Model ${model} is unavailable, trying next model...`);
-        continue;
-      }
-      throw err;
-    }
-  }
-  throw lastError;
+  const model = preferredModel || DEFAULT_GEMINI_MODEL;
+  return withRetry(() =>
+    ai.models.generateContent({
+      ...requestParams,
+      model,
+    })
+  );
 }
 
 export function isMeaningful(text: string, description?: string): boolean {
@@ -340,7 +316,7 @@ function resolveVerifiedSource(
 }
 
 // Why the Gemini search step did not supply the evidence (drives the notice and fallbackReason).
-type GeminiSearchCause = GeminiFailureReason | 'no_content';
+type GeminiSearchCause = GeminiFailureReason | 'no_content' | 'model_unavailable';
 
 const GEMINI_SEARCH_CAUSE_PHRASES: Record<GeminiSearchCause, string> = {
   quota_or_rate_limit: 'usage limit reached',
@@ -349,6 +325,7 @@ const GEMINI_SEARCH_CAUSE_PHRASES: Record<GeminiSearchCause, string> = {
   service_unavailable: 'service temporarily unavailable',
   network_unreachable: 'could not be reached',
   no_content: 'no usable sources returned',
+  model_unavailable: 'model not available',
 };
 
 const GEMINI_SEARCH_CAUSE_TO_FALLBACK_REASON: Record<GeminiSearchCause, SearchFallbackReason> = {
@@ -358,6 +335,7 @@ const GEMINI_SEARCH_CAUSE_TO_FALLBACK_REASON: Record<GeminiSearchCause, SearchFa
   service_unavailable: 'unreachable',
   network_unreachable: 'network_unreachable',
   no_content: 'no_content',
+  model_unavailable: 'unreachable',
 };
 
 function classifyGeminiSearchFailure(err: any): GeminiSearchCause {
@@ -365,6 +343,15 @@ function classifyGeminiSearchFailure(err: any): GeminiSearchCause {
   // Gemini answered but its text could not be parsed (e.g. cut off): a content problem, not an outage.
   if (err instanceof SyntaxError && !/<|doctype/i.test(message)) {
     return 'no_content';
+  }
+  const lowered = message.toLowerCase();
+  if (
+    Number(err?.status || err?.code) === 404 ||
+    lowered.includes('not found') ||
+    lowered.includes('is not supported') ||
+    lowered.includes('unknown model')
+  ) {
+    return 'model_unavailable';
   }
   return detectGeminiFailureReason(err);
 }
@@ -511,7 +498,7 @@ export async function searchAndExtract(
           groundingChunks,
           searchSummary: `Gemini extracted ${population.length} grounded sources for "${query}".`,
         },
-        generationNote: 'Synthesized from Google Search grounding via Gemini.',
+        generationNote: `Evidence gathered via Google Search grounding by the selected Gemini model: ${selectedModel}.`,
         sourceMode: 'gemini',
       };
     }
@@ -520,6 +507,9 @@ export async function searchAndExtract(
     geminiCause = classifyGeminiSearchFailure(geminiError);
 
     if (!fallbackEnabled) {
+      if (geminiCause === 'model_unavailable') {
+        throw new Error(`Selected Gemini model: ${selectedModel} is not available. Choose another model and try again.`);
+      }
       const reason = detectGeminiFailureReason(geminiError);
       throw new Error(buildGeminiUserFacingErrorMessage(geminiError, reason));
     }
@@ -581,7 +571,7 @@ export async function searchAndExtract(
       groundingChunks: fallbackPayload.results.map(r => ({ web: { uri: r.url, title: r.title } })),
       searchSummary: fallbackPayload.summary || `Live fallback search retrieved ${fallbackPayload.results.length} sources via ${fallbackPayload.provider}.`,
     },
-    generationNote: `Selected Gemini model (${selectedModel}) unavailable (${GEMINI_SEARCH_CAUSE_PHRASES[geminiCause]}); gathered evidence via ${fallbackEvidence.label}.`,
+    generationNote: `Selected Gemini model: ${selectedModel} unavailable (${GEMINI_SEARCH_CAUSE_PHRASES[geminiCause]}); gathered evidence via ${fallbackEvidence.label}.`,
     sourceMode: 'fallback_search',
     fallbackSource: fallbackEvidence.source,
     fallbackReason: GEMINI_SEARCH_CAUSE_TO_FALLBACK_REASON[geminiCause],
@@ -773,7 +763,8 @@ export async function assembleWebBook(
     subTopics: p.subTopics.slice(0, 3)
   }));
 
-  const preferredModel = options?.geminiModel || 'gemini-3.8-flash';
+  const preferredModel = options?.geminiModel || DEFAULT_GEMINI_MODEL;
+  let assemblyFailure: unknown = null;
 
   try {
     const ai = getAI();
@@ -906,10 +897,36 @@ export async function assembleWebBook(
         fallbackReason: searchResult?.fallbackReason,
       };
     }
+    assemblyFailure = new SyntaxError('Gemini returned an empty book outline');
   } catch (err) {
     console.warn("AI outline / chapter expansion failed, falling back to resilient synthesis...", err);
+    assemblyFailure = err;
   }
 
-  // Graceful resilient fallback synthesis: ensures no alerts/crashes when Gemini quota is met
+  // Gemini-only mode never recovers silently: report the failure instead of presenting an offline book.
+  if (options?.mode === 'off' && assemblyFailure) {
+    const cause = classifyGeminiSearchFailure(assemblyFailure);
+    if (cause === 'model_unavailable') {
+      throw new Error(`Selected Gemini model: ${preferredModel} is not available. Choose another model and try again.`);
+    }
+    if (cause === 'no_content') {
+      throw new Error(`Selected Gemini model: ${preferredModel} returned no usable book content. Please try again.`);
+    }
+    throw new Error(buildGeminiUserFacingErrorMessage(assemblyFailure, detectGeminiFailureReason(assemblyFailure)));
+  }
+
+  // Graceful resilient fallback synthesis: ensures no alerts/crashes when Gemini quota is met.
+  // The notice must describe what really happened, not the (successful) search step that preceded it.
+  if (assemblyFailure) {
+    const cause = classifyGeminiSearchFailure(assemblyFailure);
+    const assemblyNote = `Selected Gemini model: ${preferredModel} unavailable for book assembly (${cause === 'no_content' ? 'no usable content returned' : GEMINI_SEARCH_CAUSE_PHRASES[cause]}); book text assembled offline from the gathered evidence.`;
+    const searchWasGemini = searchResult?.sourceMode === 'gemini';
+    return synthesizeFallbackWebBook(topic, optimalPopulation, {
+      ...(searchResult || {}),
+      sourceMode: searchWasGemini ? 'hybrid' : (searchResult?.sourceMode || 'fallback_search'),
+      generationNote: `${searchResult?.generationNote ? `${searchResult.generationNote} ` : ''}${assemblyNote}`,
+      fallbackReason: searchResult?.fallbackReason ?? GEMINI_SEARCH_CAUSE_TO_FALLBACK_REASON[cause],
+    });
+  }
   return synthesizeFallbackWebBook(topic, optimalPopulation, searchResult);
 }

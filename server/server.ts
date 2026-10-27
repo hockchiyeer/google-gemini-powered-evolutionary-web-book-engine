@@ -4,7 +4,7 @@ import { createApiCompatibilityMiddleware } from "./googleSearchFallback.ts";
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   // API routes FIRST
   app.use(createApiCompatibilityMiddleware() as any);
@@ -40,7 +40,7 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
-    app.get("*all", (req, res) => {
+    app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }

@@ -28,6 +28,8 @@ const POISON_KEYWORDS = [
 
 const REPEATED_SUBSTRING_PATTERN = /(.{4,})\1{2,}/;
 const ASSEMBLY_HEURISTIC = /\b(mov|push|pop|jmp|call|ret|int|add|sub|xor|nop|lea|cmp)\b/i;
+const CJK_CHAR_PATTERN = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/g;
+const CJK_SENTENCE_END_PATTERN = /[。！？][”’」』）)]*$/;
 const MIN_CHAPTER_TEXT_PAGES = 3;
 const SEARCH_FALLBACK_TEXT_PAGES = 1;
 const TARGET_WORDS_PER_TEXT_PAGE = 250;
@@ -165,7 +167,7 @@ function sanitizeNarrativeParagraph(paragraph: string): string {
     .filter((sentence) => !isLikelyStructuredArtifactLine(sentence))
     .filter((sentence) => !isLikelyStructuredArtifactParagraph(sentence));
 
-  return cleanedSentences.join(" ").trim();
+  return joinSentences(cleanedSentences).trim();
 }
 
 export function sanitizeNarrativeText(text?: string | null): string {
@@ -441,14 +443,26 @@ export function getRenderableSubTopics<T extends SubTopicLike>(subTopics: T[] = 
 }
 
 function countWords(text: string): number {
-  return text.split(/\s+/).filter(Boolean).length;
+  const cjkCount = (text.match(CJK_CHAR_PATTERN) || []).length;
+  const nonCjk = text.replace(CJK_CHAR_PATTERN, " ").trim();
+  const nonCjkWords = nonCjk ? nonCjk.split(/\s+/).filter(Boolean).length : 0;
+  return cjkCount + nonCjkWords;
 }
 
 function splitIntoSentences(text: string): string[] {
   return text
-    .split(/(?<=[.!?])\s+/)
+    .split(/(?<=[.!?])\s+|(?<=[。！？][”’」』）)]*)(?![”’」』）)])\s*/)
     .map((sentence) => sentence.replace(/\s+/g, " ").trim())
     .filter(Boolean);
+}
+
+function joinSentences(sentences: string[]): string {
+  return sentences.reduce((accumulator, sentence, index) => {
+    if (index === 0) return sentence;
+    const previous = sentences[index - 1];
+    const separator = CJK_SENTENCE_END_PATTERN.test(previous) ? "" : " ";
+    return `${accumulator}${separator}${sentence}`;
+  }, "");
 }
 
 function splitParagraphIntoTwo(paragraph: string): string[] {
@@ -461,8 +475,8 @@ function splitParagraphIntoTwo(paragraph: string): string[] {
   if (sentences.length >= 4) {
     const midpoint = Math.ceil(sentences.length / 2);
     return [
-      sentences.slice(0, midpoint).join(" ").trim(),
-      sentences.slice(midpoint).join(" ").trim(),
+      joinSentences(sentences.slice(0, midpoint)).trim(),
+      joinSentences(sentences.slice(midpoint)).trim(),
     ].filter(Boolean);
   }
 
@@ -542,7 +556,7 @@ function normalizeChapterParagraphs(content: string, minimumParagraphs = MIN_CHA
   const generatedParagraphs: string[] = [];
 
   for (let index = 0; index < sentences.length; index += groupSize) {
-    generatedParagraphs.push(sentences.slice(index, index + groupSize).join(" ").trim());
+    generatedParagraphs.push(joinSentences(sentences.slice(index, index + groupSize)).trim());
   }
 
   return ensureMinimumParagraphs(generatedParagraphs, minimumParagraphs);

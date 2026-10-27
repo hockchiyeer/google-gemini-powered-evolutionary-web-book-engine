@@ -7,13 +7,14 @@
     "dev": "vite --port=3000 --host=0.0.0.0",
     "dev:test": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
+    "start": "tsx server/server.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "package:aistudio": "node scripts/package-google-ai-studio.mjs",
     "test": "node tests/scripts/run-local-cypress.cjs",
     "test:e2e": "node tests/scripts/run-cypress-with-reports.cjs",
-    "test:server": "tsx tests/server/documentTitle.test.ts && tsx tests/server/evolutionService.test.ts && tsx tests/server/googleSearchFallback.test.ts && tsx tests/server/hyperlinkExport.test.ts && tsx tests/server/googleSearchFallbackClient.test.ts && tsx tests/server/fallbackNotice.test.ts",
+    "test:server": "tsx tests/server/documentTitle.test.ts && tsx tests/server/evolutionService.test.ts && tsx tests/server/googleSearchFallback.test.ts && tsx tests/server/hyperlinkExport.test.ts && tsx tests/server/googleSearchFallbackClient.test.ts && tsx tests/server/fallbackNotice.test.ts && tsx tests/server/cjkPagination.test.ts",
     "cy:run": "cypress run --config-file tests/cypress.config.cjs",
     "cy:run:local": "node tests/scripts/run-cypress-with-reports.cjs",
     "cy:open": "cypress open --config-file tests/cypress.config.cjs",
@@ -31,6 +32,7 @@
     "motion": "^12.23.24",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "tsx": "^4.21.0",
     "vite": "^6.2.0"
   },
   "devDependencies": {
@@ -47,7 +49,6 @@
     "mochawesome": "^8.1.1",
     "multiple-cucumber-html-reporter": "^4.5.0",
     "tailwindcss": "^4.1.14",
-    "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
   }
