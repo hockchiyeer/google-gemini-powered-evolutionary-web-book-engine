@@ -17,10 +17,19 @@ import { buildGeminiUserFacingErrorMessage, GeminiFailureReason } from "./gemini
 import { isNonJsonResponseText } from "./safeResponse";
 import {
   SYNTHETIC_FALLBACK_DIAGNOSTIC,
+  calculateTextSimilarity,
   deriveConceptLabel,
   describeFallbackEvidence,
   isSyntheticFallbackPayload,
 } from "./searchFallbackShared";
+import {
+  MIN_CHAPTER_TEXT_PAGES,
+  getRenderableDefinitions,
+  getRenderableSubTopics,
+  joinSentences,
+  sanitizeNarrativeText,
+  splitIntoSentences,
+} from "../utils/webBookRender";
 
 export function buildSyntheticFallbackPayload(query: string, mode: SearchFallbackMode = 'google_duckduckgo'): SearchFallbackPayload {
   const provider = mode === 'duckduckgo' ? 'duckduckgo' : 'google';
@@ -43,6 +52,9 @@ export function buildSyntheticFallbackPayload(query: string, mode: SearchFallbac
 }
 
 export const ASSEMBLY_SOURCE_POOL_SIZE = 4;
+
+// evolve() offspring only recombine their parents' text, so they carry no evidence of their own.
+const OFFSPRING_ID_PREFIX = 'offspring-';
 
 const CANDIDATE_MODELS = [
   ...GEMINI_MODELS,
@@ -738,149 +750,84 @@ function synthesizeFallbackWebBook(
   sources: WebPageGenotype[],
   searchResult?: any
 ): WebBook {
-  const validSourceObjects = sources.filter(
-    s => s.url && /^https?:\/\//i.test(s.url) && !s.url.includes('source-') && !s.url.includes('knowledge-base.org')
-  );
+  // Evolution keeps only half of the gathered pages per generation, which leaves too little distinct evidence for six
+  // chapters. The pages it pruned are therefore used after the survivors; offspring add nothing of their own and are skipped.
+  const seenPages = new Set<string>();
+  const pool: WebPageGenotype[] = [...sources, ...(searchResult?.results || [])].filter((page: WebPageGenotype) => {
+    const key = page?.id || page?.url;
+    if (!key || key.startsWith(OFFSPRING_ID_PREFIX) || seenPages.has(key)) return false;
+    seenPages.add(key);
+    return true;
+  });
 
-  const uniqueDefinitions: Definition[] = [];
-  const seenDefTerms = new Set<string>();
-  validSourceObjects.forEach(s => {
-    (s.definitions || []).forEach(d => {
-      const termKey = d.term.toLowerCase().trim();
-      if (!seenDefTerms.has(termKey) && isMeaningful(d.term, d.description)) {
-        seenDefTerms.add(termKey);
-        uniqueDefinitions.push(d);
+  const validSources = pool
+    .filter(s => s.url && /^https?:\/\//i.test(s.url) && !s.url.includes('source-') && !s.url.includes('knowledge-base.org'))
+    .map(s => ({ title: s.title, url: s.url }))
+    .filter((source, index, all) => all.findIndex(other => other.url === source.url) === index);
+
+  // Every distinct sentence of gathered evidence is used once across the whole book, in source order.
+  const evidence: Array<{ text: string; url: string }> = [];
+  pool.forEach(page => {
+    splitIntoSentences(sanitizeNarrativeText(page.content)).forEach(text => {
+      if (!evidence.some(kept => calculateTextSimilarity(kept.text, text) >= 0.88)) {
+        evidence.push({ text, url: page.url });
       }
     });
   });
 
-  const uniqueSubTopics: SubTopic[] = [];
-  const seenSubTitles = new Set<string>();
-  validSourceObjects.forEach(s => {
-    (s.subTopics || []).forEach(st => {
-      const titleKey = st.title.toLowerCase().trim();
-      if (!seenSubTitles.has(titleKey) && isMeaningful(st.title, st.summary)) {
-        seenSubTitles.add(titleKey);
-        uniqueSubTopics.push(st);
-      }
-    });
-  });
+  // Definitions and sub-topics go to the chapter that uses their own source, and each is placed once.
+  const unplacedDefinitions = new Set(getRenderableDefinitions(pool.flatMap(page => page.definitions || [])));
+  const unplacedSubTopics = new Set(getRenderableSubTopics(pool.flatMap(page => page.subTopics || [])));
+  const claimFor = <T extends { sourceUrl?: string }>(unplaced: Set<T>, urls: Set<string>, limit: number): T[] => {
+    const claimed = [...unplaced].filter(item => item.sourceUrl && urls.has(item.sourceUrl)).slice(0, limit);
+    claimed.forEach(item => unplaced.delete(item));
+    return claimed;
+  };
 
   const chapterBlueprints = [
-    {
-      title: "Foundations & Historical Perspective",
-      seed: "origins and emergence",
-      renderLead: (t: string, srcTitle?: string) =>
-        `Foundational origins and historical background form the crucial baseline for assessing ${t}.${srcTitle ? ` Analysis documented in "${srcTitle}" outlines how historical precedents, institutional roots, and initial arrangements established the groundwork for subsequent developments.` : ` Contextual evidence illustrates how long-standing traditions and institutional structures continue to shape the broader landscape.`}`,
-      renderConclusion: (t: string) =>
-        `Understanding these foundational roots and historical precedents is essential for contextualizing how subsequent developments and institutional shifts continue to influence ${t}.`
-    },
-    {
-      title: "Core Architecture & Conceptual Framework",
-      seed: "structural blueprint",
-      renderLead: (t: string, srcTitle?: string) =>
-        `The structural framework and institutional core of ${t} define the parameters of governance, authority, and systemic stability.${srcTitle ? ` Evidence drawn from "${srcTitle}" clarifies the core architectural pillars, institutional rules, and formal mechanisms governing modern stakeholder interactions.` : ` Institutional rules and formal frameworks dictate the boundaries within which key actors and processes operate.`}`,
-      renderConclusion: (t: string) =>
-        `Systemic stability hinges on how effectively these core frameworks and institutional checks balance competing operational demands across ${t}.`
-    },
-    {
-      title: "Key Principles, Mechanics & Methodologies",
-      seed: "mechanics and processes",
-      renderLead: (t: string, srcTitle?: string) =>
-        `Navigating ${t} requires examining the guiding operational principles, legislative mechanics, and strategic methodologies currently in motion.${srcTitle ? ` As highlighted by "${srcTitle}", procedural rigor, strategic alignment, and practical execution are vital for sustaining momentum across the domain.` : ` Strategic principles and procedural dynamics determine how high-level goals are translated into tangible operational outcomes.`}`,
-      renderConclusion: (t: string) =>
-        `Consistent application of these methodologies and operational standards establishes the baseline required to navigate complex dynamics within ${t}.`
-    },
-    {
-      title: "Operational Dynamics & Real-World Execution",
-      seed: "practical implementation",
-      renderLead: (t: string, srcTitle?: string) =>
-        `On-the-ground developments and contemporary realities reflect the practical execution of ${t} across active environments.${srcTitle ? ` Real-time reporting and current accounts in "${srcTitle}" reveal how key stakeholders respond to active pressures, public sentiment, and real-world shifts.` : ` Practical realities and changing conditions continually test the resilience and responsiveness of prevailing arrangements.`}`,
-      renderConclusion: (t: string) =>
-        `As active developments continue to evolve, the interplay between practical execution and public responsiveness will shape the immediate trajectory of ${t}.`
-    },
-    {
-      title: "Comparative Evaluation & Systemic Analysis",
-      seed: "analysis and paradigms",
-      renderLead: (t: string, srcTitle?: string) =>
-        `A comparative evaluation of differing viewpoints and strategic interests illuminates the nuanced complexities within ${t}.${srcTitle ? ` Critical analysis and commentary from "${srcTitle}" contrast competing perspectives, identifying systemic trade-offs and structural tensions among rival stakeholders.` : ` Weighing contrasting perspectives reveals systemic trade-offs and competing priorities that challenge conventional assumptions.`}`,
-      renderConclusion: (t: string) =>
-        `Synthesizing these comparative perspectives demonstrates that addressing ${t} requires navigating systemic divergence through pragmatic, balanced alignment.`
-    },
-    {
-      title: "Future Outlook, Challenges & Horizons",
-      seed: "frontiers and future",
-      renderLead: (t: string, srcTitle?: string) =>
-        `Looking ahead toward upcoming horizons, the future trajectory of ${t} will be defined by emerging milestones, upcoming challenges, and strategic transformations.${srcTitle ? ` Forward-looking projections synthesized from "${srcTitle}" point to critical inflection points, upcoming tests of cohesion, and long-term implications.` : ` Strategic forecasts point to pivotal inflection points that will determine future stability, governance, and sustained progress.`}`,
-      renderConclusion: (t: string) =>
-        `Anticipating these prospective scenarios and strategic horizons underscores the necessity for proactive oversight, adaptive strategy, and resilience across ${t}.`
-    }
+    { title: "Foundations & Historical Perspective", seed: "origins and emergence" },
+    { title: "Core Architecture & Conceptual Framework", seed: "structural blueprint" },
+    { title: "Key Principles, Mechanics & Methodologies", seed: "mechanics and processes" },
+    { title: "Operational Dynamics & Real-World Execution", seed: "practical implementation" },
+    { title: "Comparative Evaluation & Systemic Analysis", seed: "analysis and paradigms" },
+    { title: "Future Outlook, Challenges & Horizons", seed: "frontiers and future" }
   ];
 
-  const chapters: Chapter[] = chapterBlueprints.map((bp, idx) => {
-    const primarySource = validSourceObjects[idx % Math.max(1, validSourceObjects.length)] || null;
-    const secondarySource = validSourceObjects.length > 1
-      ? validSourceObjects[(idx + 1) % validSourceObjects.length]
-      : null;
+  const chapters: Chapter[] = [];
+  chapterBlueprints.forEach((bp, idx) => {
+    // Spread the evidence evenly over the chapter arc. With little evidence a chapter is left out rather than padded
+    // with generic wording.
+    const units = evidence.slice(
+      Math.floor((idx * evidence.length) / chapterBlueprints.length),
+      Math.floor(((idx + 1) * evidence.length) / chapterBlueprints.length)
+    );
+    if (units.length === 0) return;
 
-    const primarySentences = primarySource ? extractCleanSentences(primarySource.content) : [];
-    const secondarySentences = secondarySource && secondarySource !== primarySource
-      ? extractCleanSentences(secondarySource.content)
-      : [];
+    // Same paragraph count the renderer paginates a chapter into, so no paragraph is cut mid-sentence.
+    const paragraphCount = Math.min(MIN_CHAPTER_TEXT_PAGES, units.length);
+    const narrative = Array.from({ length: paragraphCount }, (_, p) => joinSentences(
+      units
+        .slice(Math.floor((p * units.length) / paragraphCount), Math.floor(((p + 1) * units.length) / paragraphCount))
+        .map(unit => unit.text)
+    )).join('\n\n');
 
-    const paragraph1 = bp.renderLead(topic, primarySource?.title);
+    const unitUrls = new Set(units.map(unit => unit.url));
+    const chapterSources = validSources.filter(source => unitUrls.has(source.url)).slice(0, 3);
 
-    let paragraph2 = '';
-    if (primarySentences.length > 0) {
-      const primaryLead = primarySentences.slice(0, 3).join(' ');
-      const complementaryText = secondarySentences.length > 0
-        ? ` Complementing this, observations from "${secondarySource?.title}" emphasize that ${secondarySentences.slice(0, 2).join(' ')}`
-        : '';
-      paragraph2 = primarySource?.title
-        ? `Evidence gathered from "${primarySource.title}" highlights key findings: ${primaryLead}.${complementaryText}`.replace(/\.\./g, '.')
-        : `${primaryLead}.${complementaryText}`.replace(/\.\./g, '.');
-    } else if (searchResult?.artifacts?.searchSummary) {
-      paragraph2 = searchResult.artifacts.searchSummary;
-    } else {
-      paragraph2 = `Authoritative inquiry into ${topic} emphasizes precision, structural cohesion, and cross-domain utility based on verified source documentation.`;
-    }
-
-    const paragraph3 = bp.renderConclusion(topic);
-    const narrative = [paragraph1, paragraph2, paragraph3].filter(Boolean).join('\n\n');
-
-    // Deduplicated definitions assignment: at most 2 unique definitions per chapter
-    const defsForChapter = uniqueDefinitions.splice(0, 2);
-    if (defsForChapter.length === 0 && primarySource) {
-      const conceptTerm = deriveConceptLabel(primarySource.title, topic);
-      if (conceptTerm && !seenDefTerms.has(conceptTerm.toLowerCase()) && primarySentences.length > 0) {
-        seenDefTerms.add(conceptTerm.toLowerCase());
-        defsForChapter.push({
-          term: conceptTerm,
-          description: primarySentences[0],
-          sourceUrl: primarySource.url,
-        });
-      }
-    }
-
-    // Deduplicated subtopics assignment: at most 1 unique subtopic per chapter
-    const subTopicsForChapter = uniqueSubTopics.splice(0, 1);
-    if (subTopicsForChapter.length === 0 && primarySource && primarySentences.length > 1) {
-      subTopicsForChapter.push({
-        title: `${deriveConceptLabel(primarySource.title, topic)} Analysis`,
-        summary: primarySentences[1],
-        sourceUrl: primarySource.url,
-      });
-    }
-
-    return {
+    chapters.push({
       title: bp.title,
       content: narrative,
-      definitions: defsForChapter,
-      subTopics: subTopicsForChapter,
-      sourceUrls: primarySource ? [{ title: primarySource.title, url: primarySource.url }] : [],
+      definitions: claimFor(unplacedDefinitions, unitUrls, 3),
+      subTopics: claimFor(unplacedSubTopics, unitUrls, 2),
+      sourceUrls: chapterSources.length > 0 ? chapterSources : validSources.slice(0, 3),
       visualSeed: `${topic} ${bp.seed}`,
-    };
+    });
   });
+
+  // Same stance as searchAndExtract: never present generic filler as researched evidence.
+  if (chapters.length === 0) {
+    throw new Error(`Search stopped: the gathered sources for "${topic}" contained no readable text (only titles and links), so the Web-book could not be written. Search again, or refine the wording.`);
+  }
 
   return {
     id: `book-${Date.now()}`,

@@ -30,14 +30,14 @@ const REPEATED_SUBSTRING_PATTERN = /(.{4,})\1{2,}/;
 const ASSEMBLY_HEURISTIC = /\b(mov|push|pop|jmp|call|ret|int|add|sub|xor|nop|lea|cmp)\b/i;
 const CJK_CHAR_PATTERN = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/g;
 const CJK_SENTENCE_END_PATTERN = /[。！？][”’」』）)]*$/;
-const MIN_CHAPTER_TEXT_PAGES = 3;
+export const MIN_CHAPTER_TEXT_PAGES = 3;
 const SEARCH_FALLBACK_TEXT_PAGES = 1;
 const TARGET_WORDS_PER_TEXT_PAGE = 250;
 const STRUCTURED_EXPORT_HEADING_PATTERN = /^(?:VISUAL CONCEPT|CORE CONCEPTS|SUB-TOPICS|SOURCES|DEFINITIONS|GLOSSARY|TECHNICAL GLOSSARY)\s*:/i;
 const EXPORT_METADATA_LINE_PATTERN = /^(?:Generated on:|CHAPTER\s+\d+\s*:)/i;
 const JSONISH_KEY_PATTERN = /"(?:url|title|content|definitions|subTopics|summary|term|description|sourceUrl|priorityScore|informativeScore|authorityScore)"\s*:/i;
 const DOMAINISH_PATTERN = /\b(?:https?:\/\/|www\.|(?:[a-z0-9-]+\.)+(?:com|org|net|edu|gov|io|co(?:\.[a-z]{2})?|ac\.uk|co\.uk))\S*/gi;
-const URLISH_INLINE_PATTERN = /\b(?:https?:\/\/|www\.|(?:[a-z0-9-]+\.)+(?:com|org|net|edu|gov|io|co(?:\.[a-z]{2})?|ac\.uk|co\.uk)\/)\S*/gi;
+const URLISH_INLINE_PATTERN = /\b(?:https?:\/\/|www\.|(?:[a-z0-9-]+\.)+(?:com|org|net|edu|gov|[a-z]{2})(?:\.[a-z]{2})?\/)\S*/gi;
 const ISO_TIMESTAMP_PATTERN = /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?\b/;
 const ISO_TIMESTAMP_GLOBAL_PATTERN = /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?\b/g;
 const BULLET_LINE_PATTERN = /^(?:[-*]|\d+[.)])\s+/;
@@ -449,14 +449,14 @@ function countWords(text: string): number {
   return cjkCount + nonCjkWords;
 }
 
-function splitIntoSentences(text: string): string[] {
+export function splitIntoSentences(text: string): string[] {
   return text
     .split(/(?<=[.!?])\s+|(?<=[。！？][”’」』）)]*)(?![”’」』）)])\s*/)
     .map((sentence) => sentence.replace(/\s+/g, " ").trim())
     .filter(Boolean);
 }
 
-function joinSentences(sentences: string[]): string {
+export function joinSentences(sentences: string[]): string {
   return sentences.reduce((accumulator, sentence, index) => {
     if (index === 0) return sentence;
     const previous = sentences[index - 1];

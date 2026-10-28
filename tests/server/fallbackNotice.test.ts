@@ -216,7 +216,7 @@ async function stopMessage(next: Scenario, mode: SearchFallbackMode = 'google_du
   scenario = { google: 'ok', ddg: 'ok', gemini: 429 };
   const fallbackRes = await searchAndExtract(QUERY, { mode: 'google_duckduckgo', geminiModel: MODEL });
   const book = await assembleWebBook(fallbackRes.results, QUERY, fallbackRes, { mode: 'google_duckduckgo', geminiModel: MODEL });
-  assert.ok(book.chapters.length >= 5);
+  assert.ok(book.chapters.length >= 3);
 
   const seenTitles = new Set<string>();
   const seenContent = new Set<string>();

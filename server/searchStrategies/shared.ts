@@ -215,10 +215,6 @@ export function extractSnippetFromContext(contextHtml: string, title: string): s
     /<div[^>]*class="[^"]*yD979[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
     /<div[^>]*class="[^"]*K8v00d[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
     /<div[^>]*class="[^"]*lEBKkf[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
-    /<div[^>]*class="[^"]*y67Ybd[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
-    /<div[^>]*class="[^"]*st[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
-    /<div[^>]*class="[^"]*s[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
-    /<span[^>]*class="[^"]*st[^"]*"[^>]*>([\s\S]*?)<\/span>/i,
     /<div[^>]*class="[^"]*kb0Odf[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
     /<div[^>]*class="[^"]*L5V62d[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
     /<div[^>]*class="[^"]*wDY59b[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
@@ -226,6 +222,10 @@ export function extractSnippetFromContext(contextHtml: string, title: string): s
     /<div[^>]*class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
     /<td[^>]*class="[^"]*result-snippet[^"]*"[^>]*>([\s\S]*?)<\/td>/i,
     /<div[^>]*class="[^"]*snippet[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+    // Catch-alls last: any class containing "s" also matches DuckDuckGo's result__extras block, whose text is the display URL.
+    /<div[^>]*class="[^"]*st[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+    /<div[^>]*class="[^"]*s[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+    /<span[^>]*class="[^"]*st[^"]*"[^>]*>([\s\S]*?)<\/span>/i,
   ];
 
   for (const pattern of snippetPatterns) {
