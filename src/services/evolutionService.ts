@@ -1,4 +1,3 @@
-import { GoogleGenAI, Type } from "@google/genai";
 import {
   Chapter,
   Definition,
@@ -8,6 +7,7 @@ import {
   SearchFallbackPayload,
   SearchFallbackReason,
   SubTopic,
+  Type,
   WebBook,
   WebBookSourceMode,
   WebPageGenotype,
@@ -45,7 +45,12 @@ const CANDIDATE_MODELS = [
 
 const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
 
-const getAI = () => new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+function getApiEndpoint(path: string): string {
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return `${window.location.origin}${path}`;
+  }
+  return `http://localhost:3000${path}`;
+}
 
 async function withRetry<T>(fn: () => Promise<T>, retries = 2, delay = 1500): Promise<T> {
   try {
@@ -122,7 +127,7 @@ function detectGeminiFailureReason(err: any): GeminiFailureReason {
   if (status === 401 || message.includes('api_key_invalid') || message.includes('unauthenticated') || message.includes('invalid api key')) {
     return 'invalid_api_key';
   }
-  if (!process.env.GEMINI_API_KEY || message.includes('missing api key')) {
+  if (message.includes('missing api key') || message.includes('missing_api_key')) {
     return 'missing_api_key';
   }
   if (status === 429 || message.includes('429') || message.includes('quota') || message.includes('resource_exhausted')) {
@@ -139,20 +144,38 @@ function detectGeminiFailureReason(err: any): GeminiFailureReason {
   return 'network_unreachable';
 }
 
-// Calls Gemini with exactly the model the user selected. It never silently substitutes another model,
+// Calls Gemini via server endpoint with exactly the model the user selected. It never silently substitutes another model,
 // so the notice and the actual behaviour always agree; an unavailable model surfaces as an error instead.
 async function generateWithModelFallback(
-  ai: GoogleGenAI,
   requestParams: any,
   preferredModel?: string
 ): Promise<any> {
   const model = preferredModel || DEFAULT_GEMINI_MODEL;
-  return withRetry(() =>
-    ai.models.generateContent({
-      ...requestParams,
-      model,
-    })
-  );
+  return withRetry(async () => {
+    const endpoint = getApiEndpoint('/api/gemini/generate');
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        ...requestParams,
+      }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      const errorObj: any = new Error(data?.error?.message || `Gemini request failed with status ${res.status}`);
+      errorObj.status = res.status;
+      errorObj.code = data?.error?.code || res.status;
+      errorObj.details = data?.error?.details;
+      throw errorObj;
+    }
+
+    return data;
+  });
 }
 
 export function isMeaningful(text: string, description?: string): boolean {
@@ -393,10 +416,9 @@ export async function searchAndExtract(
   let geminiCause: GeminiSearchCause = 'no_content';
 
   try {
-    const ai = getAI();
     const preferredModel = options.geminiModel || 'gemini-3.8-flash';
 
-    const response = await generateWithModelFallback(ai, {
+    const response = await generateWithModelFallback({
       contents: `Search for comprehensive information about "${query}". 
       Identify at least 5 distinct high-quality web pages or sources from the search results. 
       For each source, extract:
@@ -767,10 +789,8 @@ export async function assembleWebBook(
   let assemblyFailure: unknown = null;
 
   try {
-    const ai = getAI();
-
     // Stage 1: Generate detailed 10-chapter outline
-    const outlineResponse = await generateWithModelFallback(ai, {
+    const outlineResponse = await generateWithModelFallback({
       contents: `Topic: ${topic}. Data: ${JSON.stringify(truncatedData)}. 
       Create a detailed 10-chapter outline for a comprehensive, full-length Web-book. 
       For each chapter, provide:
@@ -816,7 +836,7 @@ export async function assembleWebBook(
     if (outlineData && Array.isArray(outlineData.outline) && outlineData.outline.length > 0) {
       // Stage 2: Parallel chapter expansion (enriched 350-400 words per chapter)
       const chapterPromises = outlineData.outline.map(async (chapterOutline: any, chapterIndex: number) => {
-        const chapterResponse = await generateWithModelFallback(ai, {
+        const chapterResponse = await generateWithModelFallback({
           contents: `Topic: ${topic}. Chapter: ${chapterOutline.title}. Focus: ${chapterOutline.focus}. 
           Write a comprehensive, high-quality chapter (approx 350-400 words). 
           Also provide detailed definitions for: ${(chapterOutline.terms || []).join(', ')}.

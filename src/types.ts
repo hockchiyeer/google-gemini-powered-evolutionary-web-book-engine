@@ -128,3 +128,14 @@ export interface EvolutionState {
   bestInformativeScore?: number;
   bestAuthorityScore?: number;
 }
+
+export enum Type {
+  TYPE_UNSPECIFIED = "TYPE_UNSPECIFIED",
+  STRING = "STRING",
+  NUMBER = "NUMBER",
+  INTEGER = "INTEGER",
+  BOOLEAN = "BOOLEAN",
+  ARRAY = "ARRAY",
+  OBJECT = "OBJECT",
+  NULL = "NULL",
+}

@@ -1,183 +1,169 @@
 import assert from 'node:assert/strict';
 import {
+  buildPrintFriendlyReportHtml,
   buildPrintFriendlyReportPagesHtml,
   exportPrintFriendlyWebBookToImage,
   exportPrintFriendlyWebBookToPdf,
+  paginateBlockHeights,
 } from '../../src/services/printFriendlyReportExport.ts';
 import type { Chapter, WebBook } from '../../src/types.ts';
 
 console.log('Running printFriendlyReportExport regression tests...');
 
-// 1. Full text is never truncated, and long content flows across A4 pages instead of being clipped
+const sentence = 'Quantum field dynamics describe interacting excitations across coupled domains. ';
+const longNarrative = Array.from({ length: 4 }, (_, p) => `Paragraph ${p + 1} marker. ${sentence.repeat(14)}END-OF-PARAGRAPH-${p + 1}`).join('\n\n');
+const makeChapters = (count: number): Chapter[] =>
+  Array.from({ length: count }, (_, i) => ({
+    title: `Chapter ${i + 1} ${'with a deliberately long descriptive title '.repeat(2)}`.trim(),
+    content: longNarrative,
+    definitions: Array.from({ length: 5 }, (_, d) => ({
+      term: `Term ${i + 1}.${d + 1}`,
+      description: `Definition body ${i + 1}.${d + 1} ${'extended explanatory wording '.repeat(8)}FULL-DEF-${i + 1}-${d + 1}`,
+      sourceUrl: 'https://example.com',
+    })),
+    subTopics: Array.from({ length: 5 }, (_, t) => ({
+      title: `Dimension ${i + 1}.${t + 1}`,
+      summary: `Dimension body ${i + 1}.${t + 1} ${'extended explanatory wording '.repeat(8)}FULL-SUB-${i + 1}-${t + 1}`,
+      sourceUrl: 'https://example.com',
+    })),
+    sourceUrls: ['https://example.com', 'https://example.org', 'https://example.net'],
+    visualSeed: `seed ${i + 1}`,
+  }));
+
+const longBook: WebBook = { id: 'test-long', topic: 'Long Form Topic', timestamp: 1_700_000_000_000, chapters: makeChapters(6) };
+
+// 1. Print (PDF) document: reader-mode typography, semantic structure, complete text, no screenshot-style micro type
 {
-  const sentence = 'Quantum field dynamics describe interacting excitations across coupled domains. ';
-  const longNarrative = Array.from({ length: 4 }, (_, p) => `Paragraph ${p + 1} marker. ${sentence.repeat(14)}END-OF-PARAGRAPH-${p + 1}`).join('\n\n');
-  const makeChapters = (count: number): Chapter[] =>
-    Array.from({ length: count }, (_, i) => ({
-      title: `Chapter ${i + 1} ${'with a deliberately long descriptive title '.repeat(2)}`.trim(),
-      content: longNarrative,
-      definitions: Array.from({ length: 5 }, (_, d) => ({
-        term: `Term ${i + 1}.${d + 1}`,
-        description: `Definition body ${i + 1}.${d + 1} ${'extended explanatory wording '.repeat(8)}FULL-DEF-${i + 1}-${d + 1}`,
-        sourceUrl: 'https://example.com',
-      })),
-      subTopics: Array.from({ length: 5 }, (_, t) => ({
-        title: `Dimension ${i + 1}.${t + 1}`,
-        summary: `Dimension body ${i + 1}.${t + 1} ${'extended explanatory wording '.repeat(8)}FULL-SUB-${i + 1}-${t + 1}`,
-        sourceUrl: 'https://example.com',
-      })),
-      sourceUrls: ['https://example.com', 'https://example.org', 'https://example.net', 'https://example.edu', 'https://example.io'],
-      visualSeed: `a seed keyword phrase that is much longer than twenty six characters ${i + 1}`,
-    }));
-
-  const longBook: WebBook = {
-    id: 'test-long',
-    topic: 'Long Form Topic',
-    timestamp: 1_700_000_000_000,
-    chapters: makeChapters(6),
-  };
-
-  const pages = buildPrintFriendlyReportPagesHtml(longBook);
-  assert.ok(pages.length > 2, 'Full-length text must flow onto more than 2 A4 pages');
-  const all = pages.join('\n');
-  assert.ok(!all.includes('text-overflow'), 'No ellipsis CSS may be used');
-  assert.ok(!all.includes('...'), 'No truncated text may be emitted');
+  const html = buildPrintFriendlyReportHtml(longBook);
+  assert.ok(html.startsWith('<!doctype html>'), 'Must be a standalone HTML document');
+  assert.ok(html.includes('<title>Long Form Topic</title>'), 'Document title drives the suggested PDF file name');
+  assert.ok(html.includes('<h1>Long Form Topic</h1>'), 'Topic is the h1');
+  assert.equal((html.match(/<h2>/g) || []).length, 6, 'Each chapter is an h2');
+  assert.ok(html.includes('font-size: 16px') && html.includes('line-height: 1.7'), 'Body text must be 16px (12pt) with 1.7 leading');
+  assert.ok(!/text-align:\s*justify/.test(html), 'Body text must be left-aligned, never justified');
+  assert.ok(!/font-size:\s*(?:[0-9]|1[0-1])(?:\.\d+)?px/.test(html), 'No text may be smaller than 12px');
+  assert.ok(!/JetBrains|Playfair|font-style:\s*italic/.test(html), 'No monospace/decorative/italic display faces');
+  assert.ok(!html.includes('fonts.googleapis.com'), 'No external web fonts: the document must render offline');
+  assert.ok(html.includes('size: A4'), 'Print stylesheet must target A4');
+  assert.ok(html.includes('counter(page)'), 'Print stylesheet must number pages');
+  assert.ok(!html.includes('Domain terminology integrated in narrative'), 'Placeholder filler text must not be emitted');
+  assert.ok(html.includes('<a href="https://example.com/">example.com</a>'), 'Sources must be real links');
   for (let i = 1; i <= 6; i += 1) {
-    for (let p = 1; p <= 4; p += 1) assert.ok(all.includes(`END-OF-PARAGRAPH-${p}`), `Paragraph ${p} end must be present`);
+    assert.ok(html.includes(`<h2>${i}. Chapter ${i} `), `Chapter ${i} heading present`);
     for (let d = 1; d <= 5; d += 1) {
-      assert.ok(all.includes(`FULL-DEF-${i}-${d}`), `Definition ${i}.${d} must be shown in full`);
-      assert.ok(all.includes(`FULL-SUB-${i}-${d}`), `Sub-topic ${i}.${d} must be shown in full`);
+      assert.ok(html.includes(`FULL-DEF-${i}-${d}`), `Definition ${i}.${d} shown in full`);
+      assert.ok(html.includes(`FULL-SUB-${i}-${d}`), `Sub-topic ${i}.${d} shown in full`);
     }
-    assert.ok(all.includes(`much longer than twenty six characters ${i}`), 'Visual seed must be shown in full');
   }
-  assert.equal(all.split('END-OF-PARAGRAPH-4').length - 1, 6, 'Each chapter paragraph appears exactly once (no duplicated or dropped text)');
-  assert.ok(all.includes('(cont.)') || pages.length > 0, 'Chapters may continue across pages');
-  assert.ok(pages[pages.length - 1].includes('Evolutionary Synthesis &amp; Evidence Verification') || pages[pages.length - 1].includes('Evolutionary Synthesis & Evidence Verification'), 'Conclusion box must be on the last page');
-  pages.forEach((page, index) => assert.ok(page.includes(`Page ${index + 1} of ${pages.length}`), 'Footer must carry correct page numbering'));
+  assert.equal(html.split('END-OF-PARAGRAPH-4').length - 1, 6, 'Each paragraph appears exactly once');
+  assert.ok(!html.includes('...'), 'No truncated text');
+  assert.ok(html.includes('Evolutionary Synthesis &amp; Evidence Verification'), 'Conclusion note present');
 
-  // A smaller usable page height must never drop content, only add pages
-  const tighter = buildPrintFriendlyReportPagesHtml(longBook, 0.6);
-  assert.ok(tighter.length >= pages.length, 'Reduced capacity must not produce fewer pages');
-  assert.ok(tighter.join('\n').includes('FULL-SUB-6-5'), 'Reduced capacity must keep all content');
+  const cjk = buildPrintFriendlyReportHtml({ ...longBook, topic: '台北市長選舉 2026' });
+  assert.ok(cjk.includes('lang="zh"'), 'CJK topics get a CJK lang attribute so the right glyph set is used');
 
+  const escaped = buildPrintFriendlyReportHtml({ ...longBook, topic: 'A <script>alert(1)</script> & B' });
+  assert.ok(!escaped.includes('<script>alert(1)</script>'), 'Topic must be HTML-escaped');
+}
 
+// 2. Image pages: complete content, one A4 page per image, stable numbering
+{
+  const pages = buildPrintFriendlyReportPagesHtml(longBook);
+  assert.ok(pages.length > 2, 'Full-length text must flow onto several A4 pages');
+  const all = pages.join('\n');
+  assert.ok(all.includes('width: 794px') && all.includes('height: 1123px'), 'Pages are A4 at 96dpi (794x1123)');
+  for (let i = 1; i <= 6; i += 1) {
+    for (let p = 1; p <= 4; p += 1) assert.ok(all.includes(`END-OF-PARAGRAPH-${p}`), `Paragraph ${p} present`);
+    for (let d = 1; d <= 5; d += 1) {
+      assert.ok(all.includes(`FULL-DEF-${i}-${d}`));
+      assert.ok(all.includes(`FULL-SUB-${i}-${d}`));
+    }
+  }
+  assert.equal(all.split('END-OF-PARAGRAPH-4').length - 1, 6, 'No duplicated or dropped text');
+  pages.forEach((page, index) => assert.ok(page.includes(`Page ${index + 1} of ${pages.length}`), 'Footer carries correct numbering'));
+  assert.ok(pages[pages.length - 1].includes('Evidence Verification'), 'Conclusion on the last page');
+  assert.ok(!/font-size:\s*(?:[0-9]|1[0-1])(?:\.\d+)?px/.test(all), 'No text smaller than 12px on image pages');
 
-  // A single chapter with a very long paragraph is split across pieces without losing characters
+  // Smaller measured heights pack tighter; larger ones add pages but never lose content
+  const blockCount = (all.match(/class="pf-blk"/g) || []).length;
+  const tiny = buildPrintFriendlyReportPagesHtml(longBook, Array(blockCount).fill(10));
+  const huge = buildPrintFriendlyReportPagesHtml(longBook, Array(blockCount).fill(400));
+  assert.ok(tiny.length < pages.length && huge.length > pages.length);
+  assert.ok(huge.join('\n').includes('FULL-SUB-6-5'), 'Taller blocks must keep all content');
+
+  // A very long paragraph is split without losing a single word
   const hugeParagraph = 'zqx '.repeat(3000).trim();
   const hugeBook: WebBook = { ...longBook, chapters: [{ ...makeChapters(1)[0], content: hugeParagraph }] };
   const hugePages = buildPrintFriendlyReportPagesHtml(hugeBook).join('\n');
-  const wordCount = (hugePages.match(/\bzqx\b/g) || []).length;
-  assert.equal(wordCount, 3000, 'Oversized paragraph must be preserved word-for-word');
+  assert.equal((hugePages.match(/\bzqx\b/g) || []).length, 3000, 'Oversized paragraph preserved word-for-word');
 }
 
-// 2. Test HTML pages generation
+// 3. Pagination rules
 {
-  const fixtureBook: WebBook = {
-    id: 'test-1',
-    topic: 'Taipei Mayor Election Nov 2026',
-    timestamp: 1_700_000_000_000,
-    sourceMode: 'fallback_search',
-    chapters: [
-      {
-        title: 'Electoral Landscape',
-        content: 'The 2026 Taipei mayoral contest features prominent municipal policy debates across transit, housing, and cross-strait positioning.\n\nSecondary context indicates competitive polling.',
-        definitions: [{ term: 'Mayoral Prerogative', description: 'Executive authority over municipal resource allocation.', sourceUrl: 'https://taipei.gov.tw' }],
-        subTopics: [{ title: 'Transit Policy', summary: 'Expansion of MRT lines and smart bus corridors.', sourceUrl: 'https://taipei.gov.tw' }],
-        sourceUrls: ['https://taipei.gov.tw'],
-        visualSeed: 'Taipei City Hall',
-      },
-      {
-        title: 'Candidate Coalitions',
-        content: 'Coalition dynamics reflect broader party alignments and emerging independent voter blocks.',
-        definitions: [],
-        subTopics: [],
-        sourceUrls: ['https://taipei.gov.tw'],
-        visualSeed: 'electoral debate',
-      },
-    ],
-  };
-
-  const pages = buildPrintFriendlyReportPagesHtml(fixtureBook);
-  assert.equal(pages.length, 1, 'Two short chapters should fit on 1 A4 page');
-  assert.ok(pages[0].includes('Taipei Mayor Election Nov 2026'), 'Page 1 must include topic title');
-  assert.ok(!pages[0].includes('A4 Print-Friendly Full Report'), 'Page 1 must not include unsubstantial full report badge');
-  assert.ok(!pages[0].includes('A4-optimized, journal-style full-text report'), 'Page 1 must not include unsubstantial subtitle text');
-  assert.ok(pages[0].includes('Electoral Landscape'), 'Page 1 must include chapter 1');
-  assert.ok(pages[0].includes('Mayoral Prerogative'), 'Page 1 must include core definitions');
-  assert.ok(pages[0].includes('width: 794px'), 'Page must enforce 794px A4 width');
-  assert.ok(pages[0].includes('height: 1123px'), 'Page must enforce 1123px A4 height');
-  assert.ok(pages[0].includes('display: inline-flex; align-items: center; justify-content: center;'), 'Chapter badge must be vertically middle/centered aligned');
-  assert.ok(pages[0].includes('>01</span>'), 'Chapter number must be tight without interior whitespace');
+  // 3 blocks of 400 in a 900px page: third wraps
+  assert.deepEqual(paginateBlockHeights([400, 400, 400], [false, false, false], 900), [[0, 1], [2]]);
+  // A heading is never stranded at the bottom of a page: it moves with the block that follows it
+  assert.deepEqual(paginateBlockHeights([700, 50, 300], [false, true, false], 900), [[0], [1, 2]]);
+  // A block taller than a page is kept (on its own page), never dropped
+  assert.deepEqual(paginateBlockHeights([2000, 100], [false, false], 900), [[0], [1]]);
+  assert.deepEqual(paginateBlockHeights([], [], 900), [[]]);
 }
 
-// 3. Test export execution in headless Node environment (with mock downloadBlob)
+// 4. Export execution in a headless Node environment (no DOM => raster PDF fallback, per-page JPG download)
 {
-  let capturedBlob: Blob | null = null;
-  let capturedFileName: string | null = null;
-
+  const downloads: Array<{ blob: Blob; name: string }> = [];
   const g = globalThis as any;
   const originalCreateObjectURL = URL.createObjectURL;
   const originalRevokeObjectURL = URL.revokeObjectURL;
   const originalDocument = g.document;
+  let pendingName = '';
 
   URL.createObjectURL = ((blob: Blob) => {
-    capturedBlob = blob;
+    downloads.push({ blob, name: '' });
     return 'blob:mock-print-friendly';
   }) as typeof URL.createObjectURL;
-
   URL.revokeObjectURL = (() => {}) as typeof URL.revokeObjectURL;
 
   g.document = {
-    createElement: (tag: string) => {
-      if (tag === 'a') {
-        return {
-          style: {},
-          click: () => {},
-          set download(val: string) {
-            capturedFileName = val;
-          },
-        };
-      }
-      return { style: {} };
-    },
-    body: {
-      appendChild: () => {},
-      removeChild: () => {},
-    },
+    createElement: (tag: string) =>
+      tag === 'a'
+        ? {
+            style: {},
+            click: () => {
+              downloads[downloads.length - 1].name = pendingName;
+            },
+            set download(val: string) {
+              pendingName = val;
+            },
+          }
+        : { style: {} },
+    body: { appendChild: () => {}, removeChild: () => {} },
   };
 
   const sampleBook: WebBook = {
-    id: 'test-node-export',
-    topic: 'Artificial Intelligence Systems',
+    id: 'test-exec',
+    topic: 'Minimal Export Verification',
     timestamp: 1_700_000_000_000,
     chapters: [
       {
-        title: 'Foundations',
-        content: 'Historical foundations of connectionist networks.',
-        definitions: [{ term: 'Perceptron', description: 'Single-layer classifier', sourceUrl: 'https://example.com' }],
-        subTopics: [{ title: 'Backpropagation', summary: 'Gradient calculation through chain rule', sourceUrl: 'https://example.com' }],
-        sourceUrls: ['https://example.com'],
-        visualSeed: 'neural net',
+        title: 'Single Chapter',
+        content: 'Verification narrative content.',
+        definitions: [],
+        subTopics: [],
+        sourceUrls: [],
       },
     ],
   };
 
   try {
-    // PDF export test (canonical)
     await exportPrintFriendlyWebBookToPdf(sampleBook);
-    assert.ok(capturedBlob, 'exportPrintFriendlyWebBookToPdf must pass a Blob to downloadBlob');
-    assert.ok(capturedFileName?.endsWith('.pdf'), 'exportPrintFriendlyWebBookToPdf file name must end with .pdf');
-    assert.ok(capturedFileName?.includes('_PrintFriendly_Report.pdf'), 'exportPrintFriendlyWebBookToPdf file name must include _PrintFriendly_Report.pdf');
+    assert.equal(downloads.length, 1, 'PDF export falls back to a download when printing is unavailable');
+    assert.ok(downloads[0].name.endsWith('_PrintFriendly_Report.pdf'));
 
-    // JPG image export test (canonical)
-    capturedBlob = null;
-    capturedFileName = null;
+    downloads.length = 0;
     await exportPrintFriendlyWebBookToImage(sampleBook);
-    assert.ok(capturedBlob, 'exportPrintFriendlyWebBookToImage must pass a Blob to downloadBlob');
-    assert.ok(capturedFileName?.endsWith('.jpg'), 'exportPrintFriendlyWebBookToImage file name must end with .jpg');
-    assert.ok(capturedFileName?.includes('_PrintFriendly_Report.jpg'), 'exportPrintFriendlyWebBookToImage file name must include _PrintFriendly_Report.jpg');
-
-
+    assert.equal(downloads.length, 1, 'A single-page report downloads exactly one JPG');
+    assert.ok(downloads[0].name.endsWith('_PrintFriendly_Report.jpg'));
   } finally {
     URL.createObjectURL = originalCreateObjectURL;
     URL.revokeObjectURL = originalRevokeObjectURL;
@@ -185,4 +171,4 @@ console.log('Running printFriendlyReportExport regression tests...');
   }
 }
 
-console.log('printFriendlyReportExport regression tests passed successfully!');
+console.log('All printFriendlyReportExport regression tests passed.');

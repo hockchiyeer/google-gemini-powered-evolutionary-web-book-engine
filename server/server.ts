@@ -1,13 +1,18 @@
+import http from "node:http";
 import express from "express";
 import path from "node:path";
 import { createApiCompatibilityMiddleware } from "./googleSearchFallback.ts";
+import { createGeminiMiddleware, setupGeminiLiveWebSocket } from "./geminiService.ts";
 
 async function startServer() {
   const app = express();
+  const server = http.createServer(app);
   const PORT = Number(process.env.PORT) || 3000;
 
   // API routes FIRST
+  app.use(createGeminiMiddleware() as any);
   app.use(createApiCompatibilityMiddleware() as any);
+  setupGeminiLiveWebSocket(server);
 
   app.post("/__pdf", express.json({ limit: "50mb" }), async (req, res) => {
     try {
@@ -45,7 +50,7 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  server.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }

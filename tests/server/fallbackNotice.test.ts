@@ -42,6 +42,20 @@ const html = (body: string, status = 200) => new Response(body, { status, header
 
 globals.fetch = async (input: unknown, init?: { body?: unknown }) => {
   const url = new URL(typeof input === 'string' ? input : (input as { url?: string }).url ?? String(input));
+  if (url.hostname === 'localhost' && url.pathname.startsWith('/api/gemini')) {
+    if (scenario.gemini === 429) return json({ error: { code: 429, message: 'You exceeded your current quota', status: 'RESOURCE_EXHAUSTED' } }, 429);
+    if (scenario.gemini === 404) return json({ error: { code: 404, message: 'models/x is not found', status: 'NOT_FOUND' } }, 404);
+    if (scenario.gemini === 'search_ok_then_503') {
+      const isSearch = String(init?.body ?? '').includes('googleSearch');
+      if (isSearch) {
+        const sources = [{ url: 'https://g.example.org/a', title: 'A', content: 'Alpha content', definitions: [], subTopics: [], informativeScore: 0.8, authorityScore: 0.8 }];
+        return json({ text: JSON.stringify(sources), candidates: [{ content: { parts: [{ text: JSON.stringify(sources) }] } }] });
+      }
+      return json({ error: { code: 503, message: 'The service is unavailable', status: 'UNAVAILABLE' } }, 503);
+    }
+    if (scenario.gemini === 401) return json({ error: { code: 401, message: 'API key not valid', status: 'UNAUTHENTICATED' } }, 401);
+    return json({ text: '[]', candidates: [{ content: { parts: [{ text: '[]' }] } }] });
+  }
   if (url.hostname === 'localhost') {
     const payload = await buildGoogleSearchFallbackPayload(url.searchParams.get('query')!, url.searchParams.get('mode') as SearchFallbackMode);
     return json(payload);
@@ -53,12 +67,12 @@ globals.fetch = async (input: unknown, init?: { body?: unknown }) => {
       const isSearch = String(init?.body ?? '').includes('googleSearch');
       if (isSearch) {
         const sources = [{ url: 'https://g.example.org/a', title: 'A', content: 'Alpha content', definitions: [], subTopics: [], informativeScore: 0.8, authorityScore: 0.8 }];
-        return json({ candidates: [{ content: { parts: [{ text: JSON.stringify(sources) }] } }] });
+        return json({ text: JSON.stringify(sources), candidates: [{ content: { parts: [{ text: JSON.stringify(sources) }] } }] });
       }
       return json({ error: { code: 503, message: 'The service is unavailable', status: 'UNAVAILABLE' } }, 503);
     }
     if (scenario.gemini === 401) return json({ error: { code: 401, message: 'API key not valid', status: 'UNAUTHENTICATED' } }, 401);
-    return json({ candidates: [{ content: { parts: [{ text: '[]' }] } }] });
+    return json({ text: '[]', candidates: [{ content: { parts: [{ text: '[]' }] } }] });
   }
   if (url.hostname.includes('google.com')) {
     return html(scenario.google === 'ok' ? GOOGLE_OK : scenario.google === 'blocked' ? GOOGLE_BLOCKED : EMPTY);

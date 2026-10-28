@@ -362,7 +362,8 @@ Cypress.Commands.add('verifyExportWasStubbed', (exportType) => {
     return;
   }
 
-  if (exportType === 'print') {
+  // The print-friendly PDF is printed by the browser (vector text), so it opens the print dialog like "print".
+  if (exportType === 'print' || exportType === 'print_friendly_pdf') {
     cy.get('@documentCreateElement').should('have.been.calledWith', 'iframe');
     return;
   }
