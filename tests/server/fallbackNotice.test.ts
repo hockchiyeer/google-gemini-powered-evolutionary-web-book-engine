@@ -211,4 +211,44 @@ async function stopMessage(next: Scenario, mode: SearchFallbackMode = 'google_du
   await assert.rejects(assembleWebBook(found.results, q, found, { mode: 'off', geminiModel: MODEL }), /Gemini is temporarily unavailable/);
 }
 
+// K. Resilient fallback book synthesis contains distinct, deduplicated chapters and no boilerplate or URL slugs.
+{
+  scenario = { google: 'ok', ddg: 'ok', gemini: 429 };
+  const fallbackRes = await searchAndExtract(QUERY, { mode: 'google_duckduckgo', geminiModel: MODEL });
+  const book = await assembleWebBook(fallbackRes.results, QUERY, fallbackRes, { mode: 'google_duckduckgo', geminiModel: MODEL });
+  assert.ok(book.chapters.length >= 5);
+
+  const seenTitles = new Set<string>();
+  const seenContent = new Set<string>();
+  const allDefTerms = new Set<string>();
+  const allSubTitles = new Set<string>();
+
+  for (const ch of book.chapters) {
+    // Unique chapter titles and content
+    assert.ok(!seenTitles.has(ch.title), `Duplicate chapter title: ${ch.title}`);
+    seenTitles.add(ch.title);
+    assert.ok(!seenContent.has(ch.content), `Duplicate chapter content detected`);
+    seenContent.add(ch.content);
+
+    // No boilerplate filler
+    assert.doesNotMatch(ch.content, /represents a transformative discipline/i);
+    assert.doesNotMatch(ch.content, /Inquiring into authoritative evidence on/i);
+
+    // No leaked URL fragments or Concept placeholder terms in definitions
+    for (const def of ch.definitions) {
+      assert.doesNotMatch(def.term, /^Concept\s*\d*$/i, `Placeholder term detected: ${def.term}`);
+      assert.doesNotMatch(def.description, /https?:\/\//i, `Raw URL detected in definition: ${def.description}`);
+      assert.doesNotMatch(def.description, /^[a-z0-9_-]+\/[a-z0-9_-]+/i, `URL path slug detected in definition: ${def.description}`);
+      assert.ok(!allDefTerms.has(def.term.toLowerCase()), `Duplicate definition term across chapters: ${def.term}`);
+      allDefTerms.add(def.term.toLowerCase());
+    }
+
+    // No duplicated subtopics across chapters
+    for (const st of ch.subTopics) {
+      assert.ok(!allSubTitles.has(st.title.toLowerCase()), `Duplicate subtopic across chapters: ${st.title}`);
+      allSubTitles.add(st.title.toLowerCase());
+    }
+  }
+}
+
 console.log('fallbackNotice regression tests passed');

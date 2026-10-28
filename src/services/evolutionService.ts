@@ -15,7 +15,12 @@ import {
 import { fetchGoogleSearchFallback } from "./googleSearchFallbackClient";
 import { buildGeminiUserFacingErrorMessage, GeminiFailureReason } from "./geminiUserFacingErrors";
 import { isNonJsonResponseText } from "./safeResponse";
-import { SYNTHETIC_FALLBACK_DIAGNOSTIC, describeFallbackEvidence, isSyntheticFallbackPayload } from "./searchFallbackShared";
+import {
+  SYNTHETIC_FALLBACK_DIAGNOSTIC,
+  deriveConceptLabel,
+  describeFallbackEvidence,
+  isSyntheticFallbackPayload,
+} from "./searchFallbackShared";
 
 export function buildSyntheticFallbackPayload(query: string, mode: SearchFallbackMode = 'google_duckduckgo'): SearchFallbackPayload {
   const provider = mode === 'duckduckgo' ? 'duckduckgo' : 'google';
@@ -178,6 +183,35 @@ async function generateWithModelFallback(
   });
 }
 
+export function cleanFallbackText(text: string): string {
+  if (!text) return '';
+  return text
+    .replace(/\bhttps?:\/\/\S+/gi, ' ')
+    .replace(/\bwww\.[a-z0-9_-]+\.[a-z]{2,}(?:\/[^\s]*)?/gi, ' ')
+    .replace(/\b[a-z0-9_-]+\.(?:com|org|net|edu|gov|io|co|my|sg|uk|de|jp)(?:\.[a-z]{2,})?(?:\/[^\s]*)?/gi, ' ')
+    .replace(/\b(?:com|org|net|edu|gov|io|my|sg|co)\/[a-z0-9_./-]+\b/gi, ' ')
+    .replace(/\b[a-z0-9_-]+\/[a-z0-9_-]+(?:\/[a-z0-9_-]+)+\/?\b/gi, ' ')
+    .replace(/\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function extractCleanSentences(text: string): string[] {
+  const cleaned = cleanFallbackText(text);
+  if (!cleaned) return [];
+  return cleaned
+    .split(/(?<=[.!?])\s+(?=[A-Z0-9"'])/)
+    .map(s => s.trim())
+    .filter(s => {
+      if (s.length < 25) return false;
+      const words = s.split(/\s+/).filter(Boolean);
+      if (words.length < 4) return false;
+      if (/\b[a-z0-9_-]+\/[a-z0-9_-]+\b/i.test(s) && !s.includes(' ')) return false;
+      if (/^(?:read more|click here|subscribe|sign in|cookie|all rights reserved)\b/i.test(s)) return false;
+      return true;
+    });
+}
+
 export function isMeaningful(text: string, description?: string): boolean {
   if (!text) return false;
   const clean = text.replace(/\s/g, '');
@@ -194,6 +228,14 @@ export function isMeaningful(text: string, description?: string): boolean {
   if (text.length > 40 && !text.includes(' ')) return false;
   // Filter out strings that look like random hex/alphanumeric (no vowels and long)
   if (clean.length > 12 && !/[aeiou]/i.test(clean)) return false;
+
+  // Filter out generic placeholder concepts like "Concept 1", "Concept 2"
+  if (/^concept\s*\d*$/i.test(text.trim())) return false;
+  // Filter out text or description that looks like a URL slug or path
+  if (/\b(?:com|org|net|edu|gov|io|my|sg|co)\/[a-z0-9_./-]+\b/i.test(text) || /\b(?:com|org|net|edu|gov|io|my|sg|co)\/[a-z0-9_./-]+\b/i.test(description || '')) return false;
+  if (/^[a-z0-9_-]+\/[a-z0-9_./-]*$/i.test(clean)) return false;
+  if (clean.includes('/') && !text.includes(' ')) return false;
+  if (description && description.includes('/') && !description.includes(' ')) return false;
 
   // Anti-poisoning & copyright boilerplate filters
   const poisonKeywords = [
@@ -554,22 +596,32 @@ export async function searchAndExtract(
 
   const fallbackPopulation: WebPageGenotype[] = fallbackPayload.results.map((res, index) => {
     const rawContent = [res.snippet, res.excerpt].filter(Boolean).join(' ');
-    // Extract key sentences as definitions / subtopics
-    const sentences = rawContent.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 20);
+    const sentences = extractCleanSentences(rawContent);
+    const titleConcept = deriveConceptLabel(res.title, query);
 
-    const definitions: Definition[] = sentences.slice(0, 3).map((sent, i) => {
-      const parts = sent.split(/:\s*|\s+is\s+|\s+refers to\s+/i);
-      const term = parts.length > 1 ? parts[0].slice(0, 40) : `Concept ${i + 1}`;
-      const description = parts.length > 1 ? parts.slice(1).join(' ') : sent;
-      return {
-        term: term.trim(),
-        description: description.trim(),
+    const definitions: Definition[] = [];
+    for (const sent of sentences) {
+      const match = sent.match(/^([^:\n]{3,40}):\s+(.+)$/) || sent.match(/^([A-Z][a-zA-Z0-9\s-]{2,35})\s+(?:is defined as|refers to|represents)\s+(.+)$/i);
+      if (match) {
+        const term = match[1].trim();
+        const desc = match[2].trim();
+        if (term.length >= 3 && term.length <= 40 && desc.length >= 25 && isMeaningful(term, desc)) {
+          definitions.push({ term, description: desc, sourceUrl: res.url });
+          break;
+        }
+      }
+    }
+
+    if (definitions.length === 0 && sentences.length > 0 && titleConcept && isMeaningful(titleConcept, sentences[0])) {
+      definitions.push({
+        term: titleConcept,
+        description: sentences[0],
         sourceUrl: res.url,
-      };
-    }).filter(d => isMeaningful(d.term, d.description));
+      });
+    }
 
-    const subTopics: SubTopic[] = sentences.slice(2, 5).map((sent, i) => ({
-      title: `${res.title.slice(0, 35)} - Key Area ${i + 1}`,
+    const subTopics: SubTopic[] = sentences.slice(1, 3).map((sent, i) => ({
+      title: `${titleConcept} - Analysis ${i + 1}`,
       summary: sent,
       sourceUrl: res.url,
     })).filter(s => isMeaningful(s.title, s.summary));
@@ -578,7 +630,7 @@ export async function searchAndExtract(
       id: `fallback-${index}-${Date.now()}`,
       url: res.url,
       title: res.title,
-      content: rawContent || res.title,
+      content: cleanFallbackText(rawContent) || res.title,
       definitions,
       subTopics,
       informativeScore: 0.85,
@@ -686,51 +738,146 @@ function synthesizeFallbackWebBook(
   sources: WebPageGenotype[],
   searchResult?: any
 ): WebBook {
-  const allDefinitions: Definition[] = [];
-  const allSubTopics: SubTopic[] = [];
-  const validSources = sources
-    .filter(s => s.url && /^https?:\/\//i.test(s.url) && !s.url.includes('source-') && !s.url.includes('knowledge-base.org'))
-    .map(s => ({ title: s.title, url: s.url }));
+  const validSourceObjects = sources.filter(
+    s => s.url && /^https?:\/\//i.test(s.url) && !s.url.includes('source-') && !s.url.includes('knowledge-base.org')
+  );
 
-  sources.forEach(s => {
+  const uniqueDefinitions: Definition[] = [];
+  const seenDefTerms = new Set<string>();
+  validSourceObjects.forEach(s => {
     (s.definitions || []).forEach(d => {
-      if (isMeaningful(d.term, d.description)) allDefinitions.push(d);
+      const termKey = d.term.toLowerCase().trim();
+      if (!seenDefTerms.has(termKey) && isMeaningful(d.term, d.description)) {
+        seenDefTerms.add(termKey);
+        uniqueDefinitions.push(d);
+      }
     });
+  });
+
+  const uniqueSubTopics: SubTopic[] = [];
+  const seenSubTitles = new Set<string>();
+  validSourceObjects.forEach(s => {
     (s.subTopics || []).forEach(st => {
-      if (isMeaningful(st.title, st.summary)) allSubTopics.push(st);
+      const titleKey = st.title.toLowerCase().trim();
+      if (!seenSubTitles.has(titleKey) && isMeaningful(st.title, st.summary)) {
+        seenSubTitles.add(titleKey);
+        uniqueSubTopics.push(st);
+      }
     });
   });
 
   const chapterBlueprints = [
-    { title: "Foundations & Historical Perspective", seed: "origins and emergence" },
-    { title: "Core Architecture & Conceptual Framework", seed: "structural blueprint" },
-    { title: "Key Principles, Mechanics & Methodologies", seed: "mechanics and processes" },
-    { title: "Operational Dynamics & Real-World Execution", seed: "practical implementation" },
-    { title: "Comparative Evaluation & Systemic Analysis", seed: "analysis and paradigms" },
-    { title: "Future Outlook, Challenges & Horizons", seed: "frontiers and future" }
+    {
+      title: "Foundations & Historical Perspective",
+      seed: "origins and emergence",
+      renderLead: (t: string, srcTitle?: string) =>
+        `Foundational origins and historical background form the crucial baseline for assessing ${t}.${srcTitle ? ` Analysis documented in "${srcTitle}" outlines how historical precedents, institutional roots, and initial arrangements established the groundwork for subsequent developments.` : ` Contextual evidence illustrates how long-standing traditions and institutional structures continue to shape the broader landscape.`}`,
+      renderConclusion: (t: string) =>
+        `Understanding these foundational roots and historical precedents is essential for contextualizing how subsequent developments and institutional shifts continue to influence ${t}.`
+    },
+    {
+      title: "Core Architecture & Conceptual Framework",
+      seed: "structural blueprint",
+      renderLead: (t: string, srcTitle?: string) =>
+        `The structural framework and institutional core of ${t} define the parameters of governance, authority, and systemic stability.${srcTitle ? ` Evidence drawn from "${srcTitle}" clarifies the core architectural pillars, institutional rules, and formal mechanisms governing modern stakeholder interactions.` : ` Institutional rules and formal frameworks dictate the boundaries within which key actors and processes operate.`}`,
+      renderConclusion: (t: string) =>
+        `Systemic stability hinges on how effectively these core frameworks and institutional checks balance competing operational demands across ${t}.`
+    },
+    {
+      title: "Key Principles, Mechanics & Methodologies",
+      seed: "mechanics and processes",
+      renderLead: (t: string, srcTitle?: string) =>
+        `Navigating ${t} requires examining the guiding operational principles, legislative mechanics, and strategic methodologies currently in motion.${srcTitle ? ` As highlighted by "${srcTitle}", procedural rigor, strategic alignment, and practical execution are vital for sustaining momentum across the domain.` : ` Strategic principles and procedural dynamics determine how high-level goals are translated into tangible operational outcomes.`}`,
+      renderConclusion: (t: string) =>
+        `Consistent application of these methodologies and operational standards establishes the baseline required to navigate complex dynamics within ${t}.`
+    },
+    {
+      title: "Operational Dynamics & Real-World Execution",
+      seed: "practical implementation",
+      renderLead: (t: string, srcTitle?: string) =>
+        `On-the-ground developments and contemporary realities reflect the practical execution of ${t} across active environments.${srcTitle ? ` Real-time reporting and current accounts in "${srcTitle}" reveal how key stakeholders respond to active pressures, public sentiment, and real-world shifts.` : ` Practical realities and changing conditions continually test the resilience and responsiveness of prevailing arrangements.`}`,
+      renderConclusion: (t: string) =>
+        `As active developments continue to evolve, the interplay between practical execution and public responsiveness will shape the immediate trajectory of ${t}.`
+    },
+    {
+      title: "Comparative Evaluation & Systemic Analysis",
+      seed: "analysis and paradigms",
+      renderLead: (t: string, srcTitle?: string) =>
+        `A comparative evaluation of differing viewpoints and strategic interests illuminates the nuanced complexities within ${t}.${srcTitle ? ` Critical analysis and commentary from "${srcTitle}" contrast competing perspectives, identifying systemic trade-offs and structural tensions among rival stakeholders.` : ` Weighing contrasting perspectives reveals systemic trade-offs and competing priorities that challenge conventional assumptions.`}`,
+      renderConclusion: (t: string) =>
+        `Synthesizing these comparative perspectives demonstrates that addressing ${t} requires navigating systemic divergence through pragmatic, balanced alignment.`
+    },
+    {
+      title: "Future Outlook, Challenges & Horizons",
+      seed: "frontiers and future",
+      renderLead: (t: string, srcTitle?: string) =>
+        `Looking ahead toward upcoming horizons, the future trajectory of ${t} will be defined by emerging milestones, upcoming challenges, and strategic transformations.${srcTitle ? ` Forward-looking projections synthesized from "${srcTitle}" point to critical inflection points, upcoming tests of cohesion, and long-term implications.` : ` Strategic forecasts point to pivotal inflection points that will determine future stability, governance, and sustained progress.`}`,
+      renderConclusion: (t: string) =>
+        `Anticipating these prospective scenarios and strategic horizons underscores the necessity for proactive oversight, adaptive strategy, and resilience across ${t}.`
+    }
   ];
 
   const chapters: Chapter[] = chapterBlueprints.map((bp, idx) => {
-    const relevantSource = validSources[idx % validSources.length] || validSources[0] || null;
-    const defsForChapter = allDefinitions.slice(idx * 2, idx * 2 + 3);
-    const subTopicsForChapter = allSubTopics.slice(idx * 2, idx * 2 + 2);
+    const primarySource = validSourceObjects[idx % Math.max(1, validSourceObjects.length)] || null;
+    const secondarySource = validSourceObjects.length > 1
+      ? validSourceObjects[(idx + 1) % validSourceObjects.length]
+      : null;
 
-    const narrative = [
-      `${topic} represents a transformative discipline characterized by multifaceted evolution and practical significance. In ${bp.title.toLowerCase()}, foundational principles coalesce with modern analytical frameworks to illuminate key characteristics and real-world mechanisms.`,
-      relevantSource ? `Inquiring into authoritative evidence on ${relevantSource.title || topic} establishes key characteristics and structural methodologies. As research and application paradigms evolve, synthesis of evidence underscores the imperative for continuous refinement.` : `Comprehensive inquiry into ${topic} emphasizes precision, structural cohesion, and cross-domain utility. As research and application paradigms evolve, synthesis of evidence underscores the imperative for continuous refinement.`,
-      `Critical examination reveals that advancing in ${topic} requires balancing foundational rigor against evolving operational demands. By integrating authoritative evidence and systematic paradigms, practitioners ensure sustainable, high-impact outcomes.`
-    ].join('\n\n');
+    const primarySentences = primarySource ? extractCleanSentences(primarySource.content) : [];
+    const secondarySentences = secondarySource && secondarySource !== primarySource
+      ? extractCleanSentences(secondarySource.content)
+      : [];
+
+    const paragraph1 = bp.renderLead(topic, primarySource?.title);
+
+    let paragraph2 = '';
+    if (primarySentences.length > 0) {
+      const primaryLead = primarySentences.slice(0, 3).join(' ');
+      const complementaryText = secondarySentences.length > 0
+        ? ` Complementing this, observations from "${secondarySource?.title}" emphasize that ${secondarySentences.slice(0, 2).join(' ')}`
+        : '';
+      paragraph2 = primarySource?.title
+        ? `Evidence gathered from "${primarySource.title}" highlights key findings: ${primaryLead}.${complementaryText}`.replace(/\.\./g, '.')
+        : `${primaryLead}.${complementaryText}`.replace(/\.\./g, '.');
+    } else if (searchResult?.artifacts?.searchSummary) {
+      paragraph2 = searchResult.artifacts.searchSummary;
+    } else {
+      paragraph2 = `Authoritative inquiry into ${topic} emphasizes precision, structural cohesion, and cross-domain utility based on verified source documentation.`;
+    }
+
+    const paragraph3 = bp.renderConclusion(topic);
+    const narrative = [paragraph1, paragraph2, paragraph3].filter(Boolean).join('\n\n');
+
+    // Deduplicated definitions assignment: at most 2 unique definitions per chapter
+    const defsForChapter = uniqueDefinitions.splice(0, 2);
+    if (defsForChapter.length === 0 && primarySource) {
+      const conceptTerm = deriveConceptLabel(primarySource.title, topic);
+      if (conceptTerm && !seenDefTerms.has(conceptTerm.toLowerCase()) && primarySentences.length > 0) {
+        seenDefTerms.add(conceptTerm.toLowerCase());
+        defsForChapter.push({
+          term: conceptTerm,
+          description: primarySentences[0],
+          sourceUrl: primarySource.url,
+        });
+      }
+    }
+
+    // Deduplicated subtopics assignment: at most 1 unique subtopic per chapter
+    const subTopicsForChapter = uniqueSubTopics.splice(0, 1);
+    if (subTopicsForChapter.length === 0 && primarySource && primarySentences.length > 1) {
+      subTopicsForChapter.push({
+        title: `${deriveConceptLabel(primarySource.title, topic)} Analysis`,
+        summary: primarySentences[1],
+        sourceUrl: primarySource.url,
+      });
+    }
 
     return {
       title: bp.title,
       content: narrative,
-      definitions: defsForChapter.length > 0 ? defsForChapter : [
-        { term: `${topic} Principle ${idx + 1}`, description: `Essential operational principle governing ${bp.title.toLowerCase()} within ${topic}.`, sourceUrl: relevantSource?.url || '' }
-      ],
-      subTopics: subTopicsForChapter.length > 0 ? subTopicsForChapter : [
-        { title: `${bp.title} In Depth`, summary: `Detailed exploration of strategic elements shaping modern implementations.`, sourceUrl: relevantSource?.url || '' }
-      ],
-      sourceUrls: relevantSource ? [{ title: relevantSource.title, url: relevantSource.url }] : validSources.slice(0, 3),
+      definitions: defsForChapter,
+      subTopics: subTopicsForChapter,
+      sourceUrls: primarySource ? [{ title: primarySource.title, url: primarySource.url }] : [],
       visualSeed: `${topic} ${bp.seed}`,
     };
   });
