@@ -18,7 +18,6 @@ import { isNonJsonResponseText } from "./safeResponse";
 import {
   SYNTHETIC_FALLBACK_DIAGNOSTIC,
   calculateTextSimilarity,
-  deriveConceptLabel,
   describeFallbackEvidence,
   isSyntheticFallbackPayload,
 } from "./searchFallbackShared";
@@ -193,35 +192,6 @@ async function generateWithModelFallback(
 
     return data;
   });
-}
-
-export function cleanFallbackText(text: string): string {
-  if (!text) return '';
-  return text
-    .replace(/\bhttps?:\/\/\S+/gi, ' ')
-    .replace(/\bwww\.[a-z0-9_-]+\.[a-z]{2,}(?:\/[^\s]*)?/gi, ' ')
-    .replace(/\b[a-z0-9_-]+\.(?:com|org|net|edu|gov|io|co|my|sg|uk|de|jp)(?:\.[a-z]{2,})?(?:\/[^\s]*)?/gi, ' ')
-    .replace(/\b(?:com|org|net|edu|gov|io|my|sg|co)\/[a-z0-9_./-]+\b/gi, ' ')
-    .replace(/\b[a-z0-9_-]+\/[a-z0-9_-]+(?:\/[a-z0-9_-]+)+\/?\b/gi, ' ')
-    .replace(/\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?\b/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-export function extractCleanSentences(text: string): string[] {
-  const cleaned = cleanFallbackText(text);
-  if (!cleaned) return [];
-  return cleaned
-    .split(/(?<=[.!?])\s+(?=[A-Z0-9"'])/)
-    .map(s => s.trim())
-    .filter(s => {
-      if (s.length < 25) return false;
-      const words = s.split(/\s+/).filter(Boolean);
-      if (words.length < 4) return false;
-      if (/\b[a-z0-9_-]+\/[a-z0-9_-]+\b/i.test(s) && !s.includes(' ')) return false;
-      if (/^(?:read more|click here|subscribe|sign in|cookie|all rights reserved)\b/i.test(s)) return false;
-      return true;
-    });
 }
 
 export function isMeaningful(text: string, description?: string): boolean {
@@ -608,43 +578,27 @@ export async function searchAndExtract(
 
   const fallbackPopulation: WebPageGenotype[] = fallbackPayload.results.map((res, index) => {
     const rawContent = [res.snippet, res.excerpt].filter(Boolean).join(' ');
-    const sentences = extractCleanSentences(rawContent);
-    const titleConcept = deriveConceptLabel(res.title, query);
+    // Strip URL artifacts first and split on sentence boundaries: splitting on every "." also cut URLs, decimals and
+    // abbreviations into fragments that were then shown as definitions.
+    const sentences = splitIntoSentences(sanitizeNarrativeText(rawContent)).filter(s => s.length > 20);
 
-    const definitions: Definition[] = [];
-    for (const sent of sentences) {
-      const match = sent.match(/^([^:\n]{3,40}):\s+(.+)$/) || sent.match(/^([A-Z][a-zA-Z0-9\s-]{2,35})\s+(?:is defined as|refers to|represents)\s+(.+)$/i);
-      if (match) {
-        const term = match[1].trim();
-        const desc = match[2].trim();
-        if (term.length >= 3 && term.length <= 40 && desc.length >= 25 && isMeaningful(term, desc)) {
-          definitions.push({ term, description: desc, sourceUrl: res.url });
-          break;
-        }
-      }
-    }
-
-    if (definitions.length === 0 && sentences.length > 0 && titleConcept && isMeaningful(titleConcept, sentences[0])) {
-      definitions.push({
-        term: titleConcept,
-        description: sentences[0],
-        sourceUrl: res.url,
-      });
-    }
-
-    const subTopics: SubTopic[] = sentences.slice(1, 3).map((sent, i) => ({
-      title: `${titleConcept} - Analysis ${i + 1}`,
-      summary: sent,
-      sourceUrl: res.url,
-    })).filter(s => isMeaningful(s.title, s.summary));
+    // Only sentences that really state "term: description" / "term is ..." become definitions. Others are no longer given a
+    // placeholder "Concept N" label; they stay in `content`, which the offline assembler uses as narrative.
+    const definitions: Definition[] = sentences.slice(0, 3).flatMap((sent) => {
+      const [term, ...rest] = sent.split(/:\s*|\s+is\s+|\s+refers to\s+/i);
+      return rest.length > 0
+        ? [{ term: term.slice(0, 40).trim(), description: rest.join(' ').trim(), sourceUrl: res.url }]
+        : [];
+    }).filter(d => isMeaningful(d.term, d.description));
 
     return {
       id: `fallback-${index}-${Date.now()}`,
       url: res.url,
       title: res.title,
-      content: cleanFallbackText(rawContent) || res.title,
+      content: rawContent || res.title,
       definitions,
-      subTopics,
+      // Search snippets have no sub-topic structure; restating their sentences under "Key Area N" titles only duplicated them.
+      subTopics: [],
       informativeScore: 0.85,
       authorityScore: 0.9,
       fitness: 0,
