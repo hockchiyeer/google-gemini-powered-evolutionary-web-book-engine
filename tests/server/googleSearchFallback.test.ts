@@ -235,7 +235,7 @@ assert.equal(isGoogleBlockedPage(blockedGoogleHtml), true);
       </h2>
       <div class="result__extras">
         <div class="result__extras__url">
-          <a class="result__url" href="//duckduckgo.com/l/?uddg=x">example.com/a</a>
+          <a class="result__url" href="//duckduckgo.com/l/?uddg=x">themalaysiantimes.com.my/how-malaysias-political-landscape-will-evolve-in-2026/</a>
         </div>
       </div>
       <a class="result__snippet" href="//duckduckgo.com/l/?uddg=x">Malaysia's unity government enters 2026 with a stronger majority.</a>

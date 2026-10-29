@@ -704,7 +704,7 @@ export async function evolve(
   };
 }
 
-function synthesizeFallbackWebBook(
+export function synthesizeFallbackWebBook(
   topic: string,
   sources: WebPageGenotype[],
   searchResult?: any
@@ -771,14 +771,14 @@ function synthesizeFallbackWebBook(
     )).join('\n\n');
 
     const unitUrls = new Set(units.map(unit => unit.url));
-    const chapterSources = validSources.filter(source => unitUrls.has(source.url)).slice(0, 3);
+    const chapterSources = validSources.filter(source => unitUrls.has(source.url));
 
     chapters.push({
       title: bp.title,
       content: narrative,
       definitions: claimFor(unplacedDefinitions, unitUrls, 3),
       subTopics: claimFor(unplacedSubTopics, unitUrls, 2),
-      sourceUrls: chapterSources.length > 0 ? chapterSources : validSources.slice(0, 3),
+      sourceUrls: chapterSources.length > 0 ? chapterSources : validSources.slice(0, 5),
       visualSeed: `${topic} ${bp.seed}`,
     });
   });
