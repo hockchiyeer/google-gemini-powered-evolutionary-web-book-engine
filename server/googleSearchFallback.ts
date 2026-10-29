@@ -70,6 +70,19 @@ function buildSearchQueryVariants(query: string): string[] {
     variants.push(candidate);
   }
 
+  // If the query has date-range or calendar phrasing (e.g. "between Nov 2026 and Dec 2028"),
+  // also add a distilled variant without the narrow date words to ensure search engines return live results.
+  const dateStripped = baseQuery
+    .replace(/\bbetween\s+[A-Za-z]+\s+\d{4}\s+and\s+[A-Za-z]+\s+\d{4}\b/gi, '')
+    .replace(/\b(between|from|and|in|during|due\s+on)\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const normalizedDateStripped = normalizeComparableText(dateStripped);
+  if (normalizedDateStripped && !seen.has(normalizedDateStripped) && dateStripped.length >= 8) {
+    seen.add(normalizedDateStripped);
+    variants.push(dateStripped);
+  }
+
   return variants.length > 0 ? variants : [baseQuery];
 }
 

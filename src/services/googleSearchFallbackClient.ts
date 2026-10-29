@@ -76,6 +76,18 @@ function normalizeFallbackPayload(
   } as SearchFallbackPayload;
 }
 
+function getFallbackRequestBase(): string {
+  if (typeof window !== 'undefined') {
+    if (window.location?.origin && window.location.origin !== 'null') {
+      return window.location.origin;
+    }
+    if (window.location?.href && window.location.href !== 'null' && !window.location.href.startsWith('about:')) {
+      return window.location.href;
+    }
+  }
+  return 'http://localhost:3000';
+}
+
 export async function fetchGoogleSearchFallback(
   query: string,
   options: EngineOptions = { mode: 'google_duckduckgo' }
@@ -89,7 +101,7 @@ export async function fetchGoogleSearchFallback(
 
   for (let attempt = 1; attempt <= FALLBACK_FETCH_ATTEMPTS; attempt += 1) {
     try {
-      const requestUrl = new URL(SEARCH_FALLBACK_ROUTE, window.location.origin === 'null' ? window.location.href : window.location.origin);
+      const requestUrl = new URL(SEARCH_FALLBACK_ROUTE, getFallbackRequestBase());
       requestUrl.searchParams.set('query', query);
       requestUrl.searchParams.set('mode', options.mode);
 

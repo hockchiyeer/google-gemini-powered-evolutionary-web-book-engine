@@ -207,25 +207,25 @@ export function isLikelyResultTitle(title: string): boolean {
 
 export function extractSnippetFromContext(contextHtml: string, title: string): string {
   const snippetPatterns = [
-    /<div[^>]*class="[^"]*VwiC3b[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
-    /<div[^>]*class="[^"]*BNeawe[^"]*s3v9rd[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
-    /<span[^>]*class="[^"]*aCOpRe[^"]*"[^>]*>([\s\S]*?)<\/span>/i,
+    /<div[^>]*class=["\x27][^"\x27]*VwiC3b[^"\x27]*["\x27][^>]*>([\s\S]*?)<\/div>/i,
+    /<div[^>]*class=["\x27][^"\x27]*BNeawe[^"\x27]*s3v9rd[^"\x27]*["\x27][^>]*>([\s\S]*?)<\/div>/i,
+    /<span[^>]*class=["\x27][^"\x27]*aCOpRe[^"\x27]*["\x27][^>]*>([\s\S]*?)<\/span>/i,
     /<div[^>]*data-sncf="[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
-    /<div[^>]*class="[^"]*MUFwZ[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
-    /<div[^>]*class="[^"]*yD979[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
-    /<div[^>]*class="[^"]*K8v00d[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
-    /<div[^>]*class="[^"]*lEBKkf[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
-    /<div[^>]*class="[^"]*kb0Odf[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
-    /<div[^>]*class="[^"]*L5V62d[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
-    /<div[^>]*class="[^"]*wDY59b[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
-    /<a[^>]*class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>/i,
-    /<div[^>]*class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
-    /<td[^>]*class="[^"]*result-snippet[^"]*"[^>]*>([\s\S]*?)<\/td>/i,
-    /<div[^>]*class="[^"]*snippet[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+    /<div[^>]*class=["\x27][^"\x27]*MUFwZ[^"\x27]*["\x27][^>]*>([\s\S]*?)<\/div>/i,
+    /<div[^>]*class=["\x27][^"\x27]*yD979[^"\x27]*["\x27][^>]*>([\s\S]*?)<\/div>/i,
+    /<div[^>]*class=["\x27][^"\x27]*K8v00d[^"\x27]*["\x27][^>]*>([\s\S]*?)<\/div>/i,
+    /<div[^>]*class=["\x27][^"\x27]*lEBKkf[^"\x27]*["\x27][^>]*>([\s\S]*?)<\/div>/i,
+    /<div[^>]*class=["\x27][^"\x27]*kb0Odf[^"\x27]*["\x27][^>]*>([\s\S]*?)<\/div>/i,
+    /<div[^>]*class=["\x27][^"\x27]*L5V62d[^"\x27]*["\x27][^>]*>([\s\S]*?)<\/div>/i,
+    /<div[^>]*class=["\x27][^"\x27]*wDY59b[^"\x27]*["\x27][^>]*>([\s\S]*?)<\/div>/i,
+    /<a[^>]*class=["\x27][^"\x27]*result__snippet[^"\x27]*["\x27][^>]*>([\s\S]*?)<\/a>/i,
+    /<div[^>]*class=["\x27][^"\x27]*result__snippet[^"\x27]*["\x27][^>]*>([\s\S]*?)<\/div>/i,
+    /<td[^>]*class=["\x27][^"\x27]*result-snippet[^"\x27]*["\x27][^>]*>([\s\S]*?)<\/td>/i,
+    /<div[^>]*class=["\x27][^"\x27]*snippet[^"\x27]*["\x27][^>]*>([\s\S]*?)<\/div>/i,
     // Catch-alls last: any class containing "s" also matches DuckDuckGo's result__extras block, whose text is the display URL.
-    /<div[^>]*class="[^"]*st[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
-    /<div[^>]*class="[^"]*s[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
-    /<span[^>]*class="[^"]*st[^"]*"[^>]*>([\s\S]*?)<\/span>/i,
+    /<div[^>]*class=["\x27][^"\x27]*st[^"\x27]*["\x27][^>]*>([\s\S]*?)<\/div>/i,
+    /<div[^>]*class=["\x27][^"\x27]*s[^"\x27]*["\x27][^>]*>([\s\S]*?)<\/div>/i,
+    /<span[^>]*class=["\x27][^"\x27]*st[^"\x27]*["\x27][^>]*>([\s\S]*?)<\/span>/i,
   ];
 
   for (const pattern of snippetPatterns) {
@@ -345,14 +345,22 @@ export function buildDiagnostics(fetches: ReadonlyArray<SearchFetchResult>, resu
 }
 
 export async function fetchSearchHtml(url: URL | string, label: string, headers: Record<string, string> = DEFAULT_HEADERS): Promise<SearchFetchResult> {
-  const response = await fetch(url, {
-    headers,
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 7500);
 
-  return {
-    label,
-    url: response.url,
-    status: response.status,
-    html: await response.text(),
-  };
+  try {
+    const response = await fetch(url, {
+      headers,
+      signal: controller.signal,
+    });
+
+    return {
+      label,
+      url: response.url,
+      status: response.status,
+      html: await response.text(),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
 }

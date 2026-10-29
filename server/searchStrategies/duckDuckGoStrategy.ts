@@ -21,46 +21,49 @@ const DUCKDUCKGO_INSTANT_ANSWER_URL = 'https://api.duckduckgo.com/';
 const DUCKDUCKGO_LITE_ESCALATION_THRESHOLD = 4;
 
 export function extractSearchResultsFromDuckDuckGoHtml(html: string): SearchFallbackResult[] {
-  const anchorPatterns = [
-    /<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi,
-    /<a[^>]*class="[^"]*result-link[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi,
-    /<a[^>]*href="([^"]*uddg=[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi,
-    /<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi,
-  ];
   const seenUrls = new Set<string>();
   const results: SearchFallbackResult[] = [];
 
-  for (const anchorPattern of anchorPatterns) {
-    let match: RegExpExecArray | null;
-    while ((match = anchorPattern.exec(html)) !== null && results.length < MAX_RESULTS_PER_DOCUMENT) {
-      const url = normalizeDuckDuckGoHref(match[1]);
-      if (!url || !isExternalResultUrl(url) || seenUrls.has(url)) {
-        continue;
-      }
+  // Match <a> tags with flexible quotes and arbitrary attribute order (e.g. DDG Lite where href precedes class and uses single quotes)
+  const aTagPattern = /<a\b([^>]*)>([\s\S]*?)<\/a>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = aTagPattern.exec(html)) !== null && results.length < MAX_RESULTS_PER_DOCUMENT) {
+    const attrs = match[1];
+    const isTargetAnchor =
+      /class=["\x27][^"\x27]*(?:result__a|result-link)[^"\x27]*["\x27]/i.test(attrs) ||
+      /uddg=/i.test(attrs);
+    if (!isTargetAnchor) continue;
 
-      const title = stripHtmlToText(match[2]);
-      if (!isLikelyResultTitle(title)) {
-        continue;
-      }
+    const hrefMatch = attrs.match(/href=["\x27]([^"\x27]+)["\x27]/i);
+    if (!hrefMatch?.[1]) continue;
 
-      const contextHtml = html.slice(match.index, match.index + 2800);
-      const snippet = extractSnippetFromContext(contextHtml, title);
-      if (snippet.length < 30) {
-        continue;
-      }
+    const url = normalizeDuckDuckGoHref(hrefMatch[1]);
+    if (!url || !isExternalResultUrl(url) || seenUrls.has(url)) {
+      continue;
+    }
 
-      try {
-        const parsedUrl = new URL(url);
-        results.push({
-          title,
-          url,
-          domain: parsedUrl.hostname.replace(/^www\./, ''),
-          snippet,
-        });
-        seenUrls.add(url);
-      } catch {
-        // Ignore malformed URLs.
-      }
+    const title = stripHtmlToText(match[2]);
+    if (!isLikelyResultTitle(title)) {
+      continue;
+    }
+
+    const contextHtml = html.slice(match.index, match.index + 2800);
+    const snippet = extractSnippetFromContext(contextHtml, title);
+    if (snippet.length < 30) {
+      continue;
+    }
+
+    try {
+      const parsedUrl = new URL(url);
+      results.push({
+        title,
+        url,
+        domain: parsedUrl.hostname.replace(/^www\./, ''),
+        snippet,
+      });
+      seenUrls.add(url);
+    } catch {
+      // Ignore malformed URLs.
     }
   }
 
@@ -150,29 +153,12 @@ export async function fetchDuckDuckGoAttempt(query: string, labelSuffix: string)
 }
 
 export async function fetchDuckDuckGoLiteAttempt(query: string, labelSuffix: string): Promise<SearchFetchResult | null> {
-  const body = new URLSearchParams();
-  body.set('q', query);
-  body.set('kl', 'us-en');
+  const searchUrl = new URL(DUCKDUCKGO_LITE_URL);
+  searchUrl.searchParams.set('q', query);
+  searchUrl.searchParams.set('kl', 'us-en');
 
   try {
-    const response = await fetch(DUCKDUCKGO_LITE_URL, {
-      method: 'POST',
-      headers: {
-        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'accept-language': 'en-US,en;q=0.9',
-        'cache-control': 'no-cache',
-        'content-type': 'application/x-www-form-urlencoded',
-        'user-agent': DEFAULT_HEADERS['user-agent'],
-      },
-      body: body.toString(),
-    });
-
-    return {
-      label: `duckduckgo-lite-${labelSuffix}`,
-      url: response.url || DUCKDUCKGO_LITE_URL,
-      status: response.status,
-      html: await response.text(),
-    };
+    return await fetchSearchHtml(searchUrl, `duckduckgo-lite-${labelSuffix}`);
   } catch {
     return null;
   }
