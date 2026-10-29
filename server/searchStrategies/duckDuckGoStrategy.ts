@@ -184,21 +184,18 @@ export async function fetchDuckDuckGoLiteAttempt(query: string, labelSuffix: str
   }
 
   try {
-    const form = new URLSearchParams({ q: query, kl: 'us-en' });
-    const postResponse = await fetch(DUCKDUCKGO_LITE_URL, {
-      method: 'POST',
-      headers: {
+    return await fetchSearchHtml(
+      DUCKDUCKGO_LITE_URL,
+      `duckduckgo-lite-post-${labelSuffix}`,
+      {
         ...DEFAULT_HEADERS,
         'content-type': 'application/x-www-form-urlencoded',
       },
-      body: form.toString(),
-    });
-    return {
-      label: `duckduckgo-lite-post-${labelSuffix}`,
-      url: postResponse.url,
-      status: postResponse.status,
-      html: await postResponse.text(),
-    };
+      {
+        method: 'POST',
+        body: new URLSearchParams({ q: query, kl: 'us-en' }).toString(),
+      }
+    );
   } catch {
     return null;
   }

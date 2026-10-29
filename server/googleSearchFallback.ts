@@ -47,8 +47,9 @@ const LEGACY_EVOLUTION_WEIGHTS = { alpha: 0.5, beta: 0.3, gamma: 0.2 };
 type RequestPayload = Record<string, unknown>;
 
 const MONTH_NAMES_PATTERN = '(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
-const MONTH_OR_YEAR_DATE_EXPR = `(?:${MONTH_NAMES_PATTERN}\\s+\\d{4}|\\d{4}\\s+${MONTH_NAMES_PATTERN}|\\d{4})`;
-const MONTH_YEAR_DATE_EXPR = `(?:${MONTH_NAMES_PATTERN}\\s+\\d{4}|\\d{4}\\s+${MONTH_NAMES_PATTERN})`;
+const YEAR_EXPR = '(?:19|20)\\d{2}';
+const MONTH_OR_YEAR_DATE_EXPR = `(?:${MONTH_NAMES_PATTERN}\\s+${YEAR_EXPR}|${YEAR_EXPR}\\s+${MONTH_NAMES_PATTERN}|${YEAR_EXPR})`;
+const MONTH_YEAR_DATE_EXPR = `(?:${MONTH_NAMES_PATTERN}\\s+${YEAR_EXPR}|${YEAR_EXPR}\\s+${MONTH_NAMES_PATTERN})`;
 const DATE_RANGE_PATTERN = new RegExp(`\\b(?:between|from)\\s+${MONTH_OR_YEAR_DATE_EXPR}\\s+(?:and|to)\\s+${MONTH_OR_YEAR_DATE_EXPR}\\b`, 'gi');
 const SINGLE_DATE_PATTERN = new RegExp(`\\b(?:between|from|and|to|in|during|due\\s+on)\\s+${MONTH_YEAR_DATE_EXPR}\\b`, 'gi');
 

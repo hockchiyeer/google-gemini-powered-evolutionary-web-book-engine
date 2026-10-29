@@ -137,6 +137,13 @@ assert.equal(isGoogleBlockedPage(blockedGoogleHtml), true);
   const yearOnlyFromTo = 'Malaysia political landscape from 2026 to 2028';
   assert.equal(stripDatePhrasing(yearOnlyFromTo), 'Malaysia political landscape');
   assert.ok(buildSearchQueryVariants(yearOnlyFromTo).includes('Malaysia political landscape'));
+
+  // Ordinary number ranges that are not calendar years should remain untouched
+  const numberRange1 = 'Cost between 1000 and 2000 ringgit';
+  assert.equal(stripDatePhrasing(numberRange1), 'Cost between 1000 and 2000 ringgit');
+
+  const numberRange2 = 'Price from 5000 to 9000 per sqm';
+  assert.equal(stripDatePhrasing(numberRange2), 'Price from 5000 to 9000 per sqm');
 }
 
 // 2. DuckDuckGo anchor parsing: canonical title link prioritized over secondary uddg anchors
@@ -217,6 +224,28 @@ assert.equal(isGoogleBlockedPage(blockedGoogleHtml), true);
     </table>
   `;
   assert.equal(extractSearchResultsFromDuckDuckGoHtml(ddgHtmlUrlAnchorFollowedByLongSnippet).length, 0);
+}
+
+// 3. DuckDuckGo snippet extraction: result__snippet takes precedence over result__extras display URL
+{
+  const html = `
+    <div class="result__body">
+      <h2 class="result__title">
+        <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fa">Title A</a>
+      </h2>
+      <div class="result__extras">
+        <div class="result__extras__url">
+          <a class="result__url" href="//duckduckgo.com/l/?uddg=x">example.com/a</a>
+        </div>
+      </div>
+      <a class="result__snippet" href="//duckduckgo.com/l/?uddg=x">Malaysia's unity government enters 2026 with a stronger majority.</a>
+    </div>
+  `;
+  const [r] = extractSearchResultsFromDuckDuckGoHtml(html);
+  assert.ok(r);
+  assert.equal(r.title, 'Title A');
+  assert.match(r.snippet, /^Malaysia's unity government/);
+  assert.doesNotMatch(r.snippet, /example\.com/);
 }
 
 console.log('googleSearchFallback request payload regression checks passed');

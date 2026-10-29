@@ -203,8 +203,12 @@ export function isLikelyResultTitle(title: string): boolean {
   if (NAVIGATION_NOISE.some((noise) => normalized === noise || normalized.startsWith(`${noise} `) || normalized.endsWith(` ${noise}`))) {
     return false;
   }
-  // Reject titles that are bare URLs or display domains (e.g. "example.com/path", "https://...", "www.example.com")
-  if (/^(?:https?:\/\/)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:\/[^\s]*)?$/i.test(normalized)) {
+  // Reject titles that are bare URLs or display domains (requiring http/www, a path slash, or a common web domain)
+  if (
+    /^(?:https?:\/\/|www\.)\S+$/i.test(normalized) ||
+    /^[a-z0-9_-]+(?:\.[a-z0-9_-]+)+\/[^\s]*$/i.test(normalized) ||
+    /^[a-z0-9_-]+\.(?:com|org|net|gov|edu|io|my|sg|info|biz|me)$/i.test(normalized)
+  ) {
     return false;
   }
   return /[a-z0-9]/i.test(normalized);
@@ -349,12 +353,18 @@ export function buildDiagnostics(fetches: ReadonlyArray<SearchFetchResult>, resu
   return diagnostics;
 }
 
-export async function fetchSearchHtml(url: URL | string, label: string, headers: Record<string, string> = DEFAULT_HEADERS): Promise<SearchFetchResult> {
+export async function fetchSearchHtml(
+  url: URL | string,
+  label: string,
+  headers: Record<string, string> = DEFAULT_HEADERS,
+  init: RequestInit = {}
+): Promise<SearchFetchResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
   try {
     const response = await fetch(url, {
+      ...init,
       headers,
       signal: controller.signal,
     });
