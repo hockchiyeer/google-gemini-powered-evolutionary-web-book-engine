@@ -778,7 +778,7 @@ export function synthesizeFallbackWebBook(
       content: narrative,
       definitions: claimFor(unplacedDefinitions, unitUrls, 3),
       subTopics: claimFor(unplacedSubTopics, unitUrls, 2),
-      sourceUrls: chapterSources.length > 0 ? chapterSources : validSources.slice(0, 5),
+      sourceUrls: chapterSources.length > 0 ? chapterSources : validSources.slice(0, 3),
       visualSeed: `${topic} ${bp.seed}`,
     });
   });
