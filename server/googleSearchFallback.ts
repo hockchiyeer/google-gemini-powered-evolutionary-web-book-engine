@@ -46,7 +46,20 @@ const LEGACY_EVOLUTION_WEIGHTS = { alpha: 0.5, beta: 0.3, gamma: 0.2 };
 
 type RequestPayload = Record<string, unknown>;
 
-function buildSearchQueryVariants(query: string): string[] {
+const MONTH_NAMES_PATTERN = '(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
+const DATE_EXPR = `(?:${MONTH_NAMES_PATTERN}\\s+\\d{4}|\\d{4}\\s+${MONTH_NAMES_PATTERN})`;
+const DATE_RANGE_PATTERN = new RegExp(`\\b(?:between|from)\\s+${DATE_EXPR}\\s+(?:and|to)\\s+${DATE_EXPR}\\b`, 'gi');
+const SINGLE_DATE_PATTERN = new RegExp(`\\b(?:between|from|and|to|in|during|due\\s+on)\\s+${DATE_EXPR}\\b`, 'gi');
+
+export function stripDatePhrasing(query: string): string {
+  return query
+    .replace(DATE_RANGE_PATTERN, '')
+    .replace(SINGLE_DATE_PATTERN, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function buildSearchQueryVariants(query: string): string[] {
   const baseQuery = collapseWhitespace(query);
   const normalizedBase = normalizeComparableText(baseQuery);
   const variants: string[] = [];
@@ -70,13 +83,9 @@ function buildSearchQueryVariants(query: string): string[] {
     variants.push(candidate);
   }
 
-  // If the query has date-range or calendar phrasing (e.g. "between Nov 2026 and Dec 2028"),
+  // If the query has date-range or calendar phrasing (e.g. "between Nov 2026 and Dec 2028" or "between 2026 Nov and 2028 Dec"),
   // also add a distilled variant without the narrow date words to ensure search engines return live results.
-  const dateStripped = baseQuery
-    .replace(/\bbetween\s+[A-Za-z]+\s+\d{4}\s+and\s+[A-Za-z]+\s+\d{4}\b/gi, '')
-    .replace(/\b(between|from|and|in|during|due\s+on)\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}\b/gi, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const dateStripped = stripDatePhrasing(baseQuery);
   const normalizedDateStripped = normalizeComparableText(dateStripped);
   if (normalizedDateStripped && !seen.has(normalizedDateStripped) && dateStripped.length >= 8) {
     seen.add(normalizedDateStripped);

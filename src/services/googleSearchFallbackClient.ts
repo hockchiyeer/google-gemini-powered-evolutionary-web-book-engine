@@ -81,11 +81,12 @@ function getFallbackRequestBase(): string {
     if (window.location?.origin && window.location.origin !== 'null') {
       return window.location.origin;
     }
-    if (window.location?.href && window.location.href !== 'null' && !window.location.href.startsWith('about:')) {
+    if (window.location?.href && !window.location.href.startsWith('about:')) {
       return window.location.href;
     }
   }
-  return 'http://localhost:3000';
+  const port = (typeof process !== 'undefined' && process.env?.PORT) ? process.env.PORT : 3000;
+  return `http://127.0.0.1:${port}`;
 }
 
 export async function fetchGoogleSearchFallback(

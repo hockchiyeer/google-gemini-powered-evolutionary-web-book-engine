@@ -582,14 +582,19 @@ export async function searchAndExtract(
     // abbreviations into fragments that were then shown as definitions.
     const sentences = splitIntoSentences(sanitizeNarrativeText(rawContent)).filter(s => s.length > 20);
 
-    // Only sentences that really state "term: description" / "term is ..." become definitions. Others are no longer given a
-    // placeholder "Concept N" label; they stay in `content`, which the offline assembler uses as narrative.
-    const definitions: Definition[] = sentences.slice(0, 3).flatMap((sent) => {
-      const [term, ...rest] = sent.split(/:\s*|\s+is\s+|\s+refers to\s+/i);
-      return rest.length > 0
-        ? [{ term: term.slice(0, 40).trim(), description: rest.join(' ').trim(), sourceUrl: res.url }]
-        : [];
-    }).filter(d => isMeaningful(d.term, d.description));
+    // Only sentences that really state "term: description" / "term is defined as / refers to / represents" become definitions.
+    const definitions: Definition[] = [];
+    for (const sent of sentences) {
+      const match = sent.match(/^([^:\n]{3,40}):\s+(.+)$/) ||
+        sent.match(/^([A-Z][a-zA-Z0-9\s\-]{2,35})\s+(?:is defined as|refers to|represents)\s+(.+)$/i);
+      if (match) {
+        const term = match[1].trim(), desc = match[2].trim();
+        if (term.length >= 3 && term.length <= 40 && desc.length >= 25 && isMeaningful(term, desc)) {
+          definitions.push({ term, description: desc, sourceUrl: res.url });
+          break;
+        }
+      }
+    }
 
     return {
       id: `fallback-${index}-${Date.now()}`,

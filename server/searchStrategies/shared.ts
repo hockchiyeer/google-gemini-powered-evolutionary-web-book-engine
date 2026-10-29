@@ -4,6 +4,7 @@ import type { SearchFetchResult } from './types.ts';
 
 export const MAX_RESULTS = 48;
 export const MAX_RESULTS_PER_DOCUMENT = 12;
+export const FETCH_TIMEOUT_MS = 7500;
 
 export const DEFAULT_HEADERS = {
   'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -210,7 +211,7 @@ export function extractSnippetFromContext(contextHtml: string, title: string): s
     /<div[^>]*class=["\x27][^"\x27]*VwiC3b[^"\x27]*["\x27][^>]*>([\s\S]*?)<\/div>/i,
     /<div[^>]*class=["\x27][^"\x27]*BNeawe[^"\x27]*s3v9rd[^"\x27]*["\x27][^>]*>([\s\S]*?)<\/div>/i,
     /<span[^>]*class=["\x27][^"\x27]*aCOpRe[^"\x27]*["\x27][^>]*>([\s\S]*?)<\/span>/i,
-    /<div[^>]*data-sncf="[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+    /<div[^>]*data-sncf=["\x27][^"\x27]*["\x27][^>]*>([\s\S]*?)<\/div>/i,
     /<div[^>]*class=["\x27][^"\x27]*MUFwZ[^"\x27]*["\x27][^>]*>([\s\S]*?)<\/div>/i,
     /<div[^>]*class=["\x27][^"\x27]*yD979[^"\x27]*["\x27][^>]*>([\s\S]*?)<\/div>/i,
     /<div[^>]*class=["\x27][^"\x27]*K8v00d[^"\x27]*["\x27][^>]*>([\s\S]*?)<\/div>/i,
@@ -346,7 +347,7 @@ export function buildDiagnostics(fetches: ReadonlyArray<SearchFetchResult>, resu
 
 export async function fetchSearchHtml(url: URL | string, label: string, headers: Record<string, string> = DEFAULT_HEADERS): Promise<SearchFetchResult> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 7500);
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
   try {
     const response = await fetch(url, {

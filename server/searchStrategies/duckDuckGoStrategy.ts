@@ -20,7 +20,7 @@ const DUCKDUCKGO_LITE_URL = 'https://lite.duckduckgo.com/lite/';
 const DUCKDUCKGO_INSTANT_ANSWER_URL = 'https://api.duckduckgo.com/';
 const DUCKDUCKGO_LITE_ESCALATION_THRESHOLD = 4;
 
-export function extractSearchResultsFromDuckDuckGoHtml(html: string): SearchFallbackResult[] {
+function parseDuckDuckGoAnchors(html: string, requireClassMatch: boolean): SearchFallbackResult[] {
   const seenUrls = new Set<string>();
   const results: SearchFallbackResult[] = [];
 
@@ -29,12 +29,14 @@ export function extractSearchResultsFromDuckDuckGoHtml(html: string): SearchFall
   let match: RegExpExecArray | null;
   while ((match = aTagPattern.exec(html)) !== null && results.length < MAX_RESULTS_PER_DOCUMENT) {
     const attrs = match[1];
-    const isTargetAnchor =
-      /class=["\x27][^"\x27]*(?:result__a|result-link)[^"\x27]*["\x27]/i.test(attrs) ||
-      /uddg=/i.test(attrs);
-    if (!isTargetAnchor) continue;
+    const hasClass = /class=["\x27][^"\x27]*(?:result__a|result-link)[^"\x27]*["\x27]/i.test(attrs);
+    const hasUddg = /[\?&]uddg=/i.test(attrs);
 
-    const hrefMatch = attrs.match(/href=["\x27]([^"\x27]+)["\x27]/i);
+    if (requireClassMatch ? !hasClass : (!hasClass && !hasUddg)) {
+      continue;
+    }
+
+    const hrefMatch = attrs.match(/\shref=["\x27]([^"\x27]+)["\x27]/i);
     if (!hrefMatch?.[1]) continue;
 
     const url = normalizeDuckDuckGoHref(hrefMatch[1]);
@@ -68,6 +70,16 @@ export function extractSearchResultsFromDuckDuckGoHtml(html: string): SearchFall
   }
 
   return results;
+}
+
+export function extractSearchResultsFromDuckDuckGoHtml(html: string): SearchFallbackResult[] {
+  // First, prioritize canonical title links (result__a or result-link)
+  const primaryResults = parseDuckDuckGoAnchors(html, true);
+  if (primaryResults.length > 0) {
+    return primaryResults;
+  }
+  // Fallback if class names changed: allow any anchor carrying uddg parameter
+  return parseDuckDuckGoAnchors(html, false);
 }
 
 export function collectInstantAnswerTopics(topics: any[]): Array<{ text: string; firstUrl: string }> {

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
-import { extractRequestedFallbackMode, parseRequestPayload } from '../../server/googleSearchFallback.ts';
+import { buildSearchQueryVariants, extractRequestedFallbackMode, parseRequestPayload, stripDatePhrasing } from '../../server/googleSearchFallback.ts';
 import { isGoogleBlockedPage } from '../../server/searchStrategies/googleStrategy.ts';
+import { extractSearchResultsFromDuckDuckGoHtml } from '../../server/searchStrategies/duckDuckGoStrategy.ts';
 import { buildFallbackOverviewTitle, buildFallbackSearchUrl } from '../../src/services/searchFallbackShared.ts';
 import { isSearchFallbackReason } from '../../src/types.ts';
 
@@ -108,5 +109,89 @@ const blockedGoogleHtml = `
 `;
 
 assert.equal(isGoogleBlockedPage(blockedGoogleHtml), true);
+
+// 1. Date stripping and query variant generation with bidirectional month/year ordering
+{
+  const yearFirstRange = 'Malaysia political landscape between 2026 Nov and 2028 Dec';
+  assert.equal(stripDatePhrasing(yearFirstRange), 'Malaysia political landscape');
+  const variantsYearFirst = buildSearchQueryVariants(yearFirstRange);
+  assert.ok(variantsYearFirst.includes('Malaysia political landscape'));
+
+  const monthFirstRange = 'Malaysia political landscape between Nov 2026 and Dec 2028';
+  assert.equal(stripDatePhrasing(monthFirstRange), 'Malaysia political landscape');
+  const variantsMonthFirst = buildSearchQueryVariants(monthFirstRange);
+  assert.ok(variantsMonthFirst.includes('Malaysia political landscape'));
+
+  const singleMonthFirst = 'Malaysia election in November 2026';
+  assert.equal(stripDatePhrasing(singleMonthFirst), 'Malaysia election');
+  assert.ok(buildSearchQueryVariants(singleMonthFirst).includes('Malaysia election'));
+
+  const singleYearFirst = 'Malaysia election in 2026 November';
+  assert.equal(stripDatePhrasing(singleYearFirst), 'Malaysia election');
+  assert.ok(buildSearchQueryVariants(singleYearFirst).includes('Malaysia election'));
+}
+
+// 2. DuckDuckGo anchor parsing: canonical title link prioritized over secondary uddg anchors
+{
+  const ddgHtmlWithMultipleUddg = `
+    <table>
+      <tr>
+        <td>
+          <a class='result-link' href='//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fanalysis&rut=1'>
+            <b>Analysis</b> of Malaysia Political Landscape
+          </a>
+        </td>
+      </tr>
+      <tr>
+        <td class='result-snippet'>
+          Comprehensive analysis of coalition shifts, parliamentary alignments, and electoral developments in Malaysia.
+        </td>
+      </tr>
+      <tr>
+        <td>
+          <a class='result-url' href='//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fanalysis'>example.com/analysis</a>
+        </td>
+      </tr>
+    </table>
+  `;
+
+  const results = extractSearchResultsFromDuckDuckGoHtml(ddgHtmlWithMultipleUddg);
+  assert.equal(results.length, 1);
+  assert.equal(results[0].title, 'Analysis of Malaysia Political Landscape');
+  assert.equal(results[0].url, 'https://example.com/analysis');
+  assert.equal(results[0].domain, 'example.com');
+  assert.ok(results[0].snippet.includes('Comprehensive analysis of coalition shifts'));
+
+  // If a title anchor's snippet is too short (<30 chars), secondary URL anchor should NOT become a result
+  const ddgHtmlWithShortSnippet = `
+    <table>
+      <tr>
+        <td>
+          <a class='result-link' href='//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fshort&rut=1'>
+            Short Snippet Title
+          </a>
+        </td>
+      </tr>
+      <tr>
+        <td class='result-snippet'>
+          Too short.
+        </td>
+      </tr>
+      <tr>
+        <td>
+          <a class='result-url' href='//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fshort'>example.com/short</a>
+        </td>
+      </tr>
+    </table>
+  `;
+  const emptyResults = extractSearchResultsFromDuckDuckGoHtml(ddgHtmlWithShortSnippet);
+  assert.equal(emptyResults.length, 0);
+
+  // data-href should not be mistaken for href
+  const ddgHtmlDataHref = `
+    <a class='result-link' data-href='//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fdata'>No Href Link</a>
+  `;
+  assert.equal(extractSearchResultsFromDuckDuckGoHtml(ddgHtmlDataHref).length, 0);
+}
 
 console.log('googleSearchFallback request payload regression checks passed');
