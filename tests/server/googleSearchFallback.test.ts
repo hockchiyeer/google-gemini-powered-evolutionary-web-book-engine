@@ -129,6 +129,14 @@ assert.equal(isGoogleBlockedPage(blockedGoogleHtml), true);
   const singleYearFirst = 'Malaysia election in 2026 November';
   assert.equal(stripDatePhrasing(singleYearFirst), 'Malaysia election');
   assert.ok(buildSearchQueryVariants(singleYearFirst).includes('Malaysia election'));
+
+  const yearOnlyBetween = 'Malaysia political landscape between 2026 and 2028';
+  assert.equal(stripDatePhrasing(yearOnlyBetween), 'Malaysia political landscape');
+  assert.ok(buildSearchQueryVariants(yearOnlyBetween).includes('Malaysia political landscape'));
+
+  const yearOnlyFromTo = 'Malaysia political landscape from 2026 to 2028';
+  assert.equal(stripDatePhrasing(yearOnlyFromTo), 'Malaysia political landscape');
+  assert.ok(buildSearchQueryVariants(yearOnlyFromTo).includes('Malaysia political landscape'));
 }
 
 // 2. DuckDuckGo anchor parsing: canonical title link prioritized over secondary uddg anchors
@@ -192,6 +200,23 @@ assert.equal(isGoogleBlockedPage(blockedGoogleHtml), true);
     <a class='result-link' data-href='//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fdata'>No Href Link</a>
   `;
   assert.equal(extractSearchResultsFromDuckDuckGoHtml(ddgHtmlDataHref).length, 0);
+
+  // A secondary URL anchor followed by a long snippet is rejected because it is a display URL/domain
+  const ddgHtmlUrlAnchorFollowedByLongSnippet = `
+    <table>
+      <tr>
+        <td>
+          <a class='result-url' href='//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Ftarget'>example.com/target</a>
+        </td>
+      </tr>
+      <tr>
+        <td class='result-snippet'>
+          This is a sufficiently long snippet that would pass length checks if the anchor was mistakenly treated as a title.
+        </td>
+      </tr>
+    </table>
+  `;
+  assert.equal(extractSearchResultsFromDuckDuckGoHtml(ddgHtmlUrlAnchorFollowedByLongSnippet).length, 0);
 }
 
 console.log('googleSearchFallback request payload regression checks passed');

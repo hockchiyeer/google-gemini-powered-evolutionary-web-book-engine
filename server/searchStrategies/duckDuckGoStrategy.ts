@@ -36,6 +36,11 @@ function parseDuckDuckGoAnchors(html: string, requireClassMatch: boolean): Searc
       continue;
     }
 
+    // In fallback pass, explicitly ignore anchors known to be display URLs, snippets, or extras
+    if (!requireClassMatch && /class=["\x27][^"\x27]*(?:result[-_]+(?:url|extras|snippet)|badge)[^"\x27]*["\x27]/i.test(attrs)) {
+      continue;
+    }
+
     const hrefMatch = attrs.match(/\shref=["\x27]([^"\x27]+)["\x27]/i);
     if (!hrefMatch?.[1]) continue;
 
@@ -170,7 +175,30 @@ export async function fetchDuckDuckGoLiteAttempt(query: string, labelSuffix: str
   searchUrl.searchParams.set('kl', 'us-en');
 
   try {
-    return await fetchSearchHtml(searchUrl, `duckduckgo-lite-${labelSuffix}`);
+    const getResult = await fetchSearchHtml(searchUrl, `duckduckgo-lite-get-${labelSuffix}`);
+    if (getResult.status === 200) {
+      return getResult;
+    }
+  } catch {
+    // Continue to POST attempt
+  }
+
+  try {
+    const form = new URLSearchParams({ q: query, kl: 'us-en' });
+    const postResponse = await fetch(DUCKDUCKGO_LITE_URL, {
+      method: 'POST',
+      headers: {
+        ...DEFAULT_HEADERS,
+        'content-type': 'application/x-www-form-urlencoded',
+      },
+      body: form.toString(),
+    });
+    return {
+      label: `duckduckgo-lite-post-${labelSuffix}`,
+      url: postResponse.url,
+      status: postResponse.status,
+      html: await postResponse.text(),
+    };
   } catch {
     return null;
   }

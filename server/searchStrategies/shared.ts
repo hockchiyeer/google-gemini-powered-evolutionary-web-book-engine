@@ -203,6 +203,10 @@ export function isLikelyResultTitle(title: string): boolean {
   if (NAVIGATION_NOISE.some((noise) => normalized === noise || normalized.startsWith(`${noise} `) || normalized.endsWith(` ${noise}`))) {
     return false;
   }
+  // Reject titles that are bare URLs or display domains (e.g. "example.com/path", "https://...", "www.example.com")
+  if (/^(?:https?:\/\/)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:\/[^\s]*)?$/i.test(normalized)) {
+    return false;
+  }
   return /[a-z0-9]/i.test(normalized);
 }
 
@@ -211,7 +215,7 @@ export function extractSnippetFromContext(contextHtml: string, title: string): s
     /<div[^>]*class=["\x27][^"\x27]*VwiC3b[^"\x27]*["\x27][^>]*>([\s\S]*?)<\/div>/i,
     /<div[^>]*class=["\x27][^"\x27]*BNeawe[^"\x27]*s3v9rd[^"\x27]*["\x27][^>]*>([\s\S]*?)<\/div>/i,
     /<span[^>]*class=["\x27][^"\x27]*aCOpRe[^"\x27]*["\x27][^>]*>([\s\S]*?)<\/span>/i,
-    /<div[^>]*data-sncf=["\x27][^"\x27]*["\x27][^>]*>([\s\S]*?)<\/div>/i,
+    /<div[^>]*data-s[nc]{2}f=["\x27][^"\x27]*["\x27][^>]*>([\s\S]*?)<\/div>/i,
     /<div[^>]*class=["\x27][^"\x27]*MUFwZ[^"\x27]*["\x27][^>]*>([\s\S]*?)<\/div>/i,
     /<div[^>]*class=["\x27][^"\x27]*yD979[^"\x27]*["\x27][^>]*>([\s\S]*?)<\/div>/i,
     /<div[^>]*class=["\x27][^"\x27]*K8v00d[^"\x27]*["\x27][^>]*>([\s\S]*?)<\/div>/i,
