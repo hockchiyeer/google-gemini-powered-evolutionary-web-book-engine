@@ -469,9 +469,10 @@ assert.equal(
   'Every sentence in the synthesized webbook must be unique across all chapters.'
 );
 
-assert.ok(
-  totalSentencesCount >= 12,
-  `Synthesized webbook should yield at least 12 distinct sentences across 6 chapters (got ${totalSentencesCount}).`
+assert.equal(
+  totalSentencesCount,
+  24,
+  `Synthesized webbook should yield exactly 24 distinct sentences across 6 chapters (got ${totalSentencesCount}).`
 );
 
 const citedUrls = new Set(
@@ -479,5 +480,122 @@ const citedUrls = new Set(
 );
 assert.equal(citedUrls.size, 12, 'All 12 distinct evidence sources must be cited across the webbook chapters.');
 assert.ok(!citedUrls.has('https://news-outlet-dup.org/article-dup'), 'Near-duplicate page should be deduplicated out and not cited.');
+
+// Additional test case: Verify that a chapter drawing on >3 sources is NOT capped at 3 sources
+const multiSourceSentences = [
+  'Subsidy restructuring realignment reduces state fiscal overheads considerably.',
+  'Coalition negotiations dictate parliamentary majority stability for legislative agendas.',
+  'Fiscal reforms stabilize sovereign credit standing across global rating agencies.',
+  'State assembly elections indicate shifting voter sentiment across rural demographics.',
+  'Youth voter participation increases electoral volatility in urban seats.',
+  'Rural constituency boundaries rebalance seat allocation across federal states.',
+  'Urban sentiment reflects inflation concerns and cost of living pressure points.',
+  'Political financing legislation regulates corporate campaign donations transparently.',
+  'Judicial review rulings maintain constitutional separation of powers effectively.',
+  'Federal fiscal transfers support state infrastructure development budgets equally.',
+  'Petroleum royalty distribution agreements impact state revenue allocation models.',
+  'Tax collection efficiency improves under modernized digital compliance systems.',
+  'Inflation targeting policies balance price stability with economic growth momentum.',
+  'Infrastructure investment accelerates regional connectivity projects across corridors.',
+  'Export competitiveness relies on currency valuation stability and port efficiency.',
+  'Labor market reforms address wage stagnation and youth underemployment rates.',
+  'Renewable energy transition incentives drive green economy capital investment.',
+  'Digital economy regulatory frameworks foster technology startup ecosystem expansion.',
+  'Healthcare expenditure expansion improves rural clinic access and medical supply.',
+  'Education curriculum modernization enhances technical workforce skill readiness.',
+  'Agricultural subsidy targets ensure food security across vulnerable communities.',
+  'Social safety net programs mitigate household economic vulnerability nationwide.',
+  'Decentralization initiatives grant regional authorities broader fiscal autonomy.',
+  'Public sector governance reforms reduce administrative overhead and bureaucracy.',
+];
+
+const multiSourcePages = multiSourceSentences.map((sentence, i) => ({
+  id: `ms-page-${i + 1}`,
+  title: `Multi-Source Page ${i + 1}`,
+  url: `https://multi-ref-outlet-${i + 1}.org/article-${i + 1}`,
+  content: sentence,
+  definitions: [],
+  subTopics: [],
+  informativeScore: 0.9,
+  authorityScore: 0.9,
+}));
+
+const multiSourceBook = synthesizeFallbackWebBook('Malaysia Governance Overview', multiSourcePages as any);
+assert.equal(multiSourceBook.chapters.length, 6, 'Multi-source synthesis must generate 6 chapters.');
+const maxListedSources = Math.max(...multiSourceBook.chapters.map((c) => c.sourceUrls.length));
+assert.ok(
+  maxListedSources > 3,
+  `A chapter drawing on >3 sources must list all contributing sources without an artificial 3-source cap (max listed was ${maxListedSources}).`
+);
+assert.ok(
+  multiSourceBook.chapters.every((c) => c.sourceUrls.length === 4),
+  'Every chapter in 24-sentence multi-source synthesis must list all 4 of its contributing sources.'
+);
+
+// Verify duplicate ordering precedence: earlier page in source pool is retained, later duplicate is dropped
+const dupFirstPages = [
+  {
+    id: 'page-earlier',
+    title: 'Earlier Page',
+    url: 'https://news-outlet-earlier.org/article-1',
+    content: 'Subsidy restructuring realignment reduces state fiscal overheads considerably.',
+    definitions: [],
+    subTopics: [],
+    informativeScore: 0.9,
+    authorityScore: 0.9,
+  },
+  {
+    id: 'page-later',
+    title: 'Later Page',
+    url: 'https://news-outlet-later.org/article-2',
+    content: 'Subsidy restructuring realignment reduces state fiscal overheads considerably.',
+    definitions: [],
+    subTopics: [],
+    informativeScore: 0.9,
+    authorityScore: 0.9,
+  },
+];
+const dupFirstBook = synthesizeFallbackWebBook('Malaysia Fiscal Policy', dupFirstPages as any);
+const dupFirstCitedUrls = new Set(
+  dupFirstBook.chapters.flatMap((c) => c.sourceUrls.map((s) => (typeof s === 'string' ? s : s.url)))
+);
+assert.ok(dupFirstCitedUrls.has('https://news-outlet-earlier.org/article-1'), 'Earlier duplicate page should be retained.');
+assert.ok(!dupFirstCitedUrls.has('https://news-outlet-later.org/article-2'), 'Later duplicate page should be dropped.');
+
+// Verify earlier page retained over a later longer duplicate page
+const dupLaterLongerPages = [
+  {
+    id: 'page-earlier-short',
+    title: 'Earlier Page Short',
+    url: 'https://news-outlet-earlier-short.org/article-1',
+    content: 'Subsidy restructuring realignment reduces state fiscal overheads considerably.',
+    definitions: [],
+    subTopics: [],
+    informativeScore: 0.9,
+    authorityScore: 0.9,
+  },
+  {
+    id: 'page-later-long',
+    title: 'Later Page Long',
+    url: 'https://news-outlet-later-long.org/article-2',
+    content: 'Subsidy restructuring realignment reduces state fiscal overheads considerably. Additional secondary sentence for the longer page.',
+    definitions: [],
+    subTopics: [],
+    informativeScore: 0.9,
+    authorityScore: 0.9,
+  },
+];
+const dupLaterLongerBook = synthesizeFallbackWebBook('Malaysia Fiscal Policy', dupLaterLongerPages as any);
+const dupLaterLongerCitedUrls = new Set(
+  dupLaterLongerBook.chapters.flatMap((c) => c.sourceUrls.map((s) => (typeof s === 'string' ? s : s.url)))
+);
+assert.ok(
+  dupLaterLongerCitedUrls.has('https://news-outlet-earlier-short.org/article-1'),
+  'Earlier duplicate page should be retained regardless of length.'
+);
+assert.ok(
+  dupLaterLongerCitedUrls.has('https://news-outlet-later-long.org/article-2'),
+  'Later page should still be cited for its own unique sentence.'
+);
 
 console.log('evolutionService regression checks passed');
