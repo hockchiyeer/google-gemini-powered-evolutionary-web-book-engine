@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { buildSearchQueryVariants, extractRequestedFallbackMode, parseRequestPayload, stripDatePhrasing } from '../../server/googleSearchFallback.ts';
+import { normalizeComparableText } from '../../server/searchStrategies/shared.ts';
 import { isGoogleBlockedPage } from '../../server/searchStrategies/googleStrategy.ts';
 import { extractSearchResultsFromDuckDuckGoHtml } from '../../server/searchStrategies/duckDuckGoStrategy.ts';
 import { buildFallbackOverviewTitle, buildFallbackSearchUrl } from '../../src/services/searchFallbackShared.ts';
@@ -258,9 +259,13 @@ assert.equal(isGoogleBlockedPage(blockedGoogleHtml), true);
 
 // 4. Non-Latin script preservation and CJK variant checks
 {
-  const cjkVariants = buildSearchQueryVariants('马来西亚政治格局');
+  assert.notEqual(normalizeComparableText('马来西亚'), '');
+  assert.notEqual(normalizeComparableText('москва'), '');
+  assert.notEqual(normalizeComparableText('กรุงเทพ'), '');
+
+  const cjkVariants = buildSearchQueryVariants('马来西亚政治格局在2026年');
   assert.ok(cjkVariants.includes('马来西亚政治格局'));
-  assert.ok(cjkVariants.length >= 1);
+  assert.ok(cjkVariants.length >= 2);
 }
 
 console.log('googleSearchFallback request payload regression checks passed');
