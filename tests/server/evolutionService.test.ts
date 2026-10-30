@@ -12,6 +12,7 @@ import {
   sanitizeStructuredLabel,
   sanitizeWebBookForPresentation,
 } from '../../src/utils/webBookRender.ts';
+import { synthesizeFallbackWebBook } from '../../src/services/evolutionService.ts';
 
 assert.equal(
   GEMINI_REQUEST_TIMEOUT_MS,
@@ -370,6 +371,52 @@ assert.equal(
   [...repeatedSourceCounts.values()].some((count) => count > 1),
   false,
   'Fallback chapter source trails should prefer fresh URLs across the book instead of repeating the same link on multiple pages.'
+);
+
+// Verify synthesizeFallbackWebBook directly on a multi-source pool:
+// 1. Every sentence in the generated webbook across chapters is unique.
+// 2. Each chapter's sourceUrls includes the URL of every source page whose sentence appears in its content.
+const samplePages = Array.from({ length: 12 }, (_, i) => ({
+  id: `page-${i + 1}`,
+  title: `Analysis Page ${i + 1}`,
+  url: `https://news-outlet-${i + 1}.org/article-${i + 1}`,
+  content: `Key political analysis paragraph for topic section ${i + 1} with unique evidence. Second supporting statement about electoral developments for item ${i + 1}.`,
+  definitions: [{ term: `Term ${i + 1}`, description: `Definition description for term ${i + 1}.`, sourceUrl: `https://news-outlet-${i + 1}.org/article-${i + 1}` }],
+  subTopics: [{ title: `Subtopic ${i + 1}`, summary: `Summary description for subtopic ${i + 1}.`, sourceUrl: `https://news-outlet-${i + 1}.org/article-${i + 1}` }],
+  informativeScore: 0.9,
+  authorityScore: 0.9,
+}));
+
+const synthesizedBook = synthesizeFallbackWebBook('Malaysia Political Landscape', samplePages as any);
+
+const allSentences = new Set<string>();
+let totalSentencesCount = 0;
+
+synthesizedBook.chapters.forEach((chapter) => {
+  const chapterSentences = chapter.content.split(/(?<=[.!?])\s+/).filter((s) => s.trim().length > 0);
+  chapterSentences.forEach((sentence) => {
+    totalSentencesCount++;
+    allSentences.add(sentence.trim());
+  });
+
+  // Verify that each chapter's sourceUrls includes the URL of every page whose sentence appears in its content
+  const chapterSourceUrls = new Set(chapter.sourceUrls.map((s) => (typeof s === 'string' ? s : s.url)));
+  samplePages.forEach((page) => {
+    const pageSentences = page.content.split(/(?<=[.!?])\s+/).filter((s) => s.trim().length > 0);
+    const pageUsedInChapter = pageSentences.some((ps) => chapter.content.includes(ps.trim()));
+    if (pageUsedInChapter) {
+      assert.ok(
+        chapterSourceUrls.has(page.url),
+        `Chapter "${chapter.title}" missing source URL ${page.url} for sentence used in narrative.`
+      );
+    }
+  });
+});
+
+assert.equal(
+  allSentences.size,
+  totalSentencesCount,
+  'Every sentence in the fallback synthesized webbook must be unique across all chapters.'
 );
 
 console.log('evolutionService regression checks passed');

@@ -245,7 +245,7 @@ assert.equal(isGoogleBlockedPage(blockedGoogleHtml), true);
   assert.ok(r);
   assert.equal(r.title, 'Title A');
   assert.match(r.snippet, /^Malaysia's unity government/);
-  assert.doesNotMatch(r.snippet, /example\.com/);
+  assert.doesNotMatch(r.snippet, /themalaysiantimes/);
 }
 
 console.log('googleSearchFallback request payload regression checks passed');
