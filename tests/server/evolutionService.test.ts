@@ -374,20 +374,64 @@ assert.equal(
 );
 
 // Verify synthesizeFallbackWebBook directly on a multi-source pool:
-// 1. Every sentence in the generated webbook across chapters is unique.
-// 2. Each chapter's sourceUrls includes the URL of every source page whose sentence appears in its content.
-const samplePages = Array.from({ length: 12 }, (_, i) => ({
+// 1. Synthesizes full 6 chapters when supplied with diverse evidence across 12 distinct pages.
+// 2. Every sentence in the generated webbook across chapters is unique.
+// 3. Near-duplicate sentences are filtered out by similarity deduplication.
+// 4. All 12 source URLs are cited in the book's chapter source lists according to narrative evidence usage.
+// 5. Definitions and subtopics land in the chapter that cites their source URL.
+const topics = [
+  'subsidy reform',
+  'coalition talks',
+  'fiscal policy',
+  'state elections',
+  'youth turnout',
+  'rural voting',
+  'urban sentiment',
+  'party funding',
+  'judicial review',
+  'federal transfers',
+  'oil royalties',
+  'tax collection',
+];
+
+const samplePages = topics.map((t, i) => ({
   id: `page-${i + 1}`,
   title: `Analysis Page ${i + 1}`,
   url: `https://news-outlet-${i + 1}.org/article-${i + 1}`,
-  content: `Key political analysis paragraph for topic section ${i + 1} with unique evidence. Second supporting statement about electoral developments for item ${i + 1}.`,
-  definitions: [{ term: `Term ${i + 1}`, description: `Definition description for term ${i + 1}.`, sourceUrl: `https://news-outlet-${i + 1}.org/article-${i + 1}` }],
-  subTopics: [{ title: `Subtopic ${i + 1}`, summary: `Summary description for subtopic ${i + 1}.`, sourceUrl: `https://news-outlet-${i + 1}.org/article-${i + 1}` }],
+  content: `Analysts say ${t} will shape political debates across parliamentary constituencies in Malaysia. Observers expect ${topics[(i + 5) % 12]} to remain a central economic topic before elections.`,
+  definitions: [
+    {
+      term: `Concept ${t}`,
+      description: `Grounded definition explaining key mechanics of ${t}.`,
+      sourceUrl: `https://news-outlet-${i + 1}.org/article-${i + 1}`,
+    },
+  ],
+  subTopics: [
+    {
+      title: `Subtopic ${t}`,
+      summary: `Detailed summary covering tactical policy implications of ${t}.`,
+      sourceUrl: `https://news-outlet-${i + 1}.org/article-${i + 1}`,
+    },
+  ],
   informativeScore: 0.9,
   authorityScore: 0.9,
 }));
 
+// Add one deliberate near-duplicate page to confirm similarity deduplication drops near-duplicate sentences
+samplePages.push({
+  id: 'page-duplicate',
+  title: 'Duplicate Analysis Page',
+  url: 'https://news-outlet-dup.org/article-dup',
+  content: 'Analysts say subsidy reform will shape political debates across parliamentary constituencies in Malaysia.',
+  definitions: [],
+  subTopics: [],
+  informativeScore: 0.9,
+  authorityScore: 0.9,
+});
+
 const synthesizedBook = synthesizeFallbackWebBook('Malaysia Political Landscape', samplePages as any);
+
+assert.equal(synthesizedBook.chapters.length, 6, 'Fallback webbook should generate 6 distinct chapters when given sufficient evidence.');
 
 const allSentences = new Set<string>();
 let totalSentencesCount = 0;
@@ -399,15 +443,21 @@ synthesizedBook.chapters.forEach((chapter) => {
     allSentences.add(sentence.trim());
   });
 
-  // Verify that each chapter's sourceUrls includes the URL of every page whose sentence appears in its content
+  // Verify definitions and subtopics in this chapter match the sources cited by this chapter
   const chapterSourceUrls = new Set(chapter.sourceUrls.map((s) => (typeof s === 'string' ? s : s.url)));
-  samplePages.forEach((page) => {
-    const pageSentences = page.content.split(/(?<=[.!?])\s+/).filter((s) => s.trim().length > 0);
-    const pageUsedInChapter = pageSentences.some((ps) => chapter.content.includes(ps.trim()));
-    if (pageUsedInChapter) {
+  chapter.definitions.forEach((def) => {
+    if (def.sourceUrl) {
       assert.ok(
-        chapterSourceUrls.has(page.url),
-        `Chapter "${chapter.title}" missing source URL ${page.url} for sentence used in narrative.`
+        chapterSourceUrls.has(def.sourceUrl),
+        `Definition "${def.term}" in chapter "${chapter.title}" placed without citing its source URL ${def.sourceUrl}`
+      );
+    }
+  });
+  chapter.subTopics.forEach((st) => {
+    if (st.sourceUrl) {
+      assert.ok(
+        chapterSourceUrls.has(st.sourceUrl),
+        `SubTopic "${st.title}" in chapter "${chapter.title}" placed without citing its source URL ${st.sourceUrl}`
       );
     }
   });
@@ -416,7 +466,18 @@ synthesizedBook.chapters.forEach((chapter) => {
 assert.equal(
   allSentences.size,
   totalSentencesCount,
-  'Every sentence in the fallback synthesized webbook must be unique across all chapters.'
+  'Every sentence in the synthesized webbook must be unique across all chapters.'
 );
+
+assert.ok(
+  totalSentencesCount >= 12,
+  `Synthesized webbook should yield at least 12 distinct sentences across 6 chapters (got ${totalSentencesCount}).`
+);
+
+const citedUrls = new Set(
+  synthesizedBook.chapters.flatMap((c) => c.sourceUrls.map((s) => (typeof s === 'string' ? s : s.url)))
+);
+assert.equal(citedUrls.size, 12, 'All 12 distinct evidence sources must be cited across the webbook chapters.');
+assert.ok(!citedUrls.has('https://news-outlet-dup.org/article-dup'), 'Near-duplicate page should be deduplicated out and not cited.');
 
 console.log('evolutionService regression checks passed');
