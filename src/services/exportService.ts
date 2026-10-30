@@ -98,16 +98,27 @@ export async function exportWebBookWithJsPdf(
 ): Promise<void> {
   const safeWebBook = sanitizeWebBookForPresentation(webBook);
 
-  // Standard jsPDF built-in fonts (helvetica/times) lack CJK glyphs and corrupt CJK characters.
-  // Delegate CJK documents to high-resolution browser-rendered A4 export which embeds complete CJK system font glyphs.
+  // jsPDF's built-in fonts lack CJK glyphs. Register an embedded Unicode TrueType font so CJK books keep the full
+  // High-Res layout. Only if that font cannot be loaded do we fall back to the reader-mode print export.
+  let cjkFontBase64: string | null = null;
   if (webBookHasCjk(safeWebBook)) {
-    const { exportPrintFriendlyWebBookToPdf } = await import('./printFriendlyReportExport');
-    await exportPrintFriendlyWebBookToPdf(safeWebBook);
-    return;
+    try {
+      const { loadCjkFontBase64 } = await import('./pdfCjkFont');
+      cjkFontBase64 = await loadCjkFontBase64();
+    } catch (fontErr) {
+      console.warn('CJK font unavailable, falling back to reader-mode PDF:', fontErr);
+      const { exportPrintFriendlyWebBookToPdf } = await import('./printFriendlyReportExport');
+      await exportPrintFriendlyWebBookToPdf(safeWebBook);
+      return;
+    }
   }
 
   const { jsPDF } = await import('jspdf');
   const doc = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'portrait' });
+  if (cjkFontBase64) {
+    const { registerCjkFont } = await import('./pdfCjkFont');
+    registerCjkFont(doc, cjkFontBase64);
+  }
 
   // Hook internal.write so every external URI link annotation is emitted with /NewWindow true.
   // The hook runs before jsPDF counts the bytes it writes, so offsets and the xref table stay valid.
@@ -482,7 +493,8 @@ export async function exportWebBookWithJsPdf(
         doc.setTextColor(30, 58, 138);
 
         const displayTitle = sourceLink.title || sourceLink.hostname;
-        const truncatedTitle = displayTitle.length > 70 ? `${displayTitle.slice(0, 70)}...` : displayTitle;
+        const maxSourceTitleLen = cjkFontBase64 ? 38 : 70;
+        const truncatedTitle = displayTitle.length > maxSourceTitleLen ? `${displayTitle.slice(0, maxSourceTitleLen)}...` : displayTitle;
         const lineText = `• [${sourceLink.hostname}] ${truncatedTitle}`;
 
         doc.text(lineText, margin + 8, currentY + 10);
@@ -573,7 +585,7 @@ export async function exportWebBookWithJsPdf(
     doc.setTextColor(20, 20, 20);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10.5);
-    const maxTitleLen = 50;
+    const maxTitleLen = cjkFontBase64 ? 30 : 50;
     const displayTitle = chapter.title.length > maxTitleLen ? `${chapter.title.slice(0, maxTitleLen)}...` : chapter.title;
     doc.text(displayTitle, margin + 28, tocY);
 
