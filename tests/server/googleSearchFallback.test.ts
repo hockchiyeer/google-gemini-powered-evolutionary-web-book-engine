@@ -256,4 +256,11 @@ assert.equal(isGoogleBlockedPage(blockedGoogleHtml), true);
   assert.doesNotMatch(r.snippet, /themalaysiantimes/);
 }
 
+// 4. Non-Latin script preservation and CJK variant checks
+{
+  const cjkVariants = buildSearchQueryVariants('马来西亚政治格局');
+  assert.ok(cjkVariants.includes('马来西亚政治格局'));
+  assert.ok(cjkVariants.length >= 1);
+}
+
 console.log('googleSearchFallback request payload regression checks passed');
