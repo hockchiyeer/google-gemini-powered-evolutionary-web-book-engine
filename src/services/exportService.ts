@@ -81,15 +81,22 @@ export async function exportWebBookToWord(webBook: WebBook): Promise<void> {
 }
 
 function webBookHasCjk(webBook: WebBook): boolean {
-  const cjkRegex = /[\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/;
-  if (cjkRegex.test(webBook?.topic || '')) return true;
-  return (webBook?.chapters || []).some(
-    (ch) =>
-      cjkRegex.test(ch?.title || '') ||
-      cjkRegex.test(ch?.content || '') ||
-      (ch?.definitions || []).some((d) => cjkRegex.test(d?.term || '') || cjkRegex.test(d?.description || '')) ||
-      (ch?.subTopics || []).some((s) => cjkRegex.test(s?.title || '') || cjkRegex.test(s?.summary || ''))
-  );
+  const cjkRegex = /[\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/g;
+  const countMatches = (text: string) => (text.match(cjkRegex) || []).length;
+  let totalCjk = countMatches(webBook?.topic || '');
+  for (const ch of (webBook?.chapters || [])) {
+    totalCjk += countMatches(ch?.title || '');
+    totalCjk += countMatches(ch?.content || '');
+    for (const d of (ch?.definitions || [])) {
+      totalCjk += countMatches(d?.term || '');
+      totalCjk += countMatches(d?.description || '');
+    }
+    for (const s of (ch?.subTopics || [])) {
+      totalCjk += countMatches(s?.title || '');
+      totalCjk += countMatches(s?.summary || '');
+    }
+  }
+  return totalCjk >= 6;
 }
 
 export async function exportWebBookWithJsPdf(

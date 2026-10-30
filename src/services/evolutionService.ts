@@ -200,7 +200,8 @@ export function isMeaningful(text: string, description?: string): boolean {
   const lowerText = text.toLowerCase();
   const lowerDesc = (description || '').toLowerCase();
 
-  const isCjk = /[\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/.test(clean);
+  const cjkMatches = clean.match(/[\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/g);
+  const isCjk = cjkMatches ? cjkMatches.length >= 2 : false;
 
   // Filter out pure digits
   if (/^\d+$/.test(clean)) return false;

@@ -81,11 +81,16 @@ export function buildSearchQueryVariants(query: string): string[] {
       candidateBase.push(dateStripped);
     }
 
+    const cjkSuffixes = ['', '概述', '指南', '核心概念', '历史', '发展'];
+
     for (const item of candidateBase) {
-      const norm = normalizeComparableText(item);
-      if (norm && !seen.has(norm)) {
-        seen.add(norm);
-        variants.push(item);
+      for (const suffix of cjkSuffixes) {
+        const candidate = suffix ? `${item} ${suffix}` : item;
+        const norm = normalizeComparableText(candidate);
+        if (norm && !seen.has(norm)) {
+          seen.add(norm);
+          variants.push(candidate);
+        }
       }
 
       // Generate CJK space-separated segment variant for better search engine keyword matching
