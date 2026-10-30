@@ -98,19 +98,13 @@ export async function exportWebBookWithJsPdf(
 ): Promise<void> {
   const safeWebBook = sanitizeWebBookForPresentation(webBook);
 
-  // jsPDF's built-in fonts lack CJK glyphs. Register an embedded Unicode TrueType font so CJK books keep the full
-  // High-Res layout. Only if that font cannot be loaded do we fall back to the reader-mode print export.
+  // jsPDF's built-in fonts lack CJK glyphs, so CJK books register an embedded Unicode TrueType font and keep the
+  // full High-Res layout. There is deliberately NO reroute to the reader-mode export here: if the font cannot be
+  // loaded, loadCjkFontBase64 throws CjkFontUnavailableError and the caller surfaces it instead of swapping layouts.
   let cjkFontBase64: string | null = null;
   if (webBookHasCjk(safeWebBook)) {
-    try {
-      const { loadCjkFontBase64 } = await import('./pdfCjkFont');
-      cjkFontBase64 = await loadCjkFontBase64();
-    } catch (fontErr) {
-      console.warn('CJK font unavailable, falling back to reader-mode PDF:', fontErr);
-      const { exportPrintFriendlyWebBookToPdf } = await import('./printFriendlyReportExport');
-      await exportPrintFriendlyWebBookToPdf(safeWebBook);
-      return;
-    }
+    const { loadCjkFontBase64 } = await import('./pdfCjkFont');
+    cjkFontBase64 = await loadCjkFontBase64();
   }
 
   const { jsPDF } = await import('jspdf');
@@ -693,6 +687,8 @@ export async function exportWebBookToPdf(webBook: WebBook): Promise<void> {
     await exportWebBookWithJsPdf(safeWebBook, chapterImages);
     return;
   } catch (vectorErr) {
+    // A missing CJK font must not silently switch to another layout; report it to the user instead.
+    if ((vectorErr as Error)?.name === 'CjkFontUnavailableError') throw vectorErr;
     console.warn('jsPDF vector export failed, falling back to print-to-PDF view...', vectorErr);
   }
 

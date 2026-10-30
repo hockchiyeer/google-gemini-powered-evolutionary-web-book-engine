@@ -1,16 +1,40 @@
 // CJK support for the jsPDF "High Res" export.
 //
-// jsPDF's built-in fonts (helvetica/times/courier) have no CJK glyphs, so CJK Web-books used to be rerouted to the
-// reader-mode print export. Instead, a real Unicode TrueType font is registered in the jsPDF document and every
-// setFont() call is mapped onto it, which keeps the editorial layout (cover, TOC, cards, images, link annotations)
-// and produces selectable/searchable text.
+// jsPDF's built-in fonts (helvetica/times/courier) have no CJK glyphs. A real Unicode TrueType font is registered in
+// the jsPDF document and every setFont() call is mapped onto it, which keeps the editorial layout (cover, TOC, cards,
+// images, link annotations) and produces selectable/searchable text. CJK books are never rerouted to the reader-mode
+// export: if the font cannot be loaded, a CjkFontUnavailableError is thrown and the user is told why.
+//
+// The font lives in src/assets/fonts (tracked by git, bundled by Vite, included in the AI Studio package). It used to
+// live in public/fonts, but public/ is git-ignored and is not part of the AI Studio package, so the file was missing
+// in every deployed copy and each CJK export silently fell back to the reader layout.
 
 export const CJK_FONT_FAMILY = 'NotoSansSC';
 const CJK_FONT_FILE = 'NotoSansSC-Subset.ttf';
 
-export function getCjkFontUrl(): string {
+export class CjkFontUnavailableError extends Error {
+  constructor(public readonly attempts: string[]) {
+    super(
+      'The CJK font needed for the High-Res PDF could not be loaded, so the PDF was not generated ' +
+        '(the layout is not switched to reader mode). Make sure src/assets/fonts/NotoSansSC-Subset.ttf is present ' +
+        `(see scripts/make-cjk-font-subset.sh). Details: ${attempts.join('; ')}`
+    );
+    this.name = 'CjkFontUnavailableError';
+  }
+}
+
+/** Candidate locations, most reliable first. The bundled asset URL is rewritten by Vite in dev and in builds. */
+export function getCjkFontUrls(): string[] {
+  const urls: string[] = [];
+  try {
+    urls.push(new URL('../assets/fonts/NotoSansSC-Subset.ttf', import.meta.url).href);
+  } catch {
+    /* import.meta.url unavailable */
+  }
+  // Legacy location, kept so an existing public/fonts copy keeps working.
   const base = (import.meta as any)?.env?.BASE_URL ?? '/';
-  return `${base}fonts/${CJK_FONT_FILE}`;
+  urls.push(`${base}fonts/${CJK_FONT_FILE}`);
+  return urls;
 }
 
 const CJK_CHARS = '\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff\uff00-\uffef';
@@ -78,19 +102,39 @@ export function assertUsableTrueType(bytes: Uint8Array): void {
   const tag = String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]);
   const isTrueType = (bytes[0] === 0 && bytes[1] === 1 && bytes[2] === 0 && bytes[3] === 0) || tag === 'true';
   if (tag === 'OTTO') throw new Error('CJK font is a CFF-based OpenType file; jsPDF needs a TrueType (glyf) .ttf.');
-  if (!isTrueType) throw new Error('CJK font file is not a TrueType font (is it missing from /public/fonts?).');
+  if (!isTrueType) throw new Error('CJK font file is not a TrueType font (is src/assets/fonts/NotoSansSC-Subset.ttf missing?).');
 }
 
 let cachedFontBase64: string | null = null;
 
-export async function loadCjkFontBase64(): Promise<string> {
+async function fetchFontBytes(url: string): Promise<Uint8Array> {
+  if (url.startsWith('file:')) {
+    // Node (server-side tests / scripts): fetch() cannot read file: URLs.
+    const fsModule = 'node:fs/promises';
+    const urlModule = 'node:url';
+    const { readFile } = await import(/* @vite-ignore */ fsModule);
+    const { fileURLToPath } = await import(/* @vite-ignore */ urlModule);
+    return new Uint8Array(await readFile(fileURLToPath(url)));
+  }
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`request failed (${response.status})`);
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+export async function loadCjkFontBase64(urls: string[] = getCjkFontUrls()): Promise<string> {
   if (cachedFontBase64) return cachedFontBase64;
-  const response = await fetch(getCjkFontUrl());
-  if (!response.ok) throw new Error(`CJK font request failed (${response.status}).`);
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  assertUsableTrueType(bytes);
-  cachedFontBase64 = toBase64(bytes);
-  return cachedFontBase64;
+  const attempts: string[] = [];
+  for (const url of urls) {
+    try {
+      const bytes = await fetchFontBytes(url);
+      assertUsableTrueType(bytes);
+      cachedFontBase64 = toBase64(bytes);
+      return cachedFontBase64;
+    } catch (err) {
+      attempts.push(`${url}: ${(err as Error)?.message || err}`);
+    }
+  }
+  throw new CjkFontUnavailableError(attempts);
 }
 
 /**

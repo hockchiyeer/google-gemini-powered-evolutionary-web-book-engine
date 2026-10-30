@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { assertUsableTrueType, wrapMixedText } from '../../src/services/pdfCjkFont.ts';
+import { assertUsableTrueType, CjkFontUnavailableError, getCjkFontUrls, loadCjkFontBase64, wrapMixedText } from '../../src/services/pdfCjkFont.ts';
 
 // 1 unit per Latin char, 2 per CJK char (rough em model)
 const measure = (s: string) => [...s].reduce((w, c) => w + (/[\u2e80-\ua4cf\uff00-\uffef]/.test(c) ? 2 : 1), 0);
@@ -29,5 +29,28 @@ const measure = (s: string) => [...s].reduce((w, c) => w + (/[\u2e80-\ua4cf\uff0
   assert.doesNotThrow(() => assertUsableTrueType(ttf));
   const otf = new Uint8Array(2000); otf.set([0x4f, 0x54, 0x54, 0x4f]);
   assert.throws(() => assertUsableTrueType(otf));
+}
+
+// --- Font delivery: the missing/ignored font file is what used to push CJK books into the reader layout ---
+{
+  // 1. Unreachable or non-font sources throw a typed error (never resolve with garbage, never reroute silently).
+  const notAFont = new URL('../../package.json', import.meta.url).href;
+  const missing = new URL('../../src/assets/fonts/does-not-exist.ttf', import.meta.url).href;
+  await assert.rejects(
+    () => loadCjkFontBase64([missing, notAFont]),
+    (err: unknown) => {
+      assert.ok(err instanceof CjkFontUnavailableError, 'must be a CjkFontUnavailableError');
+      assert.equal((err as CjkFontUnavailableError).attempts.length, 2, 'every candidate source is reported');
+      return true;
+    }
+  );
+}
+{
+  // 2. The bundled font ships inside src/ (tracked by git and included in the AI Studio package) and is usable.
+  assert.ok(getCjkFontUrls()[0].includes('/src/assets/fonts/NotoSansSC-Subset.ttf'), 'bundled asset URL comes first');
+  const base64 = await loadCjkFontBase64();
+  const bytes = Buffer.from(base64, 'base64');
+  assert.ok(bytes.length > 1_000_000, 'font must be a real CJK font, not a stub');
+  assert.doesNotThrow(() => assertUsableTrueType(new Uint8Array(bytes)));
 }
 console.log('pdfCjkFont regression checks passed');
