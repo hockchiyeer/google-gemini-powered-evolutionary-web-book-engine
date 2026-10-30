@@ -94,7 +94,7 @@ export function normalizeComparableText(input: string): string {
     input
       .toLowerCase()
       .replace(/&/g, ' and ')
-      .replace(/[^a-z0-9\s]/g, ' ')
+      .replace(/[^\w\s\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/gi, ' ')
   );
 }
 

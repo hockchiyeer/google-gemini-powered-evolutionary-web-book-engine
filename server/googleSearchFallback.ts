@@ -53,10 +53,15 @@ const MONTH_YEAR_DATE_EXPR = `(?:${MONTH_NAMES_PATTERN}\\s+${YEAR_EXPR}|${YEAR_E
 const DATE_RANGE_PATTERN = new RegExp(`\\b(?:between|from)\\s+${MONTH_OR_YEAR_DATE_EXPR}\\s+(?:and|to)\\s+${MONTH_OR_YEAR_DATE_EXPR}\\b`, 'gi');
 const SINGLE_DATE_PATTERN = new RegExp(`\\b(?:between|from|and|to|in|during|due\\s+on)\\s+${MONTH_YEAR_DATE_EXPR}\\b`, 'gi');
 
+const CJK_YEAR_RANGE_PATTERN = /(?:在\s*)?(?:19|20)\d{2}\s*年?\s*(?:[-~至到–—]|and|to)\s*(?:19|20)\d{2}\s*年?(?:\s*的)?/gi;
+const CJK_SINGLE_DATE_PATTERN = /(?:在\s*)?(?:19|20)\d{2}\s*年(?:\s*(?:1[0-2]|0?[1-9])\s*月)?(?:\s*的)?/gi;
+
 export function stripDatePhrasing(query: string): string {
   return query
     .replace(DATE_RANGE_PATTERN, '')
     .replace(SINGLE_DATE_PATTERN, '')
+    .replace(CJK_YEAR_RANGE_PATTERN, '')
+    .replace(CJK_SINGLE_DATE_PATTERN, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -67,31 +72,69 @@ export function buildSearchQueryVariants(query: string): string[] {
   const variants: string[] = [];
   const seen = new Set<string>();
 
-  for (const suffix of SEARCH_QUERY_VARIANTS) {
-    const candidate = suffix
-      ? `${baseQuery} ${suffix}`
-      : baseQuery;
-    const normalizedCandidate = normalizeComparableText(candidate);
+  const isCjk = /[\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/.test(baseQuery);
 
-    if (!normalizedCandidate || seen.has(normalizedCandidate)) {
-      continue;
+  if (isCjk) {
+    const candidateBase = [baseQuery];
+    const dateStripped = stripDatePhrasing(baseQuery);
+    if (dateStripped && dateStripped !== baseQuery && dateStripped.length >= 4) {
+      candidateBase.push(dateStripped);
     }
 
-    if (suffix !== '' && normalizedCandidate === normalizedBase) {
-      continue;
+    for (const item of candidateBase) {
+      const norm = normalizeComparableText(item);
+      if (norm && !seen.has(norm)) {
+        seen.add(norm);
+        variants.push(item);
+      }
+
+      // Generate CJK space-separated segment variant for better search engine keyword matching
+      const segments = item
+        .replace(/(?:打着|号的|是如何|一步一步|搞砸|弄垮|关于|对于|在|的|和|与|及)/g, ' ')
+        .split(/\s+/)
+        .filter((s) => s.length >= 2);
+
+      if (segments.length >= 2) {
+        const spaced = segments.join(' ');
+        const normSpaced = normalizeComparableText(spaced);
+        if (normSpaced && !seen.has(normSpaced)) {
+          seen.add(normSpaced);
+          variants.push(spaced);
+        }
+
+        const headSpaced = segments.slice(0, 2).join(' ');
+        const normHead = normalizeComparableText(headSpaced);
+        if (normHead && !seen.has(normHead)) {
+          seen.add(normHead);
+          variants.push(headSpaced);
+        }
+      }
+    }
+  } else {
+    for (const suffix of SEARCH_QUERY_VARIANTS) {
+      const candidate = suffix
+        ? `${baseQuery} ${suffix}`
+        : baseQuery;
+      const normalizedCandidate = normalizeComparableText(candidate);
+
+      if (!normalizedCandidate || seen.has(normalizedCandidate)) {
+        continue;
+      }
+
+      if (suffix !== '' && normalizedCandidate === normalizedBase) {
+        continue;
+      }
+
+      seen.add(normalizedCandidate);
+      variants.push(candidate);
     }
 
-    seen.add(normalizedCandidate);
-    variants.push(candidate);
-  }
-
-  // If the query has date-range or calendar phrasing (e.g. "between Nov 2026 and Dec 2028" or "between 2026 Nov and 2028 Dec"),
-  // also add a distilled variant without the narrow date words to ensure search engines return live results.
-  const dateStripped = stripDatePhrasing(baseQuery);
-  const normalizedDateStripped = normalizeComparableText(dateStripped);
-  if (normalizedDateStripped && !seen.has(normalizedDateStripped) && dateStripped.length >= 8) {
-    seen.add(normalizedDateStripped);
-    variants.push(dateStripped);
+    const dateStripped = stripDatePhrasing(baseQuery);
+    const normalizedDateStripped = normalizeComparableText(dateStripped);
+    if (normalizedDateStripped && !seen.has(normalizedDateStripped) && dateStripped.length >= 8) {
+      seen.add(normalizedDateStripped);
+      variants.push(dateStripped);
+    }
   }
 
   return variants.length > 0 ? variants : [baseQuery];

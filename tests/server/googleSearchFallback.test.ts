@@ -144,6 +144,14 @@ assert.equal(isGoogleBlockedPage(blockedGoogleHtml), true);
 
   const numberRange2 = 'Price from 5000 to 9000 per sqm';
   assert.equal(stripDatePhrasing(numberRange2), 'Price from 5000 to 9000 per sqm');
+
+  // CJK Chinese date range stripping and query variant generation
+  const cjkQueryWithYearRange = '马来西亚2026年至2030年政治格局和国家政治走向';
+  assert.equal(stripDatePhrasing(cjkQueryWithYearRange), '马来西亚政治格局和国家政治走向');
+  const cjkVariants = buildSearchQueryVariants(cjkQueryWithYearRange);
+  assert.ok(cjkVariants.includes('马来西亚2026年至2030年政治格局和国家政治走向'));
+  assert.ok(cjkVariants.includes('马来西亚政治格局和国家政治走向'));
+  assert.ok(cjkVariants.some((v) => v.includes('马来西亚') && v.includes('政治格局')));
 }
 
 // 2. DuckDuckGo anchor parsing: canonical title link prioritized over secondary uddg anchors
