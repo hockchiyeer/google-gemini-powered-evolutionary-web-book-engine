@@ -176,8 +176,8 @@ export function buildFallbackSearchUrl(
 }
 
 export function deriveConceptLabel(title: string, fallbackQuery: string): string {
-  const firstSegment = title.split(/[-:|]/)[0]?.trim();
-  if (firstSegment && firstSegment.length >= 4) {
+  const firstSegment = title.split(/[-:|—–]/)[0]?.trim();
+  if (firstSegment && firstSegment.length >= 2) {
     return firstSegment;
   }
 

@@ -348,11 +348,13 @@ export function isMeaningfulText(text?: string | null, description = ""): boolea
   const lowerText = normalizedText.toLowerCase();
   const lowerDesc = normalizedDescription.toLowerCase();
 
+  const isCjk = /[\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/.test(clean);
+
   if (/^\d+$/.test(clean)) return false;
   if (/(.)\1{8,}/.test(clean)) return false;
   if (/\d{10,}/.test(clean)) return false;
-  if (normalizedText.length > 40 && !normalizedText.includes(" ")) return false;
-  if (clean.length > 12 && !/[aeiou]/i.test(clean)) return false;
+  if (!isCjk && normalizedText.length > 40 && !normalizedText.includes(" ")) return false;
+  if (!isCjk && clean.length > 12 && !/[aeiou]/i.test(clean)) return false;
 
   const parts = clean.split(/[-_]/);
   if (parts.length > 3) {

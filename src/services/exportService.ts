@@ -80,12 +80,33 @@ export async function exportWebBookToWord(webBook: WebBook): Promise<void> {
   downloadBlob(blob, getExportFileName(safeWebBook.topic, 'docx'));
 }
 
+function webBookHasCjk(webBook: WebBook): boolean {
+  const cjkRegex = /[\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/;
+  if (cjkRegex.test(webBook?.topic || '')) return true;
+  return (webBook?.chapters || []).some(
+    (ch) =>
+      cjkRegex.test(ch?.title || '') ||
+      cjkRegex.test(ch?.content || '') ||
+      (ch?.definitions || []).some((d) => cjkRegex.test(d?.term || '') || cjkRegex.test(d?.description || '')) ||
+      (ch?.subTopics || []).some((s) => cjkRegex.test(s?.title || '') || cjkRegex.test(s?.summary || ''))
+  );
+}
+
 export async function exportWebBookWithJsPdf(
   webBook: WebBook,
   chapterImages: Array<DocxChapterImageAsset | null> = []
 ): Promise<void> {
-  const { jsPDF } = await import('jspdf');
   const safeWebBook = sanitizeWebBookForPresentation(webBook);
+
+  // Standard jsPDF built-in fonts (helvetica/times) lack CJK glyphs and corrupt CJK characters.
+  // Delegate CJK documents to high-resolution browser-rendered A4 export which embeds complete CJK system font glyphs.
+  if (webBookHasCjk(safeWebBook)) {
+    const { exportPrintFriendlyWebBookToPdf } = await import('./printFriendlyReportExport');
+    await exportPrintFriendlyWebBookToPdf(safeWebBook);
+    return;
+  }
+
+  const { jsPDF } = await import('jspdf');
   const doc = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'portrait' });
 
   // Hook internal.write so every external URI link annotation is emitted with /NewWindow true.
@@ -332,7 +353,7 @@ export async function exportWebBookWithJsPdf(
 
     // Core Concepts Callout Cards
     if (chapter.definitions && chapter.definitions.length > 0) {
-      checkPageSpace(60);
+      checkPageSpace(100);
       currentY += 8;
       doc.setFillColor(20, 20, 20);
       doc.rect(margin, currentY, 110, 14, 'F');
@@ -387,7 +408,7 @@ export async function exportWebBookWithJsPdf(
 
     // Deeper Angles & Sub-Topics Cards
     if (chapter.subTopics && chapter.subTopics.length > 0) {
-      checkPageSpace(60);
+      checkPageSpace(100);
       currentY += 8;
       doc.setFillColor(20, 20, 20);
       doc.rect(margin, currentY, 140, 14, 'F');
@@ -439,7 +460,7 @@ export async function exportWebBookWithJsPdf(
     // Verified Source Citations with Clickable Links (Deduplicated)
     const uniqueSources = getChapterSourceLinks(chapter, { includeSearchResults: true, maxItems: 8 });
     if (uniqueSources.length > 0) {
-      checkPageSpace(50);
+      checkPageSpace(80);
       currentY += 8;
       doc.setFillColor(20, 20, 20);
       doc.rect(margin, currentY, 130, 14, 'F');

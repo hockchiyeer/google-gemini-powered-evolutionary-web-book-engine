@@ -200,16 +200,18 @@ export function isMeaningful(text: string, description?: string): boolean {
   const lowerText = text.toLowerCase();
   const lowerDesc = (description || '').toLowerCase();
 
+  const isCjk = /[\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/.test(clean);
+
   // Filter out pure digits
   if (/^\d+$/.test(clean)) return false;
   // Filter out long sequences of identical characters
   if (/(.)\1{8,}/.test(clean)) return false;
   // Filter out strings with more than 10 consecutive digits
   if (/\d{10,}/.test(clean)) return false;
-  // Filter out very long strings without spaces (likely code, tokens or IDs)
-  if (text.length > 40 && !text.includes(' ')) return false;
-  // Filter out strings that look like random hex/alphanumeric (no vowels and long)
-  if (clean.length > 12 && !/[aeiou]/i.test(clean)) return false;
+  // Filter out very long ASCII strings without spaces (likely code, tokens or IDs)
+  if (!isCjk && text.length > 40 && !text.includes(' ')) return false;
+  // Filter out ASCII strings that look like random hex/alphanumeric (no vowels and long)
+  if (!isCjk && clean.length > 12 && !/[aeiou]/i.test(clean)) return false;
 
   // Filter out generic placeholder concepts like "Concept 1", "Concept 2"
   if (/^concept\s*\d*$/i.test(text.trim())) return false;
@@ -743,7 +745,16 @@ export function synthesizeFallbackWebBook(
     return claimed;
   };
 
-  const chapterBlueprints = [
+  const isCjkTopic = /[\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/.test(topic);
+
+  const chapterBlueprints = isCjkTopic ? [
+    { title: "基础与历史演进", seed: "起源与背景" },
+    { title: "核心架构与概念框架", seed: "结构蓝图" },
+    { title: "关键原则、机制与方法", seed: "机制与过程" },
+    { title: "运行动态与现实执行", seed: "现实实施" },
+    { title: "对比评估与系统分析", seed: "分析与范式" },
+    { title: "未来展望、挑战与前景", seed: "前沿与未来" }
+  ] : [
     { title: "Foundations & Historical Perspective", seed: "origins and emergence" },
     { title: "Core Architecture & Conceptual Framework", seed: "structural blueprint" },
     { title: "Key Principles, Mechanics & Methodologies", seed: "mechanics and processes" },
