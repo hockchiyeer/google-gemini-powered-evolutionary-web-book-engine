@@ -215,7 +215,13 @@ export function buildFallbackSearchUrl(
 
 export function deriveConceptLabel(title: string, fallbackQuery: string): string {
   const firstSegment = title.split(/[-:|—–]/)[0]?.trim();
-  if (firstSegment && firstSegment.length >= 2) {
+  if (firstSegment && firstSegment.length >= 2 && firstSegment.length <= 80) {
+    // Ignore all-caps news datelines like "KUALA LUMPUR", "UPDATE", "SINGAPORE"
+    if (/^[A-Z\s,]{2,25}$/.test(firstSegment)) return fallbackQuery;
+    // Ignore segments with unbalanced parentheses or brackets
+    const openParen = (firstSegment.match(/\(/g) || []).length;
+    const closeParen = (firstSegment.match(/\)/g) || []).length;
+    if (openParen !== closeParen) return fallbackQuery;
     return firstSegment;
   }
 

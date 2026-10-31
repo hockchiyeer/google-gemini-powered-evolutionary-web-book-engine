@@ -1,4 +1,5 @@
 import type { SearchFallbackResult } from '../../src/types.ts';
+import { isCjkMajority } from '../../src/services/searchFallbackShared.ts';
 import type { DuckDuckGoEvidence, SearchFetchResult } from './types.ts';
 import {
   DEFAULT_HEADERS,
@@ -160,7 +161,9 @@ export function extractSearchResultsFromDuckDuckGoInstantAnswer(payload: any): S
 export async function fetchDuckDuckGoAttempt(query: string, labelSuffix: string): Promise<SearchFetchResult | null> {
   const searchUrl = new URL(DUCKDUCKGO_SEARCH_URL);
   searchUrl.searchParams.set('q', query);
-  searchUrl.searchParams.set('kl', 'us-en');
+  if (!isCjkMajority(query)) {
+    searchUrl.searchParams.set('kl', 'us-en');
+  }
 
   try {
     return await fetchSearchHtml(searchUrl, `duckduckgo-html-${labelSuffix}`);
@@ -172,7 +175,9 @@ export async function fetchDuckDuckGoAttempt(query: string, labelSuffix: string)
 export async function fetchDuckDuckGoLiteAttempt(query: string, labelSuffix: string): Promise<SearchFetchResult | null> {
   const searchUrl = new URL(DUCKDUCKGO_LITE_URL);
   searchUrl.searchParams.set('q', query);
-  searchUrl.searchParams.set('kl', 'us-en');
+  if (!isCjkMajority(query)) {
+    searchUrl.searchParams.set('kl', 'us-en');
+  }
 
   try {
     const getResult = await fetchSearchHtml(searchUrl, `duckduckgo-lite-get-${labelSuffix}`);
@@ -181,6 +186,11 @@ export async function fetchDuckDuckGoLiteAttempt(query: string, labelSuffix: str
     }
   } catch {
     // Continue to POST attempt
+  }
+
+  const postParams = new URLSearchParams({ q: query });
+  if (!isCjkMajority(query)) {
+    postParams.set('kl', 'us-en');
   }
 
   try {
@@ -193,7 +203,7 @@ export async function fetchDuckDuckGoLiteAttempt(query: string, labelSuffix: str
       },
       {
         method: 'POST',
-        body: new URLSearchParams({ q: query, kl: 'us-en' }).toString(),
+        body: postParams.toString(),
       }
     );
   } catch {

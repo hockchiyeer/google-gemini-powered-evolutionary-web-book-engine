@@ -1,4 +1,7 @@
 import type { Chapter, WebBook, WebBookSourceMode } from "../types.ts";
+import { CJK_CHAR_PATTERN, countWords, splitIntoSentences } from "../services/searchFallbackShared.ts";
+
+export { CJK_CHAR_PATTERN, countWords, splitIntoSentences };
 
 const POISON_KEYWORDS = [
   "copyright",
@@ -30,7 +33,7 @@ const POISON_KEYWORDS = [
   "免责声明",
   "隐私政策",
   "服务条款",
-  "未经授权",
+  "未经授权不得转载",
   "禁止转载",
   "关于我们",
   "联系我们",
@@ -38,7 +41,6 @@ const POISON_KEYWORDS = [
 
 const REPEATED_SUBSTRING_PATTERN = /(.{4,})\1{2,}/;
 const ASSEMBLY_HEURISTIC = /\b(mov|push|pop|jmp|call|ret|int|add|sub|xor|nop|lea|cmp)\b/i;
-export const CJK_CHAR_PATTERN = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uf900-\ufaff]/g;
 const CJK_SENTENCE_END_PATTERN = /[。！？][”’」』）)]*$/;
 export const MIN_CHAPTER_TEXT_PAGES = 3;
 const SEARCH_FALLBACK_TEXT_PAGES = 1;
@@ -158,6 +160,7 @@ function containsNarrativeJunk(text: string): boolean {
 
 function stripInlineUrlArtifacts(text: string): string {
   return text
+    .replace(/\[\d+(?:\s*,\s*\d+)*\]/g, " ")
     .replace(URLISH_INLINE_PATTERN, " ")
     .replace(ISO_TIMESTAMP_GLOBAL_PATTERN, " ")
     .replace(/\s+/g, " ")
@@ -251,7 +254,7 @@ export function sanitizeStructuredLabel(text?: string | null, fallback = ""): st
   if (countDomainMentions(candidate) > 0 && candidate.length < 120) {
     return fallback.trim();
   }
-  if (!/[a-z0-9]/i.test(candidate) || candidate.length === 1) {
+  if (!/[a-z0-9\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uf900-\ufaff]/i.test(candidate) || candidate.length === 1) {
     return fallback.trim();
   }
 
@@ -453,20 +456,6 @@ export function getRenderableSubTopics<T extends SubTopicLike>(subTopics: T[] = 
     seenTitles.add(titleKey);
     return true;
   });
-}
-
-export function countWords(text: string): number {
-  const cjkCount = (text.match(CJK_CHAR_PATTERN) || []).length;
-  const nonCjk = text.replace(CJK_CHAR_PATTERN, " ").trim();
-  const nonCjkWords = nonCjk ? nonCjk.split(/\s+/).filter(Boolean).length : 0;
-  return cjkCount + nonCjkWords;
-}
-
-export function splitIntoSentences(text: string): string[] {
-  return text
-    .split(/(?<=[.!?])\s+|(?<=[。！？][”’」』）)]*)(?![”’」』）)])\s*/)
-    .map((sentence) => sentence.replace(/\s+/g, " ").trim())
-    .filter(Boolean);
 }
 
 export function joinSentences(sentences: string[]): string {
