@@ -142,6 +142,8 @@ function isLikelyStructuredArtifactLine(line: string): boolean {
   if (BULLET_LINE_PATTERN.test(normalized) && (domainMentions > 0 || ISO_TIMESTAMP_PATTERN.test(normalized))) return true;
   if (domainMentions >= 1 && ISO_TIMESTAMP_PATTERN.test(normalized) && !/[.!?]$/.test(normalized)) return true;
 
+  if (/\b(?:rel=["']nofollow|href=["']\/\/|<a\b|<\/a>)/i.test(normalized)) return true;
+
   return false;
 }
 
@@ -161,6 +163,8 @@ function containsNarrativeJunk(text: string): boolean {
 function stripInlineUrlArtifacts(text: string): string {
   return text
     .replace(/\[\d+(?:\s*,\s*\d+)*\]/g, " ")
+    .replace(/\b(?:a\s+)?rel=["'][^"']*["']/gi, " ")
+    .replace(/\bhref=["'][^"']*["']/gi, " ")
     .replace(URLISH_INLINE_PATTERN, " ")
     .replace(ISO_TIMESTAMP_GLOBAL_PATTERN, " ")
     .replace(/\s+/g, " ")

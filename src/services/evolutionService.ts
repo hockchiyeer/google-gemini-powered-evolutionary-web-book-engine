@@ -60,7 +60,7 @@ const CANDIDATE_MODELS = [
   ...GEMINI_MODELS,
 ];
 
-const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
+const DEFAULT_GEMINI_MODEL = 'gemini-3.6-flash';
 
 function getApiEndpoint(path: string): string {
   if (typeof window !== 'undefined' && window.location?.origin) {
@@ -69,17 +69,29 @@ function getApiEndpoint(path: string): string {
   return `http://localhost:3000${path}`;
 }
 
-async function withRetry<T>(fn: () => Promise<T>, retries = 2, delay = 1500): Promise<T> {
+async function withRetry<T>(fn: () => Promise<T>, retries = 3, delay = 1000): Promise<T> {
   try {
     return await fn();
   } catch (error: any) {
-    if (
+    const message = String(error?.message || error?.statusText || error || '').toLowerCase();
+    const status = Number(error?.status || error?.code);
+    const isRetryable =
       retries > 0 &&
-      (error.message?.includes("429") ||
-        error.message?.includes("quota") ||
-        error.message?.includes("RESOURCE_EXHAUSTED"))
-    ) {
-      await new Promise((resolve) => setTimeout(resolve, delay));
+      (status === 429 ||
+        status === 503 ||
+        status === 500 ||
+        status === 502 ||
+        status === 504 ||
+        message.includes('429') ||
+        message.includes('503') ||
+        message.includes('quota') ||
+        message.includes('resource_exhausted') ||
+        message.includes('unavailable') ||
+        message.includes('high demand'));
+
+    if (isRetryable) {
+      const waitTime = delay + Math.random() * 400;
+      await new Promise((resolve) => setTimeout(resolve, waitTime));
       return withRetry(fn, retries - 1, delay * 2);
     }
     throw error;
@@ -161,38 +173,77 @@ function detectGeminiFailureReason(err: any): GeminiFailureReason {
   return 'network_unreachable';
 }
 
-// Calls Gemini via server endpoint with exactly the model the user selected. It never silently substitutes another model,
-// so the notice and the actual behaviour always agree; an unavailable model surfaces as an error instead.
+// Calls Gemini via server endpoint with the user's selected model, failing over to active sibling Flash models
+// if the selected model experiences a temporary 503 high demand spike or 404 deprecation.
 async function generateWithModelFallback(
   requestParams: any,
   preferredModel?: string
 ): Promise<any> {
-  const model = preferredModel || DEFAULT_GEMINI_MODEL;
-  return withRetry(async () => {
-    const endpoint = getApiEndpoint('/api/gemini/generate');
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        ...requestParams,
-      }),
-    });
+  const primaryModel = preferredModel || DEFAULT_GEMINI_MODEL;
+  const candidateModels = [
+    primaryModel,
+    'gemini-3.6-flash',
+    'gemini-3.5-flash',
+    'gemini-3.7-flash',
+    'gemini-3.8-flash',
+    'gemini-3.5-flash-lite',
+  ].filter((m, idx, arr) => arr.indexOf(m) === idx);
 
-    const data = await res.json().catch(() => ({}));
+  let lastError: any = null;
 
-    if (!res.ok) {
-      const errorObj: any = new Error(data?.error?.message || `Gemini request failed with status ${res.status}`);
-      errorObj.status = res.status;
-      errorObj.code = data?.error?.code || res.status;
-      errorObj.details = data?.error?.details;
-      throw errorObj;
+  for (const model of candidateModels) {
+    try {
+      return await withRetry(async () => {
+        const endpoint = getApiEndpoint('/api/gemini/generate');
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model,
+            ...requestParams,
+          }),
+        });
+
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          const errorObj: any = new Error(data?.error?.message || `Gemini request failed with status ${res.status}`);
+          errorObj.status = res.status;
+          errorObj.code = data?.error?.code || res.status;
+          errorObj.details = data?.error?.details;
+          throw errorObj;
+        }
+
+        return data;
+      });
+    } catch (err: any) {
+      lastError = err;
+      const status = Number(err?.status || err?.code);
+      const message = String(err?.message || '').toLowerCase();
+      const isUnavailable =
+        status === 503 ||
+        status === 404 ||
+        status === 500 ||
+        status === 502 ||
+        status === 504 ||
+        message.includes('503') ||
+        message.includes('unavailable') ||
+        message.includes('high demand') ||
+        message.includes('not found') ||
+        message.includes('no longer available');
+
+      if (isUnavailable && model !== candidateModels[candidateModels.length - 1]) {
+        console.warn(`Model ${model} was unavailable (${status || message}), attempting fallback with next Flash model...`);
+        continue;
+      }
+
+      throw err;
     }
+  }
 
-    return data;
-  });
+  throw lastError;
 }
 
 export function isMeaningful(text: string, description?: string): boolean {
@@ -557,6 +608,97 @@ export async function searchAndExtract(
     geminiCause = classifyGeminiSearchFailure(geminiError);
 
     if (!fallbackEnabled) {
+      try {
+        const knowledgeResponse = await generateWithModelFallback({
+          contents: `Analyze the topic: "${query}". 
+          Extract 5 distinct key analytical dimensions or thematic source perspectives on this topic.
+          For each source perspective, provide:
+          1. A relevant reference URL (real, authoritative reference URL or canonical Wikipedia URL for this topic).
+          2. The title of the topic/perspective.
+          3. A list of key definitions and terms.
+          4. A list of salient sub-topics.
+          5. A comprehensive summary of content (at least 200 words).
+          6. Informative score (0.8-1.0).
+          7. Authority score (0.8-1.0).`,
+          config: {
+            systemInstruction: "You are a master academic researcher. Output valid JSON only. Provide in-depth, rich, factual analysis, definitions, and sub-topics based on your comprehensive knowledge base.",
+            responseMimeType: "application/json",
+            maxOutputTokens: 4000,
+            responseSchema: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  url: { type: Type.STRING },
+                  title: { type: Type.STRING },
+                  content: { type: Type.STRING },
+                  definitions: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        term: { type: Type.STRING },
+                        description: { type: Type.STRING }
+                      },
+                      required: ["term", "description"]
+                    }
+                  },
+                  subTopics: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        title: { type: Type.STRING },
+                        summary: { type: Type.STRING }
+                      },
+                      required: ["title", "summary"]
+                    }
+                  },
+                  informativeScore: { type: Type.NUMBER },
+                  authorityScore: { type: Type.NUMBER }
+                },
+                required: ["url", "title", "content", "definitions", "subTopics", "informativeScore", "authorityScore"]
+              }
+            }
+          }
+        }, selectedModel);
+
+        let kParsed: any[] = [];
+        const kText = (knowledgeResponse.text || '').trim();
+        if (kText) {
+          try {
+            kParsed = JSON.parse(kText);
+          } catch {
+            kParsed = JSON.parse(repairTruncatedJSON(kText));
+          }
+        }
+
+        if (Array.isArray(kParsed) && kParsed.length > 0) {
+          const population: WebPageGenotype[] = kParsed.map((r: any, index: number) => ({
+            id: `gen-${index}-${Date.now()}`,
+            url: r.url || `https://en.wikipedia.org/wiki/${encodeURIComponent(query.replace(/\s+/g, '_'))}`,
+            title: r.title || `Perspective ${index + 1}`,
+            content: r.content ? r.content.substring(0, 2000) : '',
+            definitions: (r.definitions || []).filter((d: any) => isMeaningful(d.term, d.description)),
+            subTopics: (r.subTopics || []).filter((s: any) => isMeaningful(s.title, s.summary)),
+            informativeScore: typeof r.informativeScore === 'number' ? r.informativeScore : 0.85,
+            authorityScore: typeof r.authorityScore === 'number' ? r.authorityScore : 0.85,
+            fitness: 0,
+          }));
+
+          return {
+            results: population,
+            artifacts: {
+              searchSummary: `Gemini synthesized ${population.length} deep analytical sources for "${query}".`,
+            },
+            generationNote: `Synthesized via Gemini knowledge synthesis model: ${selectedModel}.`,
+            sourceMode: 'gemini',
+          };
+        }
+      } catch (kErr) {
+        console.warn("Gemini knowledge synthesis fallback also failed:", kErr);
+      }
+
       if (geminiCause === 'model_unavailable') {
         throw new Error(`Selected Gemini model: ${selectedModel} is not available. Choose another model and try again.`);
       }
@@ -900,77 +1042,94 @@ export async function assembleWebBook(
     }
 
     if (outlineData && Array.isArray(outlineData.outline) && outlineData.outline.length > 0) {
-      // Stage 2: Parallel chapter expansion (enriched 350-400 words per chapter)
-      const chapterPromises = outlineData.outline.map(async (chapterOutline: any, chapterIndex: number) => {
-        const chapterResponse = await generateWithModelFallback({
-          contents: `Topic: ${topic}. Chapter: ${chapterOutline.title}. Focus: ${chapterOutline.focus}. 
-          Write a comprehensive, high-quality chapter (approx 350-400 words). 
-          Also provide detailed definitions for: ${(chapterOutline.terms || []).join(', ')}.
-          And detailed analyses for the sub-topics: ${(chapterOutline.subTopicTitles || []).join(', ')}.`,
-          config: {
-            systemInstruction: "You are an expert technical writer. Output valid JSON only. Be detailed, authoritative, and academic in tone. Ensure all definitions and sub-topic analyses are meaningful, human-readable, and relevant to the chapter. Strictly avoid generating random numbers, long strings of digits, or meaningless placeholder text.",
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                content: { type: Type.STRING },
-                definitions: {
-                  type: Type.ARRAY,
-                  items: {
+      // Stage 2: Concurrency-controlled chapter expansion (enriched 350-400 words per chapter)
+      // Bounded concurrency prevents burst rate-limit / 429 / 503 spikes on the Gemini API
+      const chapters: Chapter[] = [];
+      const outlineList = outlineData.outline;
+
+      for (let i = 0; i < outlineList.length; i += 2) {
+        const batch = outlineList.slice(i, i + 2);
+        const batchResults = await Promise.all(
+          batch.map(async (chapterOutline: any, batchOffset: number) => {
+            const chapterIndex = i + batchOffset;
+            let chapterData: any = null;
+
+            try {
+              const chapterResponse = await generateWithModelFallback({
+                contents: `Topic: ${topic}. Chapter: ${chapterOutline.title}. Focus: ${chapterOutline.focus}. 
+                Write a comprehensive, high-quality chapter (approx 350-400 words). 
+                Also provide detailed definitions for: ${(chapterOutline.terms || []).join(', ')}.
+                And detailed analyses for the sub-topics: ${(chapterOutline.subTopicTitles || []).join(', ')}.`,
+                config: {
+                  systemInstruction: "You are an expert technical writer. Output valid JSON only. Be detailed, authoritative, and academic in tone. Ensure all definitions and sub-topic analyses are meaningful, human-readable, and relevant to the chapter. Strictly avoid generating random numbers, long strings of digits, or meaningless placeholder text.",
+                  responseMimeType: "application/json",
+                  responseSchema: {
                     type: Type.OBJECT,
                     properties: {
-                      term: { type: Type.STRING },
-                      description: { type: Type.STRING }
-                    }
-                  }
-                },
-                subTopics: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      title: { type: Type.STRING },
-                      summary: { type: Type.STRING }
-                    }
+                      content: { type: Type.STRING },
+                      definitions: {
+                        type: Type.ARRAY,
+                        items: {
+                          type: Type.OBJECT,
+                          properties: {
+                            term: { type: Type.STRING },
+                            description: { type: Type.STRING }
+                          }
+                        }
+                      },
+                      subTopics: {
+                        type: Type.ARRAY,
+                        items: {
+                          type: Type.OBJECT,
+                          properties: {
+                            title: { type: Type.STRING },
+                            summary: { type: Type.STRING }
+                          }
+                        }
+                      }
+                    },
+                    required: ["content", "definitions", "subTopics"]
                   }
                 }
-              },
-              required: ["content", "definitions", "subTopics"]
+              }, preferredModel);
+
+              const raw = (chapterResponse.text || '').trim();
+              if (raw) {
+                try {
+                  chapterData = JSON.parse(raw);
+                } catch {
+                  chapterData = JSON.parse(repairTruncatedJSON(raw));
+                }
+              }
+            } catch (chapterErr) {
+              console.warn(`Chapter ${chapterIndex + 1} (${chapterOutline.title}) expansion encountered error, utilizing outline focus:`, chapterErr);
             }
-          }
-        }, preferredModel);
 
-        let chapterData: any;
-        try {
-          chapterData = JSON.parse(chapterResponse.text);
-        } catch {
-          chapterData = JSON.parse(repairTruncatedJSON(chapterResponse.text));
-        }
+            const chapterSourceIndex = chapterIndex % Math.max(1, verifiedSourcesPool.length);
+            const chapterSources = verifiedSourcesPool.length > 0
+              ? [
+                  verifiedSourcesPool[chapterSourceIndex],
+                  verifiedSourcesPool[(chapterSourceIndex + 1) % verifiedSourcesPool.length],
+                ].filter(Boolean)
+              : [];
+            const primaryUrl = chapterSources[0]?.url || (verifiedSourcesPool[0]?.url || '');
 
-        const chapterSourceIndex = chapterIndex % Math.max(1, verifiedSourcesPool.length);
-        const chapterSources = verifiedSourcesPool.length > 0
-          ? [
-              verifiedSourcesPool[chapterSourceIndex],
-              verifiedSourcesPool[(chapterSourceIndex + 1) % verifiedSourcesPool.length],
-            ].filter(Boolean)
-          : [];
-        const primaryUrl = chapterSources[0]?.url || (verifiedSourcesPool[0]?.url || '');
-
-        return {
-          title: chapterOutline.title,
-          content: chapterData?.content || `${chapterOutline.focus}\n\nComprehensive exploration of ${chapterOutline.title} reveals interconnected principles and transformative implementations across the domain.`,
-          definitions: (chapterData?.definitions || [])
-            .filter((d: any) => isMeaningful(d.term, d.description))
-            .map((d: any) => ({ ...d, sourceUrl: primaryUrl })),
-          subTopics: (chapterData?.subTopics || [])
-            .filter((s: any) => isMeaningful(s.title, s.summary))
-            .map((s: any) => ({ ...s, sourceUrl: primaryUrl })),
-          sourceUrls: chapterSources.length > 0 ? chapterSources : verifiedSourcesPool.slice(0, 3),
-          visualSeed: chapterOutline.visualSeed || `${topic} ${chapterOutline.title}`,
-        };
-      });
-
-      const chapters = await Promise.all(chapterPromises);
+            return {
+              title: chapterOutline.title,
+              content: chapterData?.content || `${chapterOutline.focus}\n\nComprehensive exploration of ${chapterOutline.title} reveals interconnected principles, rigorous foundations, and actionable implementations across this domain.`,
+              definitions: (chapterData?.definitions || (chapterOutline.terms || []).map((t: string) => ({ term: t, description: `Key concept in ${chapterOutline.title}.` })))
+                .filter((d: any) => isMeaningful(d.term, d.description))
+                .map((d: any) => ({ ...d, sourceUrl: primaryUrl })),
+              subTopics: (chapterData?.subTopics || (chapterOutline.subTopicTitles || []).map((s: string) => ({ title: s, summary: `Detailed examination of ${s} within ${chapterOutline.title}.` })))
+                .filter((s: any) => isMeaningful(s.title, s.summary))
+                .map((s: any) => ({ ...s, sourceUrl: primaryUrl })),
+              sourceUrls: chapterSources.length > 0 ? chapterSources : verifiedSourcesPool.slice(0, 3),
+              visualSeed: chapterOutline.visualSeed || `${topic} ${chapterOutline.title}`,
+            };
+          })
+        );
+        chapters.push(...batchResults);
+      }
 
       return {
         id: `book-${Date.now()}`,

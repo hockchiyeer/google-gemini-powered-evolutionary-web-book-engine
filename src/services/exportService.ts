@@ -252,23 +252,23 @@ export async function exportWebBookWithJsPdf(
 
     // Chapter Header Box
     doc.setFillColor(20, 20, 20);
-    doc.rect(margin, currentY, 26, 26, 'F');
+    doc.rect(margin, currentY, 28, 28, 'F');
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
-    doc.text(`0${index + 1}`, margin + 13, currentY + 17, { align: 'center' });
+    doc.text(String(index + 1).padStart(2, '0'), margin + 14, currentY + 18, { align: 'center' });
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
+    doc.setFontSize(7.5);
     doc.setTextColor(120, 120, 120);
-    doc.text(`CHAPTER ${index + 1} OF ${safeWebBook.chapters.length}   |   OVERVIEW & NARRATIVE`, margin + 36, currentY + 10);
+    doc.text(`CHAPTER ${index + 1} OF ${safeWebBook.chapters.length}   |   OVERVIEW & NARRATIVE`, margin + 38, currentY + 9);
 
     doc.setFont('times', 'bolditalic');
     doc.setFontSize(18);
     doc.setTextColor(20, 20, 20);
-    const chTitleLines = doc.splitTextToSize(chapter.title, contentWidth - 40);
-    doc.text(chTitleLines, margin + 36, currentY + 24);
-    currentY += Math.max(32, 10 + chTitleLines.length * 18) + 12;
+    const chTitleLines = doc.splitTextToSize(chapter.title, contentWidth - 42);
+    doc.text(chTitleLines, margin + 38, currentY + 29);
+    currentY += Math.max(38, 14 + chTitleLines.length * 20) + 12;
 
     // Header hairline separator
     doc.setDrawColor(220, 220, 220);

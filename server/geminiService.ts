@@ -51,7 +51,7 @@ export async function handleGeminiGenerate(req: IncomingMessage, res: ServerResp
 
   try {
     const body: GeminiGenerateRequestBody = await readJsonBody(req);
-    const model = body.model || "gemini-3.8-flash";
+    const model = body.model || "gemini-3.6-flash";
 
     if (!process.env.GEMINI_API_KEY) {
       sendJson(res, 401, {
@@ -97,7 +97,7 @@ export async function handleGeminiStream(req: IncomingMessage, res: ServerRespon
 
   try {
     const body: GeminiGenerateRequestBody = await readJsonBody(req);
-    const model = body.model || "gemini-3.8-flash";
+    const model = body.model || "gemini-3.6-flash";
 
     if (!process.env.GEMINI_API_KEY) {
       sendJson(res, 401, {

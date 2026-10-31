@@ -34,10 +34,12 @@ export interface Chapter {
 }
 
 export const GEMINI_MODELS = [
-  'gemini-3-flash-preview',
-  'gemini-2.5-flash',
+  'gemini-3.6-flash',
+  'gemini-3.5-flash',
+  'gemini-3.7-flash',
   'gemini-3.8-flash',
   'gemini-flash-latest',
+  'gemini-3.5-flash-lite',
 ] as const;
 
 export type SearchFallbackMode = 'off' | 'duckduckgo' | 'google' | 'google_duckduckgo';
