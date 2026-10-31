@@ -1,28 +1,12 @@
 import type { SearchFallbackPayload, SearchFallbackResult } from '../types.ts';
 import { isMeaningfulText, sanitizeNarrativeText } from '../utils/webBookRender.ts';
-import { calculateTextSimilarity } from './searchFallbackShared.ts';
-
-const CJK_REGEX = /[\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/;
-
-function countWords(text: string): number {
-  const cjkCount = (text.match(/[\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/g) || []).length;
-  const nonCjk = text.replace(/[\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/g, ' ').trim();
-  const nonCjkWords = nonCjk ? nonCjk.split(/\s+/).filter(Boolean).length : 0;
-  return cjkCount + nonCjkWords;
-}
-
-function splitSentences(text: string): string[] {
-  return text
-    .split(/(?<=[.!?])\s+|(?<=[。！？][”’」』）)]*)(?![”’」』）)])\s*/)
-    .map((sentence) => sentence.trim())
-    .filter((sentence) => sentence.length > 0);
-}
+import { calculateTextSimilarity, countWords, isCjkMajority, splitIntoSentences } from './searchFallbackShared.ts';
 
 function dedupeSentences(text: string, maxSentences = Number.POSITIVE_INFINITY): string[] {
   const unique: string[] = [];
 
-  for (const sentence of splitSentences(text)) {
-    const minLen = CJK_REGEX.test(sentence) ? 8 : 35;
+  for (const sentence of splitIntoSentences(text)) {
+    const minLen = isCjkMajority(sentence) ? 8 : 35;
     if (sentence.length < minLen) {
       continue;
     }

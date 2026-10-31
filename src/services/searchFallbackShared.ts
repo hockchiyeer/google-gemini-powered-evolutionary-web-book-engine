@@ -32,11 +32,36 @@ export const FALLBACK_STOPWORDS = new Set([
   'with',
 ]);
 
-function normalizeComparableText(input: string): string {
+/** Canonical CJK character range covering Chinese, Japanese, Korean, and compatibility ideographs. */
+export const CJK_CHAR_PATTERN = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uf900-\ufaff]/g;
+
+export function countWords(text: string): number {
+  const cjkCount = (text.match(CJK_CHAR_PATTERN) || []).length;
+  const nonCjk = text.replace(CJK_CHAR_PATTERN, ' ').trim();
+  const nonCjkWords = nonCjk ? nonCjk.split(/\s+/).filter(Boolean).length : 0;
+  return cjkCount + nonCjkWords;
+}
+
+export function isCjkMajority(text: string): boolean {
+  const cjkCount = (text.match(CJK_CHAR_PATTERN) || []).length;
+  const nonWsLength = text.replace(/\s+/g, '').length;
+  return nonWsLength > 0 && cjkCount / nonWsLength >= 0.4;
+}
+
+export function splitIntoSentences(text: string): string[] {
+  return text
+    .split(/(?<=[.!?])\s+|(?<=[。！？][”’」』）)]*)(?![”’」』）)])\s*/)
+    .map((sentence) => sentence.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+}
+
+export function normalizeComparableText(input: string): string {
   return input
     .toLowerCase()
     .replace(/&/g, ' and ')
-    .replace(/[^\w\s\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff\uff00-\uffef\u0400-\u04ff\u0600-\u06ff\u0e00-\u0e7f\u0900-\u097f\u0370-\u03ff\u0080-\u024f]/gi, ' ')
+    .replace(/([a-z0-9]+)([\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff])/gi, '$1 $2')
+    .replace(/([\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff])([a-z0-9]+)/gi, '$1 $2')
+    .replace(/[^\w\s\u0080-\u024f\u0370-\u03ff\u0400-\u04ff\u0600-\u06ff\u0900-\u097f\u0e00-\u0e7f\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uf900-\ufaff]/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -47,7 +72,7 @@ function tokenizeComparableText(input: string): string[] {
     .split(' ')
     .filter((token) => token.length >= 3 && !FALLBACK_STOPWORDS.has(token));
 
-  const cjkChars = norm.match(/[\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/g);
+  const cjkChars = norm.match(CJK_CHAR_PATTERN);
   if (cjkChars && cjkChars.length > 0) {
     for (let i = 0; i < cjkChars.length - 1; i++) {
       words.push(cjkChars[i] + cjkChars[i + 1]);
@@ -212,10 +237,7 @@ export function scoreDomainAuthority(url: string): number {
 }
 
 export function scoreInformativeText(text: string): number {
-  const cjkCount = (text.match(/[\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/g) || []).length;
-  const nonCjk = text.replace(/[\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/g, ' ').trim();
-  const nonCjkWords = nonCjk ? nonCjk.split(/\s+/).filter(Boolean).length : 0;
-  const wordCount = cjkCount + nonCjkWords;
+  const wordCount = countWords(text);
   const sentenceCount = text.split(/[.!?。！？]+/).filter((segment) => segment.trim().length > 0).length;
   return Math.min(0.98, 0.35 + Math.min(wordCount / 180, 0.38) + Math.min(sentenceCount / 10, 0.25));
 }

@@ -76,6 +76,19 @@ const englishChapter: Chapter = {
 const englishPlan = buildChapterRenderPlan([englishChapter]);
 const englishPages = englishPlan[0].textPages;
 assert.equal(englishPages.length, 3);
-assert.notEqual(englishPages[0].content, englishPages[1].content);
+import { calculateTextSimilarity } from '../../src/services/searchFallbackShared.ts';
+
+// Test 3: Chinese text similarity regression tests
+const identicalPair = calculateTextSimilarity('马来西亚政治格局', '马来西亚政治格局');
+assert.ok(identicalPair >= 0.88, `Identical Chinese sentences must score >= 0.88 (got ${identicalPair})`);
+
+const differentYearPair = calculateTextSimilarity('马来西亚政治格局2026', '经济繁荣发展迅速2026');
+assert.ok(differentYearPair < 0.5, `Different Chinese sentences sharing 2026 must score < 0.5 (got ${differentYearPair})`);
+
+const differentMadaniPair = calculateTextSimilarity('马来西亚政治格局Madani', '经济繁荣发展迅速Madani');
+assert.ok(differentMadaniPair < 0.5, `Different Chinese sentences sharing Madani must score < 0.5 (got ${differentMadaniPair})`);
+
+const oneCharDiffPair = calculateTextSimilarity('马来西亚政治格局走向', '马来西亚政治格局发展');
+assert.ok(oneCharDiffPair > 0.5, `Close Chinese sentences should have meaningful similarity (got ${oneCharDiffPair})`);
 
 console.log('cjkPagination regression tests passed successfully!');

@@ -24,11 +24,21 @@ const POISON_KEYWORDS = [
   "and so it shall be",
   "for all eternity",
   "grand design of the universe",
+  "版权所有",
+  "保留所有权利",
+  "点击查看更多",
+  "免责声明",
+  "隐私政策",
+  "服务条款",
+  "未经授权",
+  "禁止转载",
+  "关于我们",
+  "联系我们",
 ];
 
 const REPEATED_SUBSTRING_PATTERN = /(.{4,})\1{2,}/;
 const ASSEMBLY_HEURISTIC = /\b(mov|push|pop|jmp|call|ret|int|add|sub|xor|nop|lea|cmp)\b/i;
-const CJK_CHAR_PATTERN = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/g;
+export const CJK_CHAR_PATTERN = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uf900-\ufaff]/g;
 const CJK_SENTENCE_END_PATTERN = /[。！？][”’」』）)]*$/;
 export const MIN_CHAPTER_TEXT_PAGES = 3;
 const SEARCH_FALLBACK_TEXT_PAGES = 1;
@@ -445,7 +455,7 @@ export function getRenderableSubTopics<T extends SubTopicLike>(subTopics: T[] = 
   });
 }
 
-function countWords(text: string): number {
+export function countWords(text: string): number {
   const cjkCount = (text.match(CJK_CHAR_PATTERN) || []).length;
   const nonCjk = text.replace(CJK_CHAR_PATTERN, " ").trim();
   const nonCjkWords = nonCjk ? nonCjk.split(/\s+/).filter(Boolean).length : 0;

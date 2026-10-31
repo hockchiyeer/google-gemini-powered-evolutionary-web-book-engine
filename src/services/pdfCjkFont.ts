@@ -18,10 +18,6 @@ export class CjkFontUnavailableError extends Error {
       'The CJK font could not be loaded, so the High-Res PDF was not created. Try again, or use Print / Save as PDF.'
     );
     this.name = 'CjkFontUnavailableError';
-    console.warn(
-      'CJK font loading failed across candidate locations (see scripts/make-cjk-font-subset.sh):',
-      attempts.join('; ')
-    );
   }
 }
 

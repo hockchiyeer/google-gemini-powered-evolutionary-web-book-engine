@@ -1,5 +1,5 @@
 import type { SearchFallbackResult } from '../../src/types.ts';
-import { calculateTextSimilarity } from '../../src/services/searchFallbackShared.ts';
+import { calculateTextSimilarity, isCjkMajority } from '../../src/services/searchFallbackShared.ts';
 import type { SearchFetchResult } from './types.ts';
 
 export const MAX_RESULTS = 48;
@@ -94,7 +94,9 @@ export function normalizeComparableText(input: string): string {
     input
       .toLowerCase()
       .replace(/&/g, ' and ')
-      .replace(/[^\w\s\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff\uff00-\uffef\u0400-\u04ff\u0600-\u06ff\u0e00-\u0e7f\u0900-\u097f\u0370-\u03ff\u0080-\u024f]/gi, ' ')
+      .replace(/([a-z0-9]+)([\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff])/gi, '$1 $2')
+      .replace(/([\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff])([a-z0-9]+)/gi, '$1 $2')
+      .replace(/[^\w\s\u0080-\u024f\u0370-\u03ff\u0400-\u04ff\u0600-\u06ff\u0900-\u097f\u0e00-\u0e7f\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uf900-\ufaff]/gi, ' ')
   );
 }
 
@@ -259,13 +261,11 @@ export function extractSnippetFromContext(contextHtml: string, title: string): s
   return '';
 }
 
-const CJK_REGEX = /[\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/;
-
 export function splitIntoSentences(text: string): string[] {
   return text
     .split(/(?<=[.!?])\s+|(?<=[。！？][”’」』）)]*)(?![”’」』）)])\s*/)
     .map((sentence) => collapseWhitespace(sentence))
-    .filter((sentence) => (CJK_REGEX.test(sentence) ? sentence.length >= 8 : sentence.length >= 35));
+    .filter((sentence) => (isCjkMajority(sentence) ? sentence.length >= 8 : sentence.length >= 35));
 }
 
 export function dedupeSentences(text: string, maxSentences = Number.POSITIVE_INFINITY): string[] {

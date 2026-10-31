@@ -688,7 +688,13 @@ export async function exportWebBookToPdf(webBook: WebBook): Promise<void> {
     return;
   } catch (vectorErr) {
     // A missing CJK font must not silently switch to another layout; report it to the user instead.
-    if ((vectorErr as Error)?.name === 'CjkFontUnavailableError') throw vectorErr;
+    if ((vectorErr as Error)?.name === 'CjkFontUnavailableError') {
+      const attempts = (vectorErr as any)?.attempts;
+      if (Array.isArray(attempts) && attempts.length > 0) {
+        console.warn('CJK font loading failed across candidate locations:', attempts.join('; '));
+      }
+      throw vectorErr;
+    }
     console.warn('jsPDF vector export failed, falling back to print-to-PDF view...', vectorErr);
   }
 
