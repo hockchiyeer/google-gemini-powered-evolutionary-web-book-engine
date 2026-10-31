@@ -109,6 +109,30 @@ export function buildSearchQueryVariants(query: string): string[] {
           variants.push(headSpaced);
         }
       }
+
+      // Extract subject and evaluative keywords for opinionated CJK queries (e.g. "安华的历史评价过大于功" -> "安华 历史评价 功过")
+      const coreEvalVariant = item
+        .replace(/(?:过大于功|功大于过|功与过|好还是坏|是好是坏|到底怎么样|到底如何|优缺点)/g, ' 功过 ')
+        .replace(/(?:打着|号的|是如何|一步一步|搞砸|弄垮|关于|对于|在|的|和|与|及)/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      const evalSegments = coreEvalVariant.split(/\s+/).filter((s) => s.length >= 2);
+      if (evalSegments.length >= 2) {
+        const evalSpaced = evalSegments.join(' ');
+        const normEval = normalizeComparableText(evalSpaced);
+        if (normEval && !seen.has(normEval)) {
+          seen.add(normEval);
+          variants.push(evalSpaced);
+        }
+
+        const evalHead = evalSegments.slice(0, 2).join(' ');
+        const normEvalHead = normalizeComparableText(evalHead);
+        if (normEvalHead && !seen.has(normEvalHead)) {
+          seen.add(normEvalHead);
+          variants.push(evalHead);
+        }
+      }
     }
   } else {
     for (const suffix of SEARCH_QUERY_VARIANTS) {

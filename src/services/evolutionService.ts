@@ -89,6 +89,11 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 3, delay = 1000): Pr
         message.includes('unavailable') ||
         message.includes('high demand'));
 
+    const isDailyQuotaExhausted = message.includes('per day limit exceeded') || message.includes('retry in ');
+    if (isDailyQuotaExhausted) {
+      throw error;
+    }
+
     if (isRetryable) {
       const waitTime = delay + Math.random() * 400;
       await new Promise((resolve) => setTimeout(resolve, waitTime));
@@ -187,6 +192,8 @@ async function generateWithModelFallback(
     'gemini-3.7-flash',
     'gemini-3.8-flash',
     'gemini-3.5-flash-lite',
+    'gemini-3.1-flash-lite',
+    'gemini-flash-lite-latest',
   ].filter((m, idx, arr) => arr.indexOf(m) === idx);
 
   let lastError: any = null;
@@ -222,20 +229,24 @@ async function generateWithModelFallback(
       lastError = err;
       const status = Number(err?.status || err?.code);
       const message = String(err?.message || '').toLowerCase();
-      const isUnavailable =
+      const isUnavailableOrQuota =
+        status === 429 ||
         status === 503 ||
         status === 404 ||
         status === 500 ||
         status === 502 ||
         status === 504 ||
+        message.includes('429') ||
+        message.includes('quota') ||
+        message.includes('resource_exhausted') ||
         message.includes('503') ||
         message.includes('unavailable') ||
         message.includes('high demand') ||
         message.includes('not found') ||
         message.includes('no longer available');
 
-      if (isUnavailable && model !== candidateModels[candidateModels.length - 1]) {
-        console.warn(`Model ${model} was unavailable (${status || message}), attempting fallback with next Flash model...`);
+      if (isUnavailableOrQuota && model !== candidateModels[candidateModels.length - 1]) {
+        console.warn(`Model ${model} was unavailable or reached per-model quota (${status || message}), attempting failover with next Flash model...`);
         continue;
       }
 
@@ -486,6 +497,108 @@ function buildNoLiveEvidenceMessage(
   ].join('\n');
 }
 
+async function performGeminiKnowledgeExtraction(
+  query: string,
+  selectedModel: string,
+  geminiCause?: GeminiSearchCause
+): Promise<SearchExtractionResult | null> {
+  try {
+    const knowledgeResponse = await generateWithModelFallback({
+      contents: `Analyze the topic: "${query}". 
+      Extract 5 distinct key analytical dimensions or thematic source perspectives on this topic.
+      For each source perspective, provide:
+      1. A relevant reference URL (real, authoritative reference URL or canonical Wikipedia URL for this topic).
+      2. The title of the topic/perspective.
+      3. A list of key definitions and terms.
+      4. A list of salient sub-topics.
+      5. A comprehensive summary of content (at least 200 words).
+      6. Informative score (0.8-1.0).
+      7. Authority score (0.8-1.0).`,
+      config: {
+        systemInstruction: "You are a master academic researcher. Output valid JSON only. Provide in-depth, rich, factual analysis, definitions, and sub-topics based on your comprehensive knowledge base.",
+        responseMimeType: "application/json",
+        maxOutputTokens: 4000,
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              url: { type: Type.STRING },
+              title: { type: Type.STRING },
+              content: { type: Type.STRING },
+              definitions: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    term: { type: Type.STRING },
+                    description: { type: Type.STRING }
+                  },
+                  required: ["term", "description"]
+                }
+              },
+              subTopics: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    title: { type: Type.STRING },
+                    summary: { type: Type.STRING }
+                  },
+                  required: ["title", "summary"]
+                }
+              },
+              informativeScore: { type: Type.NUMBER },
+              authorityScore: { type: Type.NUMBER }
+            },
+            required: ["url", "title", "content", "definitions", "subTopics", "informativeScore", "authorityScore"]
+          }
+        }
+      }
+    }, selectedModel);
+
+    let kParsed: any[] = [];
+    const kText = (knowledgeResponse?.text || '').trim();
+    if (kText) {
+      try {
+        kParsed = JSON.parse(kText);
+      } catch {
+        kParsed = JSON.parse(repairTruncatedJSON(kText));
+      }
+    }
+
+    if (Array.isArray(kParsed) && kParsed.length > 0) {
+      const population: WebPageGenotype[] = kParsed.map((r: any, index: number) => ({
+        id: `gen-${index}-${Date.now()}`,
+        url: r.url || `https://en.wikipedia.org/wiki/${encodeURIComponent(query.replace(/\s+/g, '_'))}`,
+        title: r.title || `Perspective ${index + 1}`,
+        content: r.content ? r.content.substring(0, 2000) : '',
+        definitions: (r.definitions || []).filter((d: any) => isMeaningful(d.term, d.description)),
+        subTopics: (r.subTopics || []).filter((s: any) => isMeaningful(s.title, s.summary)),
+        informativeScore: typeof r.informativeScore === 'number' ? r.informativeScore : 0.85,
+        authorityScore: typeof r.authorityScore === 'number' ? r.authorityScore : 0.85,
+        fitness: 0,
+      }));
+
+      const noteSuffix = geminiCause === 'quota_or_rate_limit'
+        ? ' (external search grounding limit reached; synthesized via model intelligence)'
+        : '';
+
+      return {
+        results: population,
+        artifacts: {
+          searchSummary: `Gemini synthesized ${population.length} deep analytical sources for "${query}".`,
+        },
+        generationNote: `Synthesized via Gemini knowledge synthesis model: ${selectedModel}${noteSuffix}.`,
+        sourceMode: 'gemini',
+      };
+    }
+  } catch (kErr) {
+    console.warn("Gemini knowledge synthesis fallback encountered issue:", kErr);
+  }
+  return null;
+}
+
 export async function searchAndExtract(
   query: string,
   options: EngineOptions = { mode: 'google_duckduckgo', geminiModel: 'gemini-3.8-flash' }
@@ -608,95 +721,9 @@ export async function searchAndExtract(
     geminiCause = classifyGeminiSearchFailure(geminiError);
 
     if (!fallbackEnabled) {
-      try {
-        const knowledgeResponse = await generateWithModelFallback({
-          contents: `Analyze the topic: "${query}". 
-          Extract 5 distinct key analytical dimensions or thematic source perspectives on this topic.
-          For each source perspective, provide:
-          1. A relevant reference URL (real, authoritative reference URL or canonical Wikipedia URL for this topic).
-          2. The title of the topic/perspective.
-          3. A list of key definitions and terms.
-          4. A list of salient sub-topics.
-          5. A comprehensive summary of content (at least 200 words).
-          6. Informative score (0.8-1.0).
-          7. Authority score (0.8-1.0).`,
-          config: {
-            systemInstruction: "You are a master academic researcher. Output valid JSON only. Provide in-depth, rich, factual analysis, definitions, and sub-topics based on your comprehensive knowledge base.",
-            responseMimeType: "application/json",
-            maxOutputTokens: 4000,
-            responseSchema: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  url: { type: Type.STRING },
-                  title: { type: Type.STRING },
-                  content: { type: Type.STRING },
-                  definitions: {
-                    type: Type.ARRAY,
-                    items: {
-                      type: Type.OBJECT,
-                      properties: {
-                        term: { type: Type.STRING },
-                        description: { type: Type.STRING }
-                      },
-                      required: ["term", "description"]
-                    }
-                  },
-                  subTopics: {
-                    type: Type.ARRAY,
-                    items: {
-                      type: Type.OBJECT,
-                      properties: {
-                        title: { type: Type.STRING },
-                        summary: { type: Type.STRING }
-                      },
-                      required: ["title", "summary"]
-                    }
-                  },
-                  informativeScore: { type: Type.NUMBER },
-                  authorityScore: { type: Type.NUMBER }
-                },
-                required: ["url", "title", "content", "definitions", "subTopics", "informativeScore", "authorityScore"]
-              }
-            }
-          }
-        }, selectedModel);
-
-        let kParsed: any[] = [];
-        const kText = (knowledgeResponse.text || '').trim();
-        if (kText) {
-          try {
-            kParsed = JSON.parse(kText);
-          } catch {
-            kParsed = JSON.parse(repairTruncatedJSON(kText));
-          }
-        }
-
-        if (Array.isArray(kParsed) && kParsed.length > 0) {
-          const population: WebPageGenotype[] = kParsed.map((r: any, index: number) => ({
-            id: `gen-${index}-${Date.now()}`,
-            url: r.url || `https://en.wikipedia.org/wiki/${encodeURIComponent(query.replace(/\s+/g, '_'))}`,
-            title: r.title || `Perspective ${index + 1}`,
-            content: r.content ? r.content.substring(0, 2000) : '',
-            definitions: (r.definitions || []).filter((d: any) => isMeaningful(d.term, d.description)),
-            subTopics: (r.subTopics || []).filter((s: any) => isMeaningful(s.title, s.summary)),
-            informativeScore: typeof r.informativeScore === 'number' ? r.informativeScore : 0.85,
-            authorityScore: typeof r.authorityScore === 'number' ? r.authorityScore : 0.85,
-            fitness: 0,
-          }));
-
-          return {
-            results: population,
-            artifacts: {
-              searchSummary: `Gemini synthesized ${population.length} deep analytical sources for "${query}".`,
-            },
-            generationNote: `Synthesized via Gemini knowledge synthesis model: ${selectedModel}.`,
-            sourceMode: 'gemini',
-          };
-        }
-      } catch (kErr) {
-        console.warn("Gemini knowledge synthesis fallback also failed:", kErr);
+      const knowledgeResult = await performGeminiKnowledgeExtraction(query, selectedModel, geminiCause);
+      if (knowledgeResult) {
+        return knowledgeResult;
       }
 
       if (geminiCause === 'model_unavailable') {
@@ -710,13 +737,19 @@ export async function searchAndExtract(
   // Fallback search execution
   const fallbackPayload = await fetchGoogleSearchFallback(query, options);
   // A synthetic payload is a placeholder the server fabricates when Google and DuckDuckGo both return nothing.
-  // Building a book from it would present generic filler as researched evidence, so stop and let the user retry or refine.
+  // When live search returns 0 results or synthetic fallback, seamlessly synthesize from Gemini knowledge base
+  // rather than stopping the run with an error.
   if (
     !fallbackPayload
     || !Array.isArray(fallbackPayload.results)
     || fallbackPayload.results.length === 0
     || isSyntheticFallbackPayload(fallbackPayload)
   ) {
+    const knowledgeResult = await performGeminiKnowledgeExtraction(query, selectedModel, geminiCause);
+    if (knowledgeResult) {
+      return knowledgeResult;
+    }
+
     throw new Error(buildNoLiveEvidenceMessage(query, options.mode, selectedModel, geminiCause));
   }
 
