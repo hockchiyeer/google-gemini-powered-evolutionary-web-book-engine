@@ -15,11 +15,13 @@ const CJK_FONT_FILE = 'NotoSansSC-Subset.ttf';
 export class CjkFontUnavailableError extends Error {
   constructor(public readonly attempts: string[]) {
     super(
-      'The CJK font needed for the High-Res PDF could not be loaded, so the PDF was not generated ' +
-        '(the layout is not switched to reader mode). Make sure src/assets/fonts/NotoSansSC-Subset.ttf is present ' +
-        `(see scripts/make-cjk-font-subset.sh). Details: ${attempts.join('; ')}`
+      'The CJK font could not be loaded, so the High-Res PDF was not created. Try again, or use Print / Save as PDF.'
     );
     this.name = 'CjkFontUnavailableError';
+    console.warn(
+      'CJK font loading failed across candidate locations (see scripts/make-cjk-font-subset.sh):',
+      attempts.join('; ')
+    );
   }
 }
 

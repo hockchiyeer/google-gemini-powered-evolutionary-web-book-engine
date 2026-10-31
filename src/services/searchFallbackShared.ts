@@ -42,9 +42,22 @@ function normalizeComparableText(input: string): string {
 }
 
 function tokenizeComparableText(input: string): string[] {
-  return normalizeComparableText(input)
+  const norm = normalizeComparableText(input);
+  const words = norm
     .split(' ')
     .filter((token) => token.length >= 3 && !FALLBACK_STOPWORDS.has(token));
+
+  const cjkChars = norm.match(/[\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/g);
+  if (cjkChars && cjkChars.length > 0) {
+    for (let i = 0; i < cjkChars.length - 1; i++) {
+      words.push(cjkChars[i] + cjkChars[i + 1]);
+    }
+    if (cjkChars.length === 1) {
+      words.push(cjkChars[0]);
+    }
+  }
+
+  return words;
 }
 
 export function calculateTextSimilarity(left: string, right: string): number {
@@ -199,8 +212,11 @@ export function scoreDomainAuthority(url: string): number {
 }
 
 export function scoreInformativeText(text: string): number {
-  const wordCount = text.split(/\s+/).filter(Boolean).length;
-  const sentenceCount = text.split(/[.!?]+/).filter((segment) => segment.trim().length > 0).length;
+  const cjkCount = (text.match(/[\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/g) || []).length;
+  const nonCjk = text.replace(/[\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/g, ' ').trim();
+  const nonCjkWords = nonCjk ? nonCjk.split(/\s+/).filter(Boolean).length : 0;
+  const wordCount = cjkCount + nonCjkWords;
+  const sentenceCount = text.split(/[.!?。！？]+/).filter((segment) => segment.trim().length > 0).length;
   return Math.min(0.98, 0.35 + Math.min(wordCount / 180, 0.38) + Math.min(sentenceCount / 10, 0.25));
 }
 

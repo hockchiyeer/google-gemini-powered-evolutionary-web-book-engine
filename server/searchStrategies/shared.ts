@@ -259,11 +259,13 @@ export function extractSnippetFromContext(contextHtml: string, title: string): s
   return '';
 }
 
+const CJK_REGEX = /[\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/;
+
 export function splitIntoSentences(text: string): string[] {
   return text
-    .split(/(?<=[.!?])\s+/)
+    .split(/(?<=[.!?])\s+|(?<=[。！？][”’」』）)]*)(?![”’」』）)])\s*/)
     .map((sentence) => collapseWhitespace(sentence))
-    .filter((sentence) => sentence.length >= 35);
+    .filter((sentence) => (CJK_REGEX.test(sentence) ? sentence.length >= 8 : sentence.length >= 35));
 }
 
 export function dedupeSentences(text: string, maxSentences = Number.POSITIVE_INFINITY): string[] {

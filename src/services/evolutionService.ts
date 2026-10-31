@@ -34,6 +34,7 @@ export function buildSyntheticFallbackPayload(query: string, mode: SearchFallbac
   const provider = mode === 'duckduckgo' ? 'duckduckgo' : 'google';
   return {
     query,
+    source: 'synthetic-fallback',
     provider,
     summary: `Structured overview for ${query}.`,
     aiOverview: [],

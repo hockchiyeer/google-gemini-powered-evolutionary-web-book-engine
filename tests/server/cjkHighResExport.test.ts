@@ -55,6 +55,8 @@ async function run(webBook: any): Promise<string> {
   const pdf = await run(cjkWebBook);
   assert.ok(pdf.startsWith('%PDF-') && pdf.trimEnd().endsWith('%%EOF'), 'valid PDF envelope');
   assert.ok(pdf.includes('/Identity-H'), 'CJK text must use the embedded Unicode (Identity-H) font');
+  assert.ok(pdf.includes('/ToUnicode'), 'CJK text must be copyable/searchable (ToUnicode map)');
+  assert.ok(pdf.includes('/FontFile2'), 'subset font must be embedded');
   const pageCount = (pdf.match(/\/Type\s*\/Page(?![s\w])/g) || []).length;
   assert.ok(pageCount >= 3, `High-Res layout has cover + TOC + chapter pages (got ${pageCount})`);
   const links = (pdf.match(/\/Subtype\s*\/Link/g) || []).length;
