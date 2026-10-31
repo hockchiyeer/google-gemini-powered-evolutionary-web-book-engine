@@ -254,7 +254,7 @@ export function sanitizeStructuredLabel(text?: string | null, fallback = ""): st
   if (countDomainMentions(candidate) > 0 && candidate.length < 120) {
     return fallback.trim();
   }
-  if (!/[a-z0-9\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uf900-\ufaff]/i.test(candidate) || candidate.length === 1) {
+  if ((!/[a-z0-9]/i.test(candidate) && !CJK_CHAR_PATTERN.test(candidate)) || candidate.length === 1) {
     return fallback.trim();
   }
 

@@ -598,4 +598,23 @@ assert.ok(
   'Later page should still be cited for its own unique sentence.'
 );
 
+import { isValidConceptDefinition } from '../../src/services/searchFallbackShared.ts';
+
+// Concept definition guard tests against news datelines and unbalanced brackets
+assert.equal(
+  isValidConceptDefinition('KUALA LUMPUR', 'Five years, five leaders.'),
+  false,
+  'All-caps news datelines must not become term definitions'
+);
+assert.equal(
+  isValidConceptDefinition('Malaysia Madani (English', 'Civilised Malaysia) [1] is a framework.'),
+  false,
+  'Unbalanced parenthetical terms must be rejected'
+);
+assert.equal(
+  isValidConceptDefinition('NASA', 'National Aeronautics and Space Administration is the US space agency.'),
+  true,
+  'Valid terms with description must pass'
+);
+
 console.log('evolutionService regression checks passed');

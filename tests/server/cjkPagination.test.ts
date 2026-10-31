@@ -88,7 +88,10 @@ assert.ok(differentYearPair < 0.5, `Different Chinese sentences sharing 2026 mus
 const differentMadaniPair = calculateTextSimilarity('马来西亚政治格局Madani', '经济繁荣发展迅速Madani');
 assert.ok(differentMadaniPair < 0.5, `Different Chinese sentences sharing Madani must score < 0.5 (got ${differentMadaniPair})`);
 
-const oneCharDiffPair = calculateTextSimilarity('马来西亚政治格局走向', '马来西亚政治格局发展');
-assert.ok(oneCharDiffPair > 0.5, `Close Chinese sentences should have meaningful similarity (got ${oneCharDiffPair})`);
+const oneCharDiffShortPair = calculateTextSimilarity('马来西亚政治格局走向', '马来西亚政治格局发展');
+assert.ok(oneCharDiffShortPair > 0.5, `Short close CJK sentences should have similarity > 0.5 (got ${oneCharDiffShortPair})`);
+
+const oneCharDiffLongPair = calculateTextSimilarity('马来西亚政治格局和国家政治走向的深入分析', '马来西亚政治格局和国家政治走向的深入探讨');
+assert.ok(oneCharDiffLongPair >= 0.7, `Long close CJK sentences should have high similarity >= 0.7 (got ${oneCharDiffLongPair})`);
 
 console.log('cjkPagination regression tests passed successfully!');

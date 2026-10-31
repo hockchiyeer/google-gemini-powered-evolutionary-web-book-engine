@@ -20,6 +20,7 @@ import {
   calculateTextSimilarity,
   describeFallbackEvidence,
   isSyntheticFallbackPayload,
+  isValidConceptDefinition,
 } from "./searchFallbackShared";
 import {
   MIN_CHAPTER_TEXT_PAGES,
@@ -592,7 +593,7 @@ export async function searchAndExtract(
         sent.match(/^([A-Z][a-zA-Z0-9\s\-]{2,35})\s+(?:is defined as|refers to|represents)\s+(.+)$/i);
       if (match) {
         const term = match[1].trim(), desc = match[2].trim();
-        if (term.length >= 3 && term.length <= 40 && desc.length >= 25 && isMeaningful(term, desc)) {
+        if (isValidConceptDefinition(term, desc) && isMeaningful(term, desc)) {
           definitions.push({ term, description: desc, sourceUrl: res.url });
           break;
         }

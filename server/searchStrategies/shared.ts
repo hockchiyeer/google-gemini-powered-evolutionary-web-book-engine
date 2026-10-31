@@ -1,5 +1,10 @@
 import type { SearchFallbackResult } from '../../src/types.ts';
-import { calculateTextSimilarity, isCjkMajority } from '../../src/services/searchFallbackShared.ts';
+import {
+  calculateTextSimilarity,
+  isCjkMajority,
+  normalizeComparableText,
+  splitIntoSentences as sharedSplitIntoSentences,
+} from '../../src/services/searchFallbackShared.ts';
 import type { SearchFetchResult } from './types.ts';
 
 export const MAX_RESULTS = 48;
@@ -89,16 +94,7 @@ export function collapseWhitespace(input: string): string {
   return input.replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-export function normalizeComparableText(input: string): string {
-  return collapseWhitespace(
-    input
-      .toLowerCase()
-      .replace(/&/g, ' and ')
-      .replace(/([a-z0-9]+)([\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff])/gi, '$1 $2')
-      .replace(/([\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff])([a-z0-9]+)/gi, '$1 $2')
-      .replace(/[^\w\s\u0080-\u024f\u0370-\u03ff\u0400-\u04ff\u0600-\u06ff\u0900-\u097f\u0e00-\u0e7f\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uf900-\ufaff]/gi, ' ')
-  );
-}
+export { normalizeComparableText };
 
 export function stripHtmlToText(input: string): string {
   return collapseWhitespace(
@@ -262,8 +258,7 @@ export function extractSnippetFromContext(contextHtml: string, title: string): s
 }
 
 export function splitIntoSentences(text: string): string[] {
-  return text
-    .split(/(?<=[.!?])\s+|(?<=[。！？][”’」』）)]*)(?![”’」』）)])\s*/)
+  return sharedSplitIntoSentences(text)
     .map((sentence) => collapseWhitespace(sentence))
     .filter((sentence) => (isCjkMajority(sentence) ? sentence.length >= 8 : sentence.length >= 35));
 }

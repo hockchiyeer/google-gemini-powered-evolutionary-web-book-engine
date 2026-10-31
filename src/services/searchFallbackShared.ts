@@ -33,17 +33,22 @@ export const FALLBACK_STOPWORDS = new Set([
 ]);
 
 /** Canonical CJK character range covering Chinese, Japanese, Korean, and compatibility ideographs. */
-export const CJK_CHAR_PATTERN = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uf900-\ufaff]/g;
+export const CJK_CHAR_PATTERN = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uf900-\ufaff]/;
+export const CJK_CHAR_GLOBAL_PATTERN = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uf900-\ufaff]/g;
+
+export function hasCjk(text: string): boolean {
+  return CJK_CHAR_PATTERN.test(text);
+}
 
 export function countWords(text: string): number {
-  const cjkCount = (text.match(CJK_CHAR_PATTERN) || []).length;
-  const nonCjk = text.replace(CJK_CHAR_PATTERN, ' ').trim();
+  const cjkCount = (text.match(CJK_CHAR_GLOBAL_PATTERN) || []).length;
+  const nonCjk = text.replace(CJK_CHAR_GLOBAL_PATTERN, ' ').trim();
   const nonCjkWords = nonCjk ? nonCjk.split(/\s+/).filter(Boolean).length : 0;
   return cjkCount + nonCjkWords;
 }
 
 export function isCjkMajority(text: string): boolean {
-  const cjkCount = (text.match(CJK_CHAR_PATTERN) || []).length;
+  const cjkCount = (text.match(CJK_CHAR_GLOBAL_PATTERN) || []).length;
   const nonWsLength = text.replace(/\s+/g, '').length;
   return nonWsLength > 0 && cjkCount / nonWsLength >= 0.4;
 }
@@ -72,7 +77,7 @@ function tokenizeComparableText(input: string): string[] {
     .split(' ')
     .filter((token) => token.length >= 3 && !FALLBACK_STOPWORDS.has(token));
 
-  const cjkChars = norm.match(CJK_CHAR_PATTERN);
+  const cjkChars = norm.match(CJK_CHAR_GLOBAL_PATTERN);
   if (cjkChars && cjkChars.length > 0) {
     for (let i = 0; i < cjkChars.length - 1; i++) {
       words.push(cjkChars[i] + cjkChars[i + 1]);
@@ -213,15 +218,44 @@ export function buildFallbackSearchUrl(
   return searchUrl.toString();
 }
 
+export function isValidConceptDefinition(term: string, description: string): boolean {
+  if (!term || !description) return false;
+  const cleanTerm = term.trim();
+  const cleanDesc = description.trim();
+
+  if (cleanTerm.length < 2 || cleanTerm.length > 50 || cleanDesc.length < 20) return false;
+
+  // Reject all-caps news datelines like "KUALA LUMPUR", "WASHINGTON", "NEW YORK"
+  if (/^[A-Z\s,]{2,30}$/.test(cleanTerm) && (cleanTerm.includes(',') || cleanTerm.split(/\s+/).length >= 2 || cleanTerm.length >= 8)) {
+    return false;
+  }
+
+  // Reject status prefixes like "UPDATE", "BREAKING", "LIVE", "PHOTO"
+  if (/^(?:UPDATE|BREAKING|LIVE|PHOTO|VIDEO|WATCH|READ|LISTEN)\b/i.test(cleanTerm)) {
+    return false;
+  }
+
+  // Reject unbalanced parentheses or brackets in term
+  const termOpenParen = (cleanTerm.match(/\(/g) || []).length;
+  const termCloseParen = (cleanTerm.match(/\)/g) || []).length;
+  if (termOpenParen !== termCloseParen) return false;
+
+  const termOpenBracket = (cleanTerm.match(/\[/g) || []).length;
+  const termCloseBracket = (cleanTerm.match(/\]/g) || []).length;
+  if (termOpenBracket !== termCloseBracket) return false;
+
+  // Reject terms ending in open bracket/language qualifier like "(English" or "in"
+  if (/\((?:English|French|Spanish|Chinese|Malay|German)$/i.test(cleanTerm)) return false;
+
+  // Reject descriptions starting with closing punctuation or brackets
+  if (/^[)\]}]/.test(cleanDesc)) return false;
+
+  return true;
+}
+
 export function deriveConceptLabel(title: string, fallbackQuery: string): string {
   const firstSegment = title.split(/[-:|—–]/)[0]?.trim();
-  if (firstSegment && firstSegment.length >= 2 && firstSegment.length <= 80) {
-    // Ignore all-caps news datelines like "KUALA LUMPUR", "UPDATE", "SINGAPORE"
-    if (/^[A-Z\s,]{2,25}$/.test(firstSegment)) return fallbackQuery;
-    // Ignore segments with unbalanced parentheses or brackets
-    const openParen = (firstSegment.match(/\(/g) || []).length;
-    const closeParen = (firstSegment.match(/\)/g) || []).length;
-    if (openParen !== closeParen) return fallbackQuery;
+  if (firstSegment && isValidConceptDefinition(firstSegment, 'A foundational concept regarding ' + fallbackQuery)) {
     return firstSegment;
   }
 
