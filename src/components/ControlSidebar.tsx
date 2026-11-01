@@ -294,7 +294,7 @@ export function ControlSidebar({
             <div className="relative flex-1">
               <select
                 id="gemini-model"
-                value={geminiModel || 'gemini-3.8-flash'}
+                value={geminiModel || 'gemini-3.6-flash'}
                 onChange={(event) => onGeminiModelChange(event.target.value)}
                 disabled={isBusy}
                 title="Choose which Gemini model to use"

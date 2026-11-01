@@ -21,6 +21,7 @@ export type GeminiErrorReason =
   | 'rate_limited'      // 429: per-minute request/token limit; clears after a short wait
   | 'overloaded'        // 503: model temporarily overloaded
   | 'internal'          // 500/502/504: transient Google-side failure
+  | 'timeout'           // no answer within our per-request limit (slow model); another model should be tried, not the same one
   | 'network';          // the request never got an HTTP answer (DNS, TLS, proxy, reset, offline)
 
 export interface ClassifiedGeminiError {
@@ -90,6 +91,10 @@ export function classifyGeminiError(err: any): ClassifiedGeminiError {
     retryable,
     retryAfterMs,
   });
+
+  if (err?.name === 'GeminiTimeoutError') {
+    return make('timeout', 504, false);
+  }
 
   if (/missing gemini api key|missing api key|missing_api_key/.test(lowered)) {
     return make('missing_api_key', 401, false);

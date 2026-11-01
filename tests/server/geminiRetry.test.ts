@@ -109,6 +109,29 @@ for (const [status, reason] of [[400, 'bad_request'], [403, 'permission_denied']
   assert.equal(peak, 2);
 }
 
+// A model that never answers is cut off at the request timeout, aborted, reported as "timeout" and NOT retried on the same model.
+{
+  process.env.GEMINI_REQUEST_TIMEOUT_MS = '30';
+  let calls = 0;
+  let aborted = false;
+  await assert.rejects(
+    callGemini(
+      (signal) =>
+        new Promise((_resolve, reject) => {
+          calls += 1;
+          signal?.addEventListener('abort', () => {
+            aborted = true;
+            reject(new Error('aborted'));
+          });
+        })
+    ),
+    (err: unknown) => err instanceof GeminiCallError && err.classified.reason === 'timeout' && err.classified.httpStatus === 504
+  );
+  assert.equal(calls, 1, 'a timeout must not be retried on the same model');
+  assert.equal(aborted, true, 'the underlying request must be aborted');
+  delete process.env.GEMINI_REQUEST_TIMEOUT_MS;
+}
+
 // Health endpoint: says "missing key" instead of failing mysteriously, and never echoes a key.
 {
   delete process.env.GEMINI_API_KEY;

@@ -74,3 +74,12 @@ Corrected in this branch:
   A failed Stage-1 outline drops the whole book to the offline template, which matches the thin PDFs seen. (Timeout not yet confirmed.)
 - Correction to section 4: restoring `gemini-3.8-flash` as default was based on Google's docs; the measurements above favour `gemini-3.6-flash` here. Pick it in the model dropdown.
 
+## 7. Slow-model protection (1 Nov 2026)
+
+- Health check on the deployed app: `gemini-3.6-flash` 2.3 s, `gemini-3.8-flash` 191.5 s for the same one-word request.
+- Default model is now `gemini-3.6-flash` everywhere (server, UI, client fallback).
+- The server gives up on a single Google request after `GEMINI_REQUEST_TIMEOUT_MS` (default 50 s, 0 = off), aborts it and reports reason `timeout` (HTTP 504). A timeout is never retried on the same model; the client fails over to a sibling model instead and says so in the book's notice.
+- Failover order is now fastest first: 3.6, 3.5, 3.5-flash-lite, 3.1-flash-lite, then 3.7 and 3.8.
+- Still open: Google Search grounding returns a bare 429 on every model (needs billing or another project), and whether a full book now completes on 3.6.
+
+

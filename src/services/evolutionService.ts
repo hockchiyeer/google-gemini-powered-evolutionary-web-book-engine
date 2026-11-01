@@ -74,7 +74,7 @@ const CANDIDATE_MODELS = [
   ...GEMINI_MODELS,
 ];
 
-const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
+const DEFAULT_GEMINI_MODEL = 'gemini-3.6-flash';
 
 function getApiEndpoint(path: string): string {
   if (typeof window !== 'undefined' && window.location?.origin) {
@@ -221,10 +221,10 @@ async function generateWithModelFallback(
     primaryModel,
     'gemini-3.6-flash',
     'gemini-3.5-flash',
-    'gemini-3.7-flash',
-    'gemini-3.8-flash',
     'gemini-3.5-flash-lite',
     'gemini-3.1-flash-lite',
+    'gemini-3.7-flash',
+    'gemini-3.8-flash',
     'gemini-flash-lite-latest',
   ].filter((m, idx, arr) => arr.indexOf(m) === idx).slice(0, 3);
 
@@ -649,14 +649,14 @@ async function performGeminiKnowledgeExtraction(
 
 export async function searchAndExtract(
   query: string,
-  options: EngineOptions = { mode: 'google_duckduckgo', geminiModel: 'gemini-3.8-flash' }
+  options: EngineOptions = { mode: 'google_duckduckgo', geminiModel: DEFAULT_GEMINI_MODEL }
 ): Promise<SearchExtractionResult> {
   const fallbackEnabled = options.mode !== 'off';
-  const selectedModel = options.geminiModel || 'gemini-3.8-flash';
+  const selectedModel = options.geminiModel || DEFAULT_GEMINI_MODEL;
   let geminiCause: GeminiSearchCause = 'no_content';
 
   try {
-    const preferredModel = options.geminiModel || 'gemini-3.8-flash';
+    const preferredModel = options.geminiModel || DEFAULT_GEMINI_MODEL;
 
     const response = await generateWithModelFallback({
       contents: `Search for comprehensive information about "${query}". 

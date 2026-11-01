@@ -10,7 +10,7 @@ import { classifyGeminiError, computeBackoffMs, type ClassifiedGeminiError } fro
 
 dotenv.config();
 
-const DEFAULT_MODEL = "gemini-3.8-flash";
+const DEFAULT_MODEL = "gemini-3.6-flash";
 
 function envInt(name: string, fallback: number): number {
   const parsed = Number(process.env[name]);
@@ -21,9 +21,12 @@ function envInt(name: string, fallback: number): number {
 //   GEMINI_MAX_CONCURRENCY   simultaneous requests to Google from this server (default 3)
 //   GEMINI_MAX_ATTEMPTS      tries per request for rate-limit / overload / transient errors (default 4)
 //   GEMINI_MAX_RETRY_WAIT_MS longest single wait we are willing to sit through before giving up (default 45000)
+//   GEMINI_REQUEST_TIMEOUT_MS longest we wait for ONE answer from Google (default 50000, 0 = no limit). Kept under the ~60 s
+//                            at which hosting gateways cut a request, so a slow model fails over instead of hanging.
 const maxConcurrency = () => Math.max(1, envInt("GEMINI_MAX_CONCURRENCY", 3));
 const maxAttempts = () => Math.max(1, envInt("GEMINI_MAX_ATTEMPTS", 4));
 const maxRetryWaitMs = () => Math.max(1000, envInt("GEMINI_MAX_RETRY_WAIT_MS", 45_000));
+const requestTimeoutMs = () => envInt("GEMINI_REQUEST_TIMEOUT_MS", 50_000);
 
 // The client is created lazily and re-created if the key changes, so a key edited in .env / secrets
 // after the server started is picked up instead of every request failing with the stale one.
@@ -85,6 +88,13 @@ const gate = new Gate();
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+export class GeminiTimeoutError extends Error {
+  constructor(readonly timeoutMs: number) {
+    super(`Gemini did not answer within ${Math.round(timeoutMs / 1000)} s (the selected model is responding too slowly).`);
+    this.name = "GeminiTimeoutError";
+  }
+}
+
 export class GeminiCallError extends Error {
   readonly classified: ClassifiedGeminiError;
   readonly attempts: number;
@@ -97,20 +107,40 @@ export class GeminiCallError extends Error {
   }
 }
 
+/** Runs one attempt and gives up on it after `timeoutMs` (0 = no limit); the SDK request is aborted too. */
+async function runWithTimeout<T>(task: (signal?: AbortSignal) => Promise<T>, timeoutMs: number): Promise<T> {
+  if (timeoutMs <= 0) return task();
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new GeminiTimeoutError(timeoutMs)); // first, so it wins the race against the abort error below
+      controller.abort();
+    }, timeoutMs);
+  });
+  try {
+    const running = task(controller.signal);
+    running.catch(() => {}); // an aborted request that fails after the timeout already won must not be an unhandled rejection
+    return await Promise.race([running, timedOut]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 /**
  * Runs a Gemini call with a bounded number of attempts. Only errors that can clear by themselves
  * (per-minute rate limit, overload, transient 5xx, network) are retried, honouring the delay Google asks
  * for. Daily-quota, no-free-tier, auth, permission, model and bad-request errors fail immediately:
  * retrying them cannot help and only burns more quota.
  */
-export async function callGemini<T>(task: () => Promise<T>): Promise<T> {
+export async function callGemini<T>(task: (signal?: AbortSignal) => Promise<T>): Promise<T> {
   const attempts = maxAttempts();
   const waitCap = maxRetryWaitMs();
 
   return gate.run(async () => {
     for (let attempt = 1; ; attempt += 1) {
       try {
-        return await task();
+        return await runWithTimeout(task, requestTimeoutMs());
       } catch (err) {
         const classified = classifyGeminiError(err);
         const delay = classified.retryAfterMs ?? computeBackoffMs(attempt);
@@ -158,7 +188,7 @@ function buildErrorPayload(classified: ClassifiedGeminiError, attempts = 1) {
       reason: classified.reason,
       retryAfterSeconds: classified.retryAfterMs != null ? Math.ceil(classified.retryAfterMs / 1000) : undefined,
       // True when the server already retried this request, so the client must not retry it again.
-      retriesExhausted: classified.retryable && attempts > 1,
+      retriesExhausted: (classified.retryable && attempts > 1) || classified.reason === "timeout",
     },
   };
 }
@@ -197,11 +227,11 @@ export async function handleGeminiGenerate(req: IncomingMessage, res: ServerResp
       return;
     }
 
-    const response = await callGemini(() =>
+    const response = await callGemini((signal) =>
       getAi().models.generateContent({
         model,
         contents: body.contents,
-        config: body.config,
+        config: { ...body.config, abortSignal: signal },
       })
     );
 
@@ -232,11 +262,11 @@ export async function handleGeminiStream(req: IncomingMessage, res: ServerRespon
 
     // Errors Google reports when the stream is opened (rate limit, bad key, ...) surface here, before any
     // byte is sent to the browser, so they can still be retried and returned with their real HTTP status.
-    const responseStream = await callGemini(() =>
+    const responseStream = await callGemini((signal) =>
       getAi().models.generateContentStream({
         model,
         contents: body.contents,
-        config: body.config,
+        config: { ...body.config, abortSignal: signal },
       })
     );
 

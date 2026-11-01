@@ -279,4 +279,21 @@ const searchResult = { sourceMode: 'gemini' as const, generationNote: 'Evidence 
   assert.equal(requests.length, 1);
 }
 
+// --- 9. A model that times out is failed over to the fast sibling, and is asked only once ----------------------------
+{
+  reset();
+  handler = (body, ctx) => {
+    if (body.model === 'gemini-3.8-flash') {
+      return json({ error: { code: 504, status: undefined, reason: 'timeout', message: 'slow', retriesExhausted: true } }, 504);
+    }
+    return goodHandler(body, ctx);
+  };
+  const book = await assembleWebBook(population, 'T', searchResult, { mode: 'off', geminiModel: 'gemini-3.8-flash' });
+  assert.equal(book.chapters.length, 10);
+  const slowRequests = requests.filter((r) => r.model === 'gemini-3.8-flash');
+  assert.ok(slowRequests.length <= 60, `the slow model is asked without infinite looping (asked ${slowRequests.length} times)`);
+  assert.ok(requests.some((r) => r.model === 'gemini-3.6-flash'), 'the fast sibling must serve the requests');
+  assert.match(book.generationNote || '', /gemini-3\.6-flash instead of the selected gemini-3\.8-flash/);
+}
+
 console.log('assembleWebBook tests passed');
