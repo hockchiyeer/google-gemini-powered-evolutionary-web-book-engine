@@ -249,7 +249,11 @@ function getHeaderBlock(webBook: WebBook): ReportBlock {
   const chapters = webBook.chapters || [];
   const totalConcepts = chapters.reduce((acc, ch) => acc + (Array.isArray(ch.definitions) ? ch.definitions.length : 0), 0);
   const dateStr = new Date(webBook.timestamp).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-  const mode = webBook.sourceMode === 'fallback_search' ? 'Fallback search' : 'Grounded AI';
+  const mode = webBook.sourceMode === 'fallback_search'
+    ? 'Fallback search'
+    : webBook.sourceMode === 'model_knowledge'
+      ? 'Model knowledge (not verified against live sources)'
+      : 'Grounded AI';
   const meta = [
     `${chapters.length} ${chapters.length === 1 ? 'chapter' : 'chapters'}`,
     `${totalConcepts} core ${totalConcepts === 1 ? 'concept' : 'concepts'}`,

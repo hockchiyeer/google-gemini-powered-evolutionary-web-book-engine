@@ -5,15 +5,54 @@ import { GoogleGenAI, Modality } from "@google/genai";
 import type { LiveServerMessage } from "@google/genai";
 import { WebSocketServer, WebSocket } from "ws";
 import dotenv from "dotenv";
+import { GEMINI_MODELS } from "../src/types.ts";
+import { classifyGeminiError, computeBackoffMs, type ClassifiedGeminiError } from "./geminiErrors.ts";
 
 dotenv.config();
 
-export const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-  httpOptions: {
-    headers: {
-      "User-Agent": "aistudio-build",
-    },
+const DEFAULT_MODEL = "gemini-3.8-flash";
+
+function envInt(name: string, fallback: number): number {
+  const parsed = Number(process.env[name]);
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : fallback;
+}
+
+// Tunables (set in .env). Defaults are conservative so a free-tier project is not flooded.
+//   GEMINI_MAX_CONCURRENCY   simultaneous requests to Google from this server (default 3)
+//   GEMINI_MAX_ATTEMPTS      tries per request for rate-limit / overload / transient errors (default 4)
+//   GEMINI_MAX_RETRY_WAIT_MS longest single wait we are willing to sit through before giving up (default 45000)
+const maxConcurrency = () => Math.max(1, envInt("GEMINI_MAX_CONCURRENCY", 3));
+const maxAttempts = () => Math.max(1, envInt("GEMINI_MAX_ATTEMPTS", 4));
+const maxRetryWaitMs = () => Math.max(1000, envInt("GEMINI_MAX_RETRY_WAIT_MS", 45_000));
+
+// The client is created lazily and re-created if the key changes, so a key edited in .env / secrets
+// after the server started is picked up instead of every request failing with the stale one.
+let cachedClient: { key: string; client: GoogleGenAI } | null = null;
+
+export function getAi(): GoogleGenAI {
+  const key = process.env.GEMINI_API_KEY || "";
+  if (!cachedClient || cachedClient.key !== key) {
+    cachedClient = {
+      key,
+      client: new GoogleGenAI({
+        apiKey: key || undefined,
+        httpOptions: {
+          headers: {
+            "User-Agent": "aistudio-build",
+          },
+        },
+      }),
+    };
+  }
+  return cachedClient.client;
+}
+
+// Kept for backwards compatibility with code that imported the old singleton.
+export const ai: GoogleGenAI = new Proxy({} as GoogleGenAI, {
+  get(_target, prop) {
+    const client = getAi() as any;
+    const value = client[prop];
+    return typeof value === "function" ? value.bind(client) : value;
   },
 });
 
@@ -21,6 +60,71 @@ export interface GeminiGenerateRequestBody {
   model?: string;
   contents: any;
   config?: any;
+}
+
+class Gate {
+  private active = 0;
+  private waiters: Array<() => void> = [];
+
+  async run<T>(task: () => Promise<T>): Promise<T> {
+    const limit = maxConcurrency();
+    if (this.active >= limit) {
+      await new Promise<void>((resolve) => this.waiters.push(resolve));
+    }
+    this.active += 1;
+    try {
+      return await task();
+    } finally {
+      this.active -= 1;
+      this.waiters.shift()?.();
+    }
+  }
+}
+
+const gate = new Gate();
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+export class GeminiCallError extends Error {
+  readonly classified: ClassifiedGeminiError;
+  readonly attempts: number;
+
+  constructor(classified: ClassifiedGeminiError, attempts: number) {
+    super(classified.message);
+    this.name = "GeminiCallError";
+    this.classified = classified;
+    this.attempts = attempts;
+  }
+}
+
+/**
+ * Runs a Gemini call with a bounded number of attempts. Only errors that can clear by themselves
+ * (per-minute rate limit, overload, transient 5xx, network) are retried, honouring the delay Google asks
+ * for. Daily-quota, no-free-tier, auth, permission, model and bad-request errors fail immediately:
+ * retrying them cannot help and only burns more quota.
+ */
+export async function callGemini<T>(task: () => Promise<T>): Promise<T> {
+  const attempts = maxAttempts();
+  const waitCap = maxRetryWaitMs();
+
+  return gate.run(async () => {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await task();
+      } catch (err) {
+        const classified = classifyGeminiError(err);
+        const delay = classified.retryAfterMs ?? computeBackoffMs(attempt);
+        const giveUp = !classified.retryable || attempt >= attempts || delay > waitCap;
+        if (giveUp) {
+          throw new GeminiCallError(classified, attempt);
+        }
+        console.warn(
+          `[gemini] ${classified.reason} (HTTP ${classified.httpStatus}); retry ${attempt}/${attempts - 1} in ${Math.round(delay / 1000)}s`
+        );
+        await sleep(delay);
+      }
+    }
+  });
 }
 
 async function readJsonBody(req: IncomingMessage): Promise<any> {
@@ -37,10 +141,45 @@ async function readJsonBody(req: IncomingMessage): Promise<any> {
   }
 }
 
-function sendJson(res: ServerResponse, statusCode: number, payload: unknown): void {
+function sendJson(res: ServerResponse, statusCode: number, payload: unknown, headers: Record<string, string> = {}): void {
   res.statusCode = statusCode;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
+  for (const [name, value] of Object.entries(headers)) res.setHeader(name, value);
   res.end(JSON.stringify(payload));
+}
+
+function buildErrorPayload(classified: ClassifiedGeminiError, attempts = 1) {
+  return {
+    error: {
+      message: classified.message,
+      code: classified.httpStatus,
+      status: classified.httpStatus === 429 ? "RESOURCE_EXHAUSTED" : undefined,
+      // Machine-readable cause, so the UI can say what really happened instead of guessing from text.
+      reason: classified.reason,
+      retryAfterSeconds: classified.retryAfterMs != null ? Math.ceil(classified.retryAfterMs / 1000) : undefined,
+      // True when the server already retried this request, so the client must not retry it again.
+      retriesExhausted: classified.retryable && attempts > 1,
+    },
+  };
+}
+
+function sendGeminiError(res: ServerResponse, err: unknown): void {
+  const classified = err instanceof GeminiCallError ? err.classified : classifyGeminiError(err);
+  const attempts = err instanceof GeminiCallError ? err.attempts : 1;
+  const headers: Record<string, string> = {};
+  if (classified.retryAfterMs != null) headers["Retry-After"] = String(Math.ceil(classified.retryAfterMs / 1000));
+  sendJson(res, classified.httpStatus || 500, buildErrorPayload(classified, attempts), headers);
+}
+
+function missingKeyPayload() {
+  return {
+    error: {
+      message: "Missing Gemini API key on server. Set GEMINI_API_KEY in environment secrets.",
+      status: "UNAUTHENTICATED",
+      code: 401,
+      reason: "missing_api_key",
+    },
+  };
 }
 
 export async function handleGeminiGenerate(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -51,24 +190,20 @@ export async function handleGeminiGenerate(req: IncomingMessage, res: ServerResp
 
   try {
     const body: GeminiGenerateRequestBody = await readJsonBody(req);
-    const model = body.model || "gemini-3.6-flash";
+    const model = body.model || DEFAULT_MODEL;
 
     if (!process.env.GEMINI_API_KEY) {
-      sendJson(res, 401, {
-        error: {
-          message: "Missing Gemini API key on server. Set GEMINI_API_KEY in environment secrets.",
-          status: "UNAUTHENTICATED",
-          code: 401,
-        },
-      });
+      sendJson(res, 401, missingKeyPayload());
       return;
     }
 
-    const response = await ai.models.generateContent({
-      model,
-      contents: body.contents,
-      config: body.config,
-    });
+    const response = await callGemini(() =>
+      getAi().models.generateContent({
+        model,
+        contents: body.contents,
+        config: body.config,
+      })
+    );
 
     sendJson(res, 200, {
       text: response.text,
@@ -76,16 +211,7 @@ export async function handleGeminiGenerate(req: IncomingMessage, res: ServerResp
       usageMetadata: response.usageMetadata,
     });
   } catch (err: any) {
-    const rawStatus = Number(err?.status || err?.code);
-    const status = Number.isInteger(rawStatus) && rawStatus >= 400 && rawStatus < 600 ? rawStatus : 500;
-    sendJson(res, status, {
-      error: {
-        message: err?.message || "Gemini API request failed",
-        status: err?.status || (status === 429 ? "RESOURCE_EXHAUSTED" : "INTERNAL"),
-        code: status,
-        details: err?.details,
-      },
-    });
+    sendGeminiError(res, err);
   }
 }
 
@@ -97,18 +223,22 @@ export async function handleGeminiStream(req: IncomingMessage, res: ServerRespon
 
   try {
     const body: GeminiGenerateRequestBody = await readJsonBody(req);
-    const model = body.model || "gemini-3.6-flash";
+    const model = body.model || DEFAULT_MODEL;
 
     if (!process.env.GEMINI_API_KEY) {
-      sendJson(res, 401, {
-        error: {
-          message: "Missing Gemini API key on server. Set GEMINI_API_KEY in environment secrets.",
-          status: "UNAUTHENTICATED",
-          code: 401,
-        },
-      });
+      sendJson(res, 401, missingKeyPayload());
       return;
     }
+
+    // Errors Google reports when the stream is opened (rate limit, bad key, ...) surface here, before any
+    // byte is sent to the browser, so they can still be retried and returned with their real HTTP status.
+    const responseStream = await callGemini(() =>
+      getAi().models.generateContentStream({
+        model,
+        contents: body.contents,
+        config: body.config,
+      })
+    );
 
     res.writeHead(200, {
       "Content-Type": "text/event-stream; charset=utf-8",
@@ -116,16 +246,11 @@ export async function handleGeminiStream(req: IncomingMessage, res: ServerRespon
       Connection: "keep-alive",
     });
 
-    const responseStream = await ai.models.generateContentStream({
-      model,
-      contents: body.contents,
-      config: body.config,
-    });
-
     for await (const chunk of responseStream) {
       const payload = JSON.stringify({
         text: chunk.text,
         candidates: chunk.candidates,
+        usageMetadata: chunk.usageMetadata,
       });
       res.write(`data: ${payload}\n\n`);
     }
@@ -133,22 +258,95 @@ export async function handleGeminiStream(req: IncomingMessage, res: ServerRespon
     res.write("data: [DONE]\n\n");
     res.end();
   } catch (err: any) {
-    const payload = JSON.stringify({
-      error: {
-        message: err?.message || "Stream failed",
-        status: err?.status,
-        code: err?.code,
-      },
-    });
     if (!res.headersSent) {
-      const rawStatus = Number(err?.status || err?.code);
-      const status = Number.isInteger(rawStatus) && rawStatus >= 400 && rawStatus < 600 ? rawStatus : 500;
-      sendJson(res, status, JSON.parse(payload));
+      sendGeminiError(res, err);
     } else {
-      res.write(`data: ${payload}\n\n`);
+      const classified = err instanceof GeminiCallError ? err.classified : classifyGeminiError(err);
+      res.write(`data: ${JSON.stringify(buildErrorPayload(classified))}\n\n`);
       res.end();
     }
   }
+}
+
+/**
+ * GET /api/gemini/health[?model=...]
+ * Makes one tiny real request and reports exactly what Google answered. This is the fastest way to tell
+ * "quota", "bad key", "model not available to this project", "blocked" and "no network" apart.
+ * The key itself is never returned.
+ */
+export async function handleGeminiHealth(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const url = new URL(req.url || "/", "http://localhost");
+  const model = url.searchParams.get("model") || DEFAULT_MODEL;
+  const key = process.env.GEMINI_API_KEY || "";
+  const base = {
+    model,
+    keyPresent: Boolean(key),
+    keyLooksValid: /^AIza[0-9A-Za-z_-]{30,}$/.test(key),
+    keyLength: key.length,
+  };
+
+  if (!key) {
+    sendJson(res, 200, { ok: false, ...base, reason: "missing_api_key", httpStatus: 401, message: missingKeyPayload().error.message });
+    return;
+  }
+
+  const startedAt = Date.now();
+  try {
+    const response = await getAi().models.generateContent({
+      model,
+      contents: "Reply with the single word: OK",
+      config: { maxOutputTokens: 256 },
+    });
+    sendJson(res, 200, {
+      ok: true,
+      ...base,
+      httpStatus: 200,
+      latencyMs: Date.now() - startedAt,
+      sample: String(response.text ?? "").slice(0, 40),
+    });
+  } catch (err: any) {
+    const classified = classifyGeminiError(err);
+    sendJson(res, 200, {
+      ok: false,
+      ...base,
+      httpStatus: classified.httpStatus,
+      reason: classified.reason,
+      retryAfterSeconds: classified.retryAfterMs != null ? Math.ceil(classified.retryAfterMs / 1000) : undefined,
+      message: classified.message.slice(0, 600),
+      latencyMs: Date.now() - startedAt,
+    });
+  }
+}
+
+let cachedModelList: { at: number; key: string; models: string[] } | null = null;
+
+async function listAvailableModels(): Promise<{ models: string[]; source: "live" | "static" }> {
+  const staticModels = [...GEMINI_MODELS] as string[];
+  const key = process.env.GEMINI_API_KEY || "";
+  if (!key) return { models: staticModels, source: "static" };
+
+  if (cachedModelList && cachedModelList.key === key && Date.now() - cachedModelList.at < 10 * 60_000) {
+    return { models: cachedModelList.models, source: "live" };
+  }
+
+  try {
+    const names: string[] = [];
+    const pager: any = await getAi().models.list({ config: { pageSize: 100 } });
+    for await (const model of pager) {
+      const name = String(model?.name || "").replace(/^models\//, "");
+      const actions: string[] = Array.isArray(model?.supportedActions) ? model.supportedActions : [];
+      if (name.startsWith("gemini") && (actions.length === 0 || actions.includes("generateContent"))) {
+        names.push(name);
+      }
+    }
+    if (names.length > 0) {
+      cachedModelList = { at: Date.now(), key, models: names };
+      return { models: names, source: "live" };
+    }
+  } catch (err) {
+    console.warn("[gemini] model discovery failed; using the built-in list", classifyGeminiError(err).reason);
+  }
+  return { models: staticModels, source: "static" };
 }
 
 export function createGeminiMiddleware() {
@@ -158,28 +356,26 @@ export function createGeminiMiddleware() {
       return;
     }
 
-    const parsedUrl = new URL(req.url, "http://localhost");
-    const pathname = parsedUrl.pathname;
+    const url = new URL(req.url, "http://localhost");
+    const { pathname } = url;
 
-    if (pathname === "/api/gemini/generate" || pathname === "/api/gemini/generateContent") {
+    if (pathname === "/api/gemini/generate") {
       await handleGeminiGenerate(req, res);
       return;
     }
 
-    if (pathname === "/api/gemini/stream" || pathname === "/api/gemini/generateContentStream") {
+    if (pathname === "/api/gemini/stream") {
       await handleGeminiStream(req, res);
       return;
     }
 
+    if (pathname === "/api/gemini/health" && req.method === "GET") {
+      await handleGeminiHealth(req, res);
+      return;
+    }
+
     if (pathname === "/api/gemini/models" && req.method === "GET") {
-      sendJson(res, 200, {
-        models: [
-          "gemini-3.8-flash",
-          "gemini-flash-latest",
-          "gemini-3.1-flash-lite",
-          "gemini-4-argon",
-        ],
-      });
+      sendJson(res, 200, await listAvailableModels());
       return;
     }
 
@@ -187,118 +383,93 @@ export function createGeminiMiddleware() {
   };
 }
 
+export function geminiPlugin(): Plugin {
+  return {
+    name: "gemini-api-middleware",
+    configureServer(server) {
+      server.middlewares.use(createGeminiMiddleware());
+    },
+  };
+}
+
 export function setupGeminiLiveWebSocket(server: HttpServer): WebSocketServer {
   const wss = new WebSocketServer({ noServer: true });
 
-  server.on("upgrade", (request, socket, head) => {
-    const pathname = new URL(request.url || "/", "http://localhost").pathname;
-    if (pathname === "/live" || pathname === "/api/gemini/live") {
-      wss.handleUpgrade(request, socket, head, (ws) => {
-        wss.emit("connection", ws, request);
+  server.on("upgrade", (req, socket, head) => {
+    if (req.url === "/api/gemini/live") {
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        wss.emit("connection", ws, req);
       });
     }
   });
 
-  wss.on("connection", async (clientWs: WebSocket) => {
+  wss.on("connection", (clientWs: WebSocket) => {
     let session: any = null;
 
-    try {
+    const initSession = async () => {
       if (!process.env.GEMINI_API_KEY) {
         clientWs.send(
           JSON.stringify({
-            error: "Missing Gemini API key on server. Set GEMINI_API_KEY in environment secrets.",
+            error: { message: "Missing GEMINI_API_KEY on server." },
           })
         );
         clientWs.close();
         return;
       }
 
-      session = await ai.live.connect({
+      session = await getAi().live.connect({
         model: "gemini-3.8-live",
         config: {
           responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
-          },
-          systemInstruction: "You are a helpful assistant.",
-        },
-        callbacks: {
-          onmessage: (message: LiveServerMessage) => {
-            const audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-            if (audio && clientWs.readyState === WebSocket.OPEN) {
-              clientWs.send(JSON.stringify({ audio }));
-            }
-            if (message.serverContent?.interrupted && clientWs.readyState === WebSocket.OPEN) {
-              clientWs.send(JSON.stringify({ interrupted: true }));
-            }
-          },
-          onclose: () => {
-            try {
-              if (clientWs.readyState === WebSocket.OPEN) clientWs.close();
-            } catch {}
-          },
-          onerror: (err: any) => {
-            try {
-              if (clientWs.readyState === WebSocket.OPEN) {
-                clientWs.send(JSON.stringify({ error: err?.message || "Live API error" }));
-              }
-            } catch {}
-          },
         },
       });
 
-      clientWs.on("message", (data) => {
-        try {
-          const parsed = JSON.parse(data.toString());
-          if (parsed.audio) {
-            session.sendRealtimeInput({
-              audio: { data: parsed.audio, mimeType: "audio/pcm;rate=16000" },
-            });
-          } else if (parsed.text) {
-            session.sendRealtimeInput({
-              text: parsed.text,
-            });
-          }
-        } catch (e) {
-          console.error("Live API WS message parse error:", e);
+      session.on("content", (data: LiveServerMessage) => {
+        if (clientWs.readyState === WebSocket.OPEN) {
+          clientWs.send(JSON.stringify(data));
         }
       });
 
-      clientWs.on("close", () => {
-        try {
-          session?.close?.();
-        } catch {}
-      });
-    } catch (err: any) {
-      console.error("Failed to connect to Gemini Live API:", err);
-      try {
+      session.on("close", () => {
         if (clientWs.readyState === WebSocket.OPEN) {
-          clientWs.send(JSON.stringify({ error: err?.message || "Failed to connect to Live API" }));
           clientWs.close();
         }
-      } catch {}
-    }
+      });
+
+      session.on("error", (err: unknown) => {
+        if (clientWs.readyState === WebSocket.OPEN) {
+          const classified = classifyGeminiError(err);
+          clientWs.send(JSON.stringify(buildErrorPayload(classified)));
+        }
+      });
+    };
+
+    initSession().catch((err) => {
+      const classified = classifyGeminiError(err);
+      if (clientWs.readyState === WebSocket.OPEN) {
+        clientWs.send(JSON.stringify(buildErrorPayload(classified)));
+        clientWs.close();
+      }
+    });
+
+    clientWs.on("message", (data: WebSocket.RawData) => {
+      if (!session) return;
+      try {
+        const message = JSON.parse(data.toString());
+        session.send(message);
+      } catch (err) {
+        console.error("Failed to parse client message for Gemini Live:", err);
+      }
+    });
+
+    clientWs.on("close", () => {
+      if (session) {
+        try {
+          session.close();
+        } catch {}
+      }
+    });
   });
 
   return wss;
-}
-
-export function geminiPlugin(): Plugin {
-  const middleware = createGeminiMiddleware();
-
-  return {
-    name: "gemini-server-plugin",
-    configureServer(server) {
-      server.middlewares.use(middleware);
-      if (server.httpServer) {
-        setupGeminiLiveWebSocket(server.httpServer);
-      }
-    },
-    configurePreviewServer(server) {
-      server.middlewares.use(middleware);
-      if (server.httpServer) {
-        setupGeminiLiveWebSocket(server.httpServer);
-      }
-    },
-  };
 }

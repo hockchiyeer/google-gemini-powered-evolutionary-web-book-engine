@@ -45,7 +45,7 @@ export const GEMINI_MODELS = [
 export type SearchFallbackMode = 'off' | 'duckduckgo' | 'google' | 'google_duckduckgo';
 export type SearchFallbackSource = 'google' | 'duckduckgo' | 'google_duckduckgo' | 'gemini';
 export type SearchFallbackReason = 'quota_exhausted' | 'rate_limited' | 'unreachable' | 'network_unreachable' | 'manual' | 'no_content' | 'invalid_api_key' | 'missing_api_key' | 'service_unavailable';
-export type WebBookSourceMode = 'gemini' | 'fallback_search' | 'hybrid' | 'search-fallback';
+export type WebBookSourceMode = 'gemini' | 'fallback_search' | 'hybrid' | 'search-fallback' | 'model_knowledge';
 export type SearchFallbackProvider = 'google' | 'duckduckgo';
 
 export interface SearchArtifact {
@@ -96,7 +96,7 @@ export function isSearchFallbackSource(val: unknown): val is SearchFallbackSourc
 }
 
 export function isWebBookSourceMode(val: unknown): val is WebBookSourceMode {
-  return typeof val === 'string' && ['gemini', 'fallback_search', 'hybrid', 'search-fallback'].includes(val);
+  return typeof val === 'string' && ['gemini', 'fallback_search', 'hybrid', 'search-fallback', 'model_knowledge'].includes(val);
 }
 
 export interface WebBook {

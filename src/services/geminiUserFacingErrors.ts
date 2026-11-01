@@ -3,9 +3,26 @@ import { isNonJsonResponseText, looksLikeHtml, toPlainTextPreview } from './safe
 export type GeminiFailureReason =
   | 'missing_api_key'
   | 'invalid_api_key'
+  | 'permission_denied'
+  | 'bad_request'
+  | 'quota_daily'
+  | 'no_free_tier'
   | 'quota_or_rate_limit'
   | 'service_unavailable'
   | 'network_unreachable';
+
+/**
+ * Failures that retrying (immediately or after a short wait) cannot fix. Used to stop spending requests
+ * on a book that cannot be finished, and to say so instead of "please wait a minute".
+ */
+export const NON_RECOVERABLE_GEMINI_REASONS: ReadonlySet<GeminiFailureReason> = new Set<GeminiFailureReason>([
+  'missing_api_key',
+  'invalid_api_key',
+  'permission_denied',
+  'bad_request',
+  'quota_daily',
+  'no_free_tier',
+]);
 
 // Disable the client-side Gemini timeout so long-running grounding and
 // assembly requests are allowed to complete instead of being cut off early.
@@ -106,6 +123,18 @@ export function buildGeminiUserFacingErrorMessage(
       break;
     case 'invalid_api_key':
       baseMessage = 'Gemini API key was rejected by Google. Check GEMINI_API_KEY or VITE_GEMINI_API_KEY and try again.';
+      break;
+    case 'permission_denied':
+      baseMessage = 'Google refused this request (HTTP 403). The API key may have been revoked, reported as leaked or restricted to other APIs, or the Generative Language API, your account or your region may not be allowed. Create a fresh key in Google AI Studio and check the project status.';
+      break;
+    case 'bad_request':
+      baseMessage = 'Google rejected the request as invalid (HTTP 400). This is a request or configuration problem, not a connection or quota problem.';
+      break;
+    case 'quota_daily':
+      baseMessage = "Gemini's daily quota for this API key's Google project is used up. Quotas are per project (a new key in the same project does not help) and reset at midnight Pacific Time. Wait for the reset, choose another model, or enable billing.";
+      break;
+    case 'no_free_tier':
+      baseMessage = "The selected Gemini model has no quota on this API key's Google project (limit: 0), so waiting will not help. Choose a different model, or enable billing for the project.";
       break;
     case 'quota_or_rate_limit':
       baseMessage = 'Gemini is currently busy or rate-limited. Please wait a minute and try again.';

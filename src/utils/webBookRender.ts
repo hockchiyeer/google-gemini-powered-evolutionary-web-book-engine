@@ -3,26 +3,23 @@ import { CJK_CHAR_PATTERN, countWords, splitIntoSentences } from "../services/se
 
 export { CJK_CHAR_PATTERN, countWords, splitIntoSentences };
 
+// Scraper / page-chrome boilerplate that must never become a definition or sub-topic.
+// Deliberately NOT included: topical words such as "cybersecurity", "confidentiality", "intellectual property",
+// "disclaimer", "protected by" or a bare "copyright". They are legitimate subjects (a book on security, privacy or
+// law is full of them), and rejecting them silently emptied every glossary and sub-topic list of such books.
 const POISON_KEYWORDS = [
-  "copyright",
   "rights reserved",
   "terms of service",
   "privacy policy",
   "unauthorized access",
-  "cybersecurity",
-  "protected by",
   "cookie policy",
   "scrapping",
   "bot detection",
   "access denied",
   "legal notice",
-  "disclaimer",
   "all rights",
   "terms of use",
   "security warning",
-  "intellectual property",
-  "proprietary information",
-  "confidentiality",
   "amen so be it",
   "and so it shall be",
   "for all eternity",
@@ -40,7 +37,26 @@ const POISON_KEYWORDS = [
 ];
 
 const REPEATED_SUBSTRING_PATTERN = /(.{4,})\1{2,}/;
-const ASSEMBLY_HEURISTIC = /\b(mov|push|pop|jmp|call|ret|int|add|sub|xor|nop|lea|cmp)\b/i;
+// A real copyright notice (a (c)/© sign or "Copyright 2024"), as opposed to the subject of copyright itself.
+const COPYRIGHT_NOTICE_PATTERN = /©|copyright\s*(?:\(c\)|\d{4})/i;
+// Machine code listings: an instruction mnemonic followed by a register, hex or immediate operand.
+// The previous pattern /\b(mov|push|pop|call|add|sub|int|...)\b/ matched those words anywhere in ordinary prose
+// ("call", "add", "pop", "sub" ...), so roughly 1 in 11 normal definitions was thrown away.
+const ASSEMBLY_HEURISTIC =
+  /\b(?:mov|lea|xor|cmp|push|pop|jmp|call|add|sub|int)\s+(?:[er]?[abcd]x|[abcd][lh]|[er]?[sd]i|[er]?[sb]p|r\d{1,2}[dwb]?|0x[0-9a-f]+|\[[^\]\n]{1,40}\]|\$?-?\d+h?)\s*(?:,|;|$)/im;
+
+/** True when the text looks like a raw assembly / machine-code listing rather than prose. */
+export function looksLikeAssemblyCode(text?: string | null): boolean {
+  return typeof text === "string" && ASSEMBLY_HEURISTIC.test(text);
+}
+
+/** True when the text carries scraper / legal-footer boilerplate. */
+export function containsPoisonBoilerplate(...texts: Array<string | null | undefined>): boolean {
+  return texts.some((text) => {
+    const lowered = (text || "").toLowerCase();
+    return POISON_KEYWORDS.some((word) => lowered.includes(word)) || COPYRIGHT_NOTICE_PATTERN.test(text || "");
+  });
+}
 const CJK_SENTENCE_END_PATTERN = /[。！？][”’」』）)]*$/;
 export const MIN_CHAPTER_TEXT_PAGES = 3;
 const SEARCH_FALLBACK_TEXT_PAGES = 1;
@@ -386,7 +402,7 @@ export function isMeaningfulText(text?: string | null, description = ""): boolea
   }
 
   if (REPEATED_SUBSTRING_PATTERN.test(clean)) return false;
-  if (POISON_KEYWORDS.some((word) => lowerText.includes(word) || lowerDesc.includes(word))) return false;
+  if (containsPoisonBoilerplate(normalizedText, normalizedDescription)) return false;
   if (normalizedDescription.length > 1000) return false;
 
   const words = lowerText
@@ -420,7 +436,7 @@ export function isMeaningfulText(text?: string | null, description = ""): boolea
     }
   }
 
-  if (ASSEMBLY_HEURISTIC.test(normalizedText) || ASSEMBLY_HEURISTIC.test(normalizedDescription)) return false;
+  if (looksLikeAssemblyCode(normalizedText) || looksLikeAssemblyCode(normalizedDescription)) return false;
   if (/[0-9a-f]{2,}\s[0-9a-f]{2,}\s[0-9a-f]{2,}/i.test(normalizedText)) return false;
 
   return true;

@@ -11,7 +11,7 @@ An advanced AI-powered engine that synthesizes comprehensive, authoritative, mul
   - **Stage 2 (Parallel Chapter Expansion)**: Concurrently expands each chapter with rigorous technical definitions, sub-topic deep dives, and generative visual seeds.
 - **Configurable AI Models**:
   - Dynamic model selection supporting modern Gemini models (`gemini-3.8-flash`, `gemini-2.5-flash`, `gemini-3-flash-preview`, `gemini-flash-latest`).
-  - Runtime model capability discovery. The selected model is always the one used; it is never silently swapped, and an unavailable model is reported in the notice (or as an error in `Off (Gemini only)` mode).
+  - Runtime model discovery (`GET /api/gemini/models` lists the models your key can really use). The selected model is tried first; if it cannot serve a request for a model-specific reason (quota, overload, no longer offered) up to two sibling Flash models are tried, and the book's notice names every model that actually answered. Errors that fail identically on every model (bad key, HTTP 403, HTTP 400) are never retried on siblings.
 - **Multi-Tier Search Fallback Resilience**:
   - Graceful degradation when Gemini API quotas or rate limits are reached.
   - Configurable fallback routing: `Google + DuckDuckGo`, `Google only`, `DuckDuckGo only`, or `Off (Gemini only)`.
@@ -224,6 +224,20 @@ The table below clarifies whether each `npm` / `npm run` command manages the loc
 | `npm run cy:open` | **Requires Running Server**<br>*(Run `npm run dev` first)* | Opens the interactive Cypress GUI for visual step-by-step browser testing. |
 | `npm run test:server` | **Not Required** *(Standalone)* | Runs server-side unit and regression tests (title extraction, search fallback routing, and evolution algorithms). |
 | `npm run report:generate` | **Not Required** *(Standalone)* | Compiles the visual HTML report from existing Cucumber JSON test result artifacts. |
+
+### 6a. Troubleshooting Gemini connectivity
+
+The UI used to report almost every failure as "could not be reached" or "busy, wait a minute". It now reports what Google actually answered (key rejected, HTTP 403, HTTP 400, daily quota, model with no quota, per-minute limit, overload, real network failure).
+
+```bash
+npm run diagnose                 # asks Google directly, per model: plain request + Google Search grounding
+curl http://localhost:3000/api/gemini/health   # same check through the running app server (never returns the key)
+```
+
+- Quotas are per Google **project** and per **model**, not per key; a new key in the same project shares them. Daily quotas reset at **midnight Pacific Time**, not 24 hours after you hit them.
+- Optional tunables in `.env`: `GEMINI_MAX_CONCURRENCY` (default 3), `GEMINI_MAX_ATTEMPTS` (default 4), `GEMINI_MAX_RETRY_WAIT_MS` (default 45000).
+- A chapter that Gemini cannot write is left out and named in the notice; it is never replaced by filler text.
+- If live search is unavailable the engine can write from the model's own knowledge. Such a book is labelled **Model knowledge (not verified against live sources)** and carries no source links.
 
 ### 7. Code Verification
 

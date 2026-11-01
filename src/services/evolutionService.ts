@@ -13,20 +13,23 @@ import {
   WebPageGenotype,
 } from "../types";
 import { fetchGoogleSearchFallback } from "./googleSearchFallbackClient";
-import { buildGeminiUserFacingErrorMessage, GeminiFailureReason } from "./geminiUserFacingErrors";
+import { buildGeminiUserFacingErrorMessage, GeminiFailureReason, NON_RECOVERABLE_GEMINI_REASONS } from "./geminiUserFacingErrors";
 import { isNonJsonResponseText } from "./safeResponse";
 import {
   SYNTHETIC_FALLBACK_DIAGNOSTIC,
   calculateTextSimilarity,
+  countWords,
   describeFallbackEvidence,
   isSyntheticFallbackPayload,
   isValidConceptDefinition,
 } from "./searchFallbackShared";
 import {
   MIN_CHAPTER_TEXT_PAGES,
+  containsPoisonBoilerplate,
   getRenderableDefinitions,
   getRenderableSubTopics,
   joinSentences,
+  looksLikeAssemblyCode,
   sanitizeNarrativeText,
   splitIntoSentences,
 } from "../utils/webBookRender";
@@ -51,7 +54,18 @@ export function buildSyntheticFallbackPayload(query: string, mode: SearchFallbac
   };
 }
 
-export const ASSEMBLY_SOURCE_POOL_SIZE = 4;
+// How many evolved source pages are handed to book assembly.
+export const ASSEMBLY_SOURCE_POOL_SIZE = 8;
+
+// Chapter size asked of Gemini.
+export const CHAPTER_TARGET_WORDS = { min: 700, max: 900 } as const;
+// A chapter shorter than this is treated as a failed chapter, never padded with filler.
+const MIN_ACCEPTABLE_CHAPTER_WORDS = 120;
+// Simultaneous chapter requests.
+export const CHAPTER_CONCURRENCY = 3;
+const EVIDENCE_CHARS_PER_SOURCE = 1500;
+const EVIDENCE_TOTAL_CHAR_BUDGET = 12000;
+const MIN_EVOLVED_SOURCES = 6;
 
 // evolve() offspring only recombine their parents' text, so they carry no evidence of their own.
 const OFFSPRING_ID_PREFIX = 'offspring-';
@@ -60,7 +74,7 @@ const CANDIDATE_MODELS = [
   ...GEMINI_MODELS,
 ];
 
-const DEFAULT_GEMINI_MODEL = 'gemini-3.6-flash';
+const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
 
 function getApiEndpoint(path: string): string {
   if (typeof window !== 'undefined' && window.location?.origin) {
@@ -157,12 +171,24 @@ function repairTruncatedJSON(jsonString: string): string {
 function detectGeminiFailureReason(err: any): GeminiFailureReason {
   const message = String(err?.message || err?.statusText || err || '').toLowerCase();
   const status = Number(err?.status || err?.code);
+  const reason = String(err?.reason || err?.details?.reason || err?.error?.reason || '').toLowerCase();
 
   if (status === 401 || message.includes('api_key_invalid') || message.includes('unauthenticated') || message.includes('invalid api key')) {
     return 'invalid_api_key';
   }
   if (message.includes('missing api key') || message.includes('missing_api_key')) {
     return 'missing_api_key';
+  }
+  if (status === 403 || reason === 'permission_denied' || message.includes('permission_denied') || message.includes('403')) {
+    return 'permission_denied';
+  }
+  if (
+    reason === 'quota_daily' ||
+    reason === 'quota_exceeded' ||
+    message.includes('daily quota') ||
+    message.includes('per day limit')
+  ) {
+    return 'quota_daily';
   }
   if (status === 429 || message.includes('429') || message.includes('quota') || message.includes('resource_exhausted')) {
     return 'quota_or_rate_limit';
@@ -194,13 +220,13 @@ async function generateWithModelFallback(
     'gemini-3.5-flash-lite',
     'gemini-3.1-flash-lite',
     'gemini-flash-lite-latest',
-  ].filter((m, idx, arr) => arr.indexOf(m) === idx);
+  ].filter((m, idx, arr) => arr.indexOf(m) === idx).slice(0, 3);
 
   let lastError: any = null;
 
   for (const model of candidateModels) {
     try {
-      return await withRetry(async () => {
+      const data = await withRetry(async () => {
         const endpoint = getApiEndpoint('/api/gemini/generate');
         const res = await fetch(endpoint, {
           method: 'POST',
@@ -213,22 +239,34 @@ async function generateWithModelFallback(
           }),
         });
 
-        const data = await res.json().catch(() => ({}));
+        const resData = await res.json().catch(() => ({}));
 
         if (!res.ok) {
-          const errorObj: any = new Error(data?.error?.message || `Gemini request failed with status ${res.status}`);
+          const errorObj: any = new Error(resData?.error?.message || `Gemini request failed with status ${res.status}`);
           errorObj.status = res.status;
-          errorObj.code = data?.error?.code || res.status;
-          errorObj.details = data?.error?.details;
+          errorObj.code = resData?.error?.code || res.status;
+          errorObj.reason = resData?.error?.reason;
+          errorObj.details = resData?.error?.details;
           throw errorObj;
         }
 
-        return data;
+        return resData;
       });
+
+      if (typeof data === 'object' && data !== null) {
+        data._modelUsed = model;
+      }
+      return data;
     } catch (err: any) {
       lastError = err;
       const status = Number(err?.status || err?.code);
       const message = String(err?.message || '').toLowerCase();
+      const reason = detectGeminiFailureReason(err);
+
+      if (NON_RECOVERABLE_GEMINI_REASONS.has(reason) && reason !== 'quota_daily') {
+        throw err;
+      }
+
       const isUnavailableOrQuota =
         status === 429 ||
         status === 503 ||
@@ -285,19 +323,11 @@ export function isMeaningful(text: string, description?: string): boolean {
   if (clean.includes('/') && !text.includes(' ')) return false;
   if (description && description.includes('/') && !description.includes(' ')) return false;
 
-  // Anti-poisoning & copyright boilerplate filters
-  const poisonKeywords = [
-    'copyright', 'rights reserved', 'terms of service', 'privacy policy',
-    'unauthorized access', 'cybersecurity', 'protected by', 'cookie policy',
-    'scrapping', 'bot detection', 'access denied', 'legal notice', 'disclaimer',
-    'all rights', 'terms of use', 'security warning', 'intellectual property',
-    'proprietary information', 'confidentiality'
-  ];
-  if (poisonKeywords.some(word => lowerText.includes(word) || lowerDesc.includes(word))) return false;
+  // Anti-poisoning & copyright boilerplate filters (shared with the render-time check so both agree)
+  if (containsPoisonBoilerplate(text, description)) return false;
 
-  // Filter out raw assembly or machine code heuristics
-  const assemblyHeuristic = /\b(mov|push|pop|jmp|call|ret|int|add|sub|xor|nop|lea|cmp)\b/i;
-  if (assemblyHeuristic.test(text) || assemblyHeuristic.test(description || '')) return false;
+  // Filter out raw assembly or machine code listings (not the English words "call", "add", "pop", ...)
+  if (looksLikeAssemblyCode(text) || looksLikeAssemblyCode(description)) return false;
   if (/[0-9a-f]{2,}\s[0-9a-f]{2,}\s[0-9a-f]{2,}/i.test(text)) return false;
 
   return true;
@@ -435,6 +465,10 @@ const GEMINI_SEARCH_CAUSE_PHRASES: Record<GeminiSearchCause, string> = {
   quota_or_rate_limit: 'usage limit reached',
   invalid_api_key: 'API key rejected',
   missing_api_key: 'API key missing',
+  permission_denied: 'permission denied',
+  bad_request: 'invalid request',
+  quota_daily: 'daily quota exhausted',
+  no_free_tier: 'no quota for this model',
   service_unavailable: 'service temporarily unavailable',
   network_unreachable: 'could not be reached',
   no_content: 'no usable sources returned',
@@ -445,6 +479,10 @@ const GEMINI_SEARCH_CAUSE_TO_FALLBACK_REASON: Record<GeminiSearchCause, SearchFa
   quota_or_rate_limit: 'quota_exhausted',
   invalid_api_key: 'unreachable',
   missing_api_key: 'unreachable',
+  permission_denied: 'unreachable',
+  bad_request: 'unreachable',
+  quota_daily: 'quota_exhausted',
+  no_free_tier: 'quota_exhausted',
   service_unavailable: 'unreachable',
   network_unreachable: 'network_unreachable',
   no_content: 'no_content',
@@ -507,13 +545,12 @@ async function performGeminiKnowledgeExtraction(
       contents: `Analyze the topic: "${query}". 
       Extract 5 distinct key analytical dimensions or thematic source perspectives on this topic.
       For each source perspective, provide:
-      1. A relevant reference URL (real, authoritative reference URL or canonical Wikipedia URL for this topic).
-      2. The title of the topic/perspective.
-      3. A list of key definitions and terms.
-      4. A list of salient sub-topics.
-      5. A comprehensive summary of content (at least 200 words).
-      6. Informative score (0.8-1.0).
-      7. Authority score (0.8-1.0).`,
+      1. The title of the topic/perspective.
+      2. A list of key definitions and terms.
+      3. A list of salient sub-topics.
+      4. A comprehensive summary of content (at least 200 words).
+      5. Informative score (0.8-1.0).
+      6. Authority score (0.8-1.0).`,
       config: {
         systemInstruction: "You are a master academic researcher. Output valid JSON only. Provide in-depth, rich, factual analysis, definitions, and sub-topics based on your comprehensive knowledge base.",
         responseMimeType: "application/json",
@@ -523,7 +560,6 @@ async function performGeminiKnowledgeExtraction(
           items: {
             type: Type.OBJECT,
             properties: {
-              url: { type: Type.STRING },
               title: { type: Type.STRING },
               content: { type: Type.STRING },
               definitions: {
@@ -551,7 +587,7 @@ async function performGeminiKnowledgeExtraction(
               informativeScore: { type: Type.NUMBER },
               authorityScore: { type: Type.NUMBER }
             },
-            required: ["url", "title", "content", "definitions", "subTopics", "informativeScore", "authorityScore"]
+            required: ["title", "content", "definitions", "subTopics", "informativeScore", "authorityScore"]
           }
         }
       }
@@ -570,11 +606,15 @@ async function performGeminiKnowledgeExtraction(
     if (Array.isArray(kParsed) && kParsed.length > 0) {
       const population: WebPageGenotype[] = kParsed.map((r: any, index: number) => ({
         id: `gen-${index}-${Date.now()}`,
-        url: r.url || `https://en.wikipedia.org/wiki/${encodeURIComponent(query.replace(/\s+/g, '_'))}`,
+        url: '',
         title: r.title || `Perspective ${index + 1}`,
         content: r.content ? r.content.substring(0, 2000) : '',
-        definitions: (r.definitions || []).filter((d: any) => isMeaningful(d.term, d.description)),
-        subTopics: (r.subTopics || []).filter((s: any) => isMeaningful(s.title, s.summary)),
+        definitions: (r.definitions || [])
+          .filter((d: any) => isMeaningful(d.term, d.description))
+          .map((d: any) => ({ ...d, sourceUrl: '' })),
+        subTopics: (r.subTopics || [])
+          .filter((s: any) => isMeaningful(s.title, s.summary))
+          .map((s: any) => ({ ...s, sourceUrl: '' })),
         informativeScore: typeof r.informativeScore === 'number' ? r.informativeScore : 0.85,
         authorityScore: typeof r.authorityScore === 'number' ? r.authorityScore : 0.85,
         fitness: 0,
@@ -589,8 +629,8 @@ async function performGeminiKnowledgeExtraction(
         artifacts: {
           searchSummary: `Gemini synthesized ${population.length} deep analytical sources for "${query}".`,
         },
-        generationNote: `Synthesized via Gemini knowledge synthesis model: ${selectedModel}${noteSuffix}.`,
-        sourceMode: 'gemini',
+        generationNote: `Synthesized via Gemini knowledge synthesis model: ${selectedModel}${noteSuffix}; NOT verified against live web sources.`,
+        sourceMode: 'model_knowledge',
       };
     }
   } catch (kErr) {
@@ -716,11 +756,130 @@ export async function searchAndExtract(
         sourceMode: 'gemini',
       };
     }
+
+    if (!fallbackEnabled) {
+      const knowledgeResult = await performGeminiKnowledgeExtraction(query, selectedModel, 'no_content');
+      if (knowledgeResult) {
+        return knowledgeResult;
+      }
+      throw new Error(`Gemini-only search returned no usable sources for "${query}".`);
+    }
   } catch (geminiError: any) {
+    if (geminiError instanceof SyntaxError) {
+      try {
+        // Step 1: Grounded research call without responseMimeType
+        const researchResponse = await generateWithModelFallback({
+          contents: `Search for comprehensive information about "${query}". Provide thorough research notes based on the web results.`,
+          config: {
+            systemInstruction: "You are a research assistant. Conduct web searches and return detailed factual information.",
+            tools: [{ googleSearch: {} }],
+            maxOutputTokens: 4000,
+          }
+        }, selectedModel);
+
+        const researchText = String(researchResponse?.text || '').trim();
+        const researchGrounding = extractVerifiedGroundingSources(researchResponse);
+
+        if (researchText && researchGrounding.length > 0) {
+          // Step 2: Structuring call without search tools
+          const structResponse = await generateWithModelFallback({
+            contents: `Extract sources, definitions, and sub-topics from these research notes:\n\n${researchText}`,
+            config: {
+              systemInstruction: "Extract structured data from the research notes. Output valid JSON array.",
+              responseMimeType: "application/json",
+              maxOutputTokens: 4000,
+              responseSchema: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    url: { type: Type.STRING },
+                    title: { type: Type.STRING },
+                    content: { type: Type.STRING },
+                    definitions: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        properties: {
+                          term: { type: Type.STRING },
+                          description: { type: Type.STRING }
+                        },
+                        required: ["term", "description"]
+                      }
+                    },
+                    subTopics: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        properties: {
+                          title: { type: Type.STRING },
+                          summary: { type: Type.STRING }
+                        },
+                        required: ["title", "summary"]
+                      }
+                    },
+                    informativeScore: { type: Type.NUMBER },
+                    authorityScore: { type: Type.NUMBER }
+                  },
+                  required: ["url", "title", "content", "definitions", "subTopics", "informativeScore", "authorityScore"]
+                }
+              }
+            }
+          }, selectedModel);
+
+          let structParsed: any[] = [];
+          const structRaw = (structResponse?.text || "").trim();
+          if (structRaw) {
+            try {
+              structParsed = JSON.parse(structRaw);
+            } catch {
+              structParsed = JSON.parse(repairTruncatedJSON(structRaw));
+            }
+          }
+
+          if (Array.isArray(structParsed) && structParsed.length > 0) {
+            const population: WebPageGenotype[] = structParsed.map((r: any, index: number) => {
+              const resolved = resolveVerifiedSource(r, index, researchGrounding);
+              const sourceUrl = resolved.url;
+              return {
+                id: `gen-${index}-${Date.now()}`,
+                url: sourceUrl,
+                title: resolved.title || r.title || `Source ${index + 1}`,
+                content: r.content ? r.content.substring(0, 2000) : "",
+                definitions: (r.definitions || []).filter((d: any) => isMeaningful(d.term, d.description)).map((d: any) => ({ ...d, sourceUrl })),
+                subTopics: (r.subTopics || []).filter((s: any) => isMeaningful(s.title, s.summary)).map((s: any) => ({ ...s, sourceUrl })),
+                informativeScore: typeof r.informativeScore === 'number' ? r.informativeScore : 0.8,
+                authorityScore: typeof r.authorityScore === 'number' ? r.authorityScore : 0.8,
+                fitness: 0,
+              };
+            });
+
+            return {
+              results: population,
+              artifacts: {
+                groundingChunks: (researchResponse.candidates?.[0]?.groundingMetadata?.groundingChunks || []).map((c: any) => ({
+                  web: { uri: c.web?.uri || c.uri || '', title: c.web?.title || c.title || '' }
+                })),
+                searchSummary: `Gemini extracted ${population.length} grounded sources for "${query}".`,
+              },
+              generationNote: `Evidence gathered via Google Search grounding by the selected Gemini model: ${selectedModel}.`,
+              sourceMode: 'gemini',
+            };
+          }
+        }
+      } catch (twoStepErr) {
+        console.warn("Two-step search recovery encountered issue:", twoStepErr);
+      }
+    }
+
     console.warn("Gemini search failed or unavailable, checking fallback...", geminiError);
     geminiCause = classifyGeminiSearchFailure(geminiError);
 
     if (!fallbackEnabled) {
+      const reason = detectGeminiFailureReason(geminiError);
+      if (NON_RECOVERABLE_GEMINI_REASONS.has(reason)) {
+        throw new Error(buildGeminiUserFacingErrorMessage(geminiError, reason));
+      }
       const knowledgeResult = await performGeminiKnowledgeExtraction(query, selectedModel, geminiCause);
       if (knowledgeResult) {
         return knowledgeResult;
@@ -729,7 +888,6 @@ export async function searchAndExtract(
       if (geminiCause === 'model_unavailable') {
         throw new Error(`Selected Gemini model: ${selectedModel} is not available. Choose another model and try again.`);
       }
-      const reason = detectGeminiFailureReason(geminiError);
       throw new Error(buildGeminiUserFacingErrorMessage(geminiError, reason));
     }
   }
@@ -824,25 +982,56 @@ export async function evolve(
   population: WebPageGenotype[],
   generations: number = 3
 ): Promise<{ population: WebPageGenotype[]; completedGenerations: number; bestRedundancyPenalty: number }> {
-  let currentPopulation = [...population];
   const weights = { alpha: 0.5, beta: 0.3, gamma: 0.2 };
-  let bestRedundancyPenalty = 0;
 
-  for (let g = 0; g < generations; g++) {
-    currentPopulation.forEach(p => {
-      p.fitness = calculateFitness(p, [], weights);
-    });
+  // 1. Remove verbatim duplicate pages
+  const uniquePopulation: WebPageGenotype[] = [];
+  for (const page of population) {
+    const isDuplicate = uniquePopulation.some(
+      (kept) => calculateTextSimilarity(kept.content, page.content) >= 0.9
+    );
+    if (!isDuplicate) {
+      uniquePopulation.push({ ...page });
+    }
+  }
 
-    currentPopulation.sort((a, b) => b.fitness - a.fitness);
-    const survivors = currentPopulation.slice(0, Math.max(2, Math.ceil(currentPopulation.length / 2)));
+  // 2. Select and rank original pages iteratively using calculateFitness with optimalSet
+  const remaining = [...uniquePopulation];
+  const selectedOriginals: WebPageGenotype[] = [];
 
-    const offspring: WebPageGenotype[] = [];
-    for (let i = 0; i < survivors.length - 1; i += 2) {
-      const parentA = survivors[i];
-      const parentB = survivors[i + 1];
+  while (remaining.length > 0) {
+    let bestIndex = 0;
+    let bestScore = -Infinity;
 
-      const child: WebPageGenotype = {
-        id: `offspring-${g}-${i}`,
+    for (let i = 0; i < remaining.length; i++) {
+      const candidate = remaining[i];
+      const fitness = calculateFitness(candidate, selectedOriginals, weights);
+      candidate.fitness = fitness;
+      if (fitness > bestScore) {
+        bestScore = fitness;
+        bestIndex = i;
+      }
+    }
+
+    selectedOriginals.push(remaining[bestIndex]);
+    remaining.splice(bestIndex, 1);
+  }
+
+  // Keep original pages (at least 6 if available, up to ASSEMBLY_SOURCE_POOL_SIZE or unique size)
+  const targetOriginalsCount = Math.max(
+    Math.min(MIN_EVOLVED_SOURCES, uniquePopulation.length),
+    Math.min(selectedOriginals.length, ASSEMBLY_SOURCE_POOL_SIZE)
+  );
+  const keptOriginals = selectedOriginals.slice(0, targetOriginalsCount);
+
+  // 3. Create offspring from top survivors if recombining
+  const offspring: WebPageGenotype[] = [];
+  if (keptOriginals.length >= 2) {
+    for (let i = 0; i < keptOriginals.length - 1; i += 2) {
+      const parentA = keptOriginals[i];
+      const parentB = keptOriginals[i + 1];
+      offspring.push({
+        id: `offspring-0-${i}`,
         url: parentA.url || parentB.url,
         title: `Synthesized: ${parentA.title} & ${parentB.title}`,
         content: `${parentA.content.substring(0, 500)}... ${parentB.content.substring(0, 500)}...`,
@@ -857,27 +1046,26 @@ export async function evolve(
         informativeScore: (parentA.informativeScore + parentB.informativeScore) / 2,
         authorityScore: (parentA.authorityScore + parentB.authorityScore) / 2,
         fitness: 0
-      };
-      offspring.push(child);
+      });
     }
-
-    currentPopulation = [...survivors, ...offspring];
   }
 
-  // Calculate best redundancy penalty
-  if (currentPopulation.length > 1) {
-    const terms = currentPopulation.map(p => (p.definitions || []).map(d => d.term.toLowerCase()));
+  const finalPopulation = [...keptOriginals, ...offspring];
+
+  let bestRedundancyPenalty = 0;
+  if (keptOriginals.length > 1) {
+    const terms = keptOriginals.map(p => (p.definitions || []).map(d => d.term.toLowerCase()));
     let overlapCount = 0;
     for (let i = 0; i < terms.length; i++) {
       for (let j = i + 1; j < terms.length; j++) {
         overlapCount += terms[i].filter(t => terms[j].includes(t)).length;
       }
     }
-    bestRedundancyPenalty = Math.min(1, overlapCount / Math.max(1, currentPopulation.length * 4));
+    bestRedundancyPenalty = Math.min(1, overlapCount / Math.max(1, keptOriginals.length * 4));
   }
 
   return {
-    population: currentPopulation,
+    population: finalPopulation,
     completedGenerations: generations,
     bestRedundancyPenalty,
   };
@@ -988,6 +1176,79 @@ export function synthesizeFallbackWebBook(
   };
 }
 
+// Evolved pages that carry evidence of their own, best first; offspring only fill remaining slots.
+function selectAssemblyPages(population: WebPageGenotype[]): WebPageGenotype[] {
+  const originals = population.filter((page) => !page.id.startsWith(OFFSPRING_ID_PREFIX));
+  const children = population.filter((page) => page.id.startsWith(OFFSPRING_ID_PREFIX));
+  return (originals.length > 0 ? [...originals, ...children] : population).slice(0, ASSEMBLY_SOURCE_POOL_SIZE);
+}
+
+// The research the model is asked to write from. Stage 2 used to receive only the chapter title and focus, so the
+// "chapters" were generic model text with sources attached afterwards.
+export function buildEvidenceDigest(pages: WebPageGenotype[]): string {
+  const blocks: string[] = [];
+  let used = 0;
+  pages.forEach((page, index) => {
+    const definitions = (page.definitions || []).slice(0, 6).map((d) => `${d.term}: ${d.description}`).join(' | ');
+    const subTopics = (page.subTopics || []).slice(0, 4).map((t) => `${t.title}: ${t.summary}`).join(' | ');
+    const block = [
+      `[Source ${index + 1}] ${page.title}${page.url ? ` (${page.url})` : ''}`,
+      (page.content || '').substring(0, EVIDENCE_CHARS_PER_SOURCE),
+      definitions ? `Definitions: ${definitions}` : '',
+      subTopics ? `Sub-topics: ${subTopics}` : '',
+    ].filter(Boolean).join('\n');
+
+    const separator = blocks.length > 0 ? 2 : 0; // the "\n\n" between blocks counts against the budget too
+    const room = EVIDENCE_TOTAL_CHAR_BUDGET - used - separator;
+    if (room <= 200) return;
+    const clipped = block.substring(0, room);
+    blocks.push(clipped);
+    used += clipped.length + separator;
+  });
+  return blocks.join('\n\n');
+}
+
+type BoundedResult<T> = { status: 'ok'; value: T } | { status: 'failed'; error: unknown } | { status: 'skipped' };
+
+// Runs `count` jobs with at most `limit` in flight, never rejecting: a failed job is recorded and the others carry on.
+// When `isFatal` says a failure cannot be fixed by retrying (bad key, daily quota used up, ...), jobs not yet started are
+// skipped instead of burning more requests on a book that cannot be finished.
+async function runBounded<T>(
+  count: number,
+  limit: number,
+  worker: (index: number) => Promise<T>,
+  isFatal: (error: unknown) => boolean
+): Promise<Array<BoundedResult<T>>> {
+  const results: Array<BoundedResult<T>> = Array.from({ length: count }, () => ({ status: 'skipped' as const }));
+  let nextIndex = 0;
+  let stopped = false;
+
+  const lane = async () => {
+    while (!stopped) {
+      const index = nextIndex++;
+      if (index >= count) return;
+      try {
+        results[index] = { status: 'ok', value: await worker(index) };
+      } catch (error) {
+        results[index] = { status: 'failed', error };
+        if (isFatal(error)) stopped = true;
+      }
+    }
+  };
+
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(limit, count)) }, lane));
+  return results;
+}
+
+function parseJsonObject(text: string | undefined): any {
+  const raw = String(text || '');
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return JSON.parse(repairTruncatedJSON(raw));
+  }
+}
+
 export async function assembleWebBook(
   optimalPopulation: WebPageGenotype[],
   topic: string,
@@ -1018,31 +1279,48 @@ export async function assembleWebBook(
     addCandidateSource(c.web?.title || c.title, c.web?.uri || c.uri);
   });
 
-  const truncatedData = optimalPopulation.slice(0, ASSEMBLY_SOURCE_POOL_SIZE).map(p => ({
-    title: p.title,
-    url: p.url,
-    content: p.content.substring(0, 1000),
-    definitions: p.definitions.slice(0, 4),
-    subTopics: p.subTopics.slice(0, 3)
-  }));
+  const assemblyPages = selectAssemblyPages(optimalPopulation);
+  const evidenceDigest = buildEvidenceDigest(assemblyPages);
 
   const preferredModel = options?.geminiModel || DEFAULT_GEMINI_MODEL;
   let assemblyFailure: unknown = null;
 
+  const usedModelsCount = new Map<string, number>();
+  const trackModel = (res: any) => {
+    const m = res?._modelUsed;
+    if (m) {
+      usedModelsCount.set(m, (usedModelsCount.get(m) || 0) + 1);
+    }
+  };
+
+  const appendFailoverNote = (baseNote: string) => {
+    const failoverEntries = [...usedModelsCount.entries()].filter(([m]) => m !== preferredModel);
+    if (failoverEntries.length === 0) return baseNote;
+    const totalFailoverRequests = failoverEntries.reduce((sum, [_, count]) => sum + count, 0);
+    const failoverModelNames = failoverEntries.map(([m]) => m).join(', ');
+    const noteStr = `${totalFailoverRequests} chapter request${totalFailoverRequests === 1 ? '' : 's'} were answered by ${failoverModelNames} instead of the selected ${preferredModel}.`;
+    return baseNote ? `${baseNote} ${noteStr}` : noteStr;
+  };
+
   try {
     // Stage 1: Generate detailed 10-chapter outline
     const outlineResponse = await generateWithModelFallback({
-      contents: `Topic: ${topic}. Data: ${JSON.stringify(truncatedData)}. 
+      contents: `Topic: ${topic}.
+      Research evidence gathered from live sources:
+      ${evidenceDigest}
+
       Create a detailed 10-chapter outline for a comprehensive, full-length Web-book. 
       For each chapter, provide:
       1. A compelling title.
       2. A brief 2-sentence focus description.
-      3. 3 key terms to define.
-      4. 2 sub-topics to explore.
-      5. A visual seed keyword for an image.`,
+      3. 4 key terms to define.
+      4. 3 sub-topics to explore.
+      5. A visual seed keyword for an image.
+      Make the chapters cover different ground so that no chapter repeats another.`,
       config: {
         systemInstruction: "You are a master book architect. Output valid JSON only. Create a 10-chapter outline that flows logically from introduction to advanced concepts and future outlook. Ensure all terms and sub-topics are meaningful and relevant to the topic. Strictly avoid placeholders, random strings, or meaningless identifiers.",
         responseMimeType: "application/json",
+        maxOutputTokens: 8192,
         responseSchema: {
           type: Type.OBJECT,
           properties: {
@@ -1067,115 +1345,138 @@ export async function assembleWebBook(
       }
     }, preferredModel);
 
-    let outlineData: any;
-    try {
-      outlineData = JSON.parse(outlineResponse.text);
-    } catch {
-      outlineData = JSON.parse(repairTruncatedJSON(outlineResponse.text));
-    }
+    trackModel(outlineResponse);
+    const outlineData = parseJsonObject(outlineResponse.text);
 
     if (outlineData && Array.isArray(outlineData.outline) && outlineData.outline.length > 0) {
-      // Stage 2: Concurrency-controlled chapter expansion (enriched 350-400 words per chapter)
-      // Bounded concurrency prevents burst rate-limit / 429 / 503 spikes on the Gemini API
-      const chapters: Chapter[] = [];
-      const outlineList = outlineData.outline;
+      const outline: any[] = outlineData.outline.slice(0, 12);
+      const outlineTitles = outline.map((entry, index) => `${index + 1}. ${entry?.title}`).join('\n');
 
-      for (let i = 0; i < outlineList.length; i += 2) {
-        const batch = outlineList.slice(i, i + 2);
-        const batchResults = await Promise.all(
-          batch.map(async (chapterOutline: any, batchOffset: number) => {
-            const chapterIndex = i + batchOffset;
-            let chapterData: any = null;
+      // Stage 2: chapter expansion, a few requests at a time, each written from the gathered evidence.
+      const buildChapter = async (chapterOutline: any, chapterIndex: number) => {
+        const chapterResponse = await generateWithModelFallback({
+          contents: `Topic: ${topic}.
+          Book outline (context only; write ONLY chapter ${chapterIndex + 1} and do not repeat what belongs to the other chapters):
+          ${outlineTitles}
 
-            try {
-              const chapterResponse = await generateWithModelFallback({
-                contents: `Topic: ${topic}. Chapter: ${chapterOutline.title}. Focus: ${chapterOutline.focus}. 
-                Write a comprehensive, high-quality chapter (approx 350-400 words). 
-                Also provide detailed definitions for: ${(chapterOutline.terms || []).join(', ')}.
-                And detailed analyses for the sub-topics: ${(chapterOutline.subTopicTitles || []).join(', ')}.`,
-                config: {
-                  systemInstruction: "You are an expert technical writer. Output valid JSON only. Be detailed, authoritative, and academic in tone. Ensure all definitions and sub-topic analyses are meaningful, human-readable, and relevant to the chapter. Strictly avoid generating random numbers, long strings of digits, or meaningless placeholder text.",
-                  responseMimeType: "application/json",
-                  responseSchema: {
+          Chapter ${chapterIndex + 1}: ${chapterOutline.title}. Focus: ${chapterOutline.focus}.
+
+          Research evidence gathered from live sources (ground the chapter in it; never invent facts, figures or URLs):
+          ${evidenceDigest}
+
+          Write a comprehensive, high-quality chapter of ${CHAPTER_TARGET_WORDS.min}-${CHAPTER_TARGET_WORDS.max} words (for Chinese, Japanese or Korean, roughly ${CHAPTER_TARGET_WORDS.min * 2}-${CHAPTER_TARGET_WORDS.max * 2} characters) in 5 to 7 well-developed paragraphs separated by blank lines. Include concrete facts, examples, mechanisms and trade-offs from the evidence.
+          Also provide detailed definitions (2-4 sentences each) for: ${(chapterOutline.terms || []).join(', ')}.
+          And detailed analyses (3-5 sentences each) for the sub-topics: ${(chapterOutline.subTopicTitles || []).join(', ')}.`,
+          config: {
+            systemInstruction: "You are an expert technical writer. Output valid JSON only. Be detailed, authoritative, and academic in tone. Ensure all definitions and sub-topic analyses are meaningful, human-readable, and relevant to the chapter. Strictly avoid generating random numbers, long strings of digits, or meaningless placeholder text.",
+            responseMimeType: "application/json",
+            maxOutputTokens: 8192,
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                content: { type: Type.STRING },
+                definitions: {
+                  type: Type.ARRAY,
+                  items: {
                     type: Type.OBJECT,
                     properties: {
-                      content: { type: Type.STRING },
-                      definitions: {
-                        type: Type.ARRAY,
-                        items: {
-                          type: Type.OBJECT,
-                          properties: {
-                            term: { type: Type.STRING },
-                            description: { type: Type.STRING }
-                          }
-                        }
-                      },
-                      subTopics: {
-                        type: Type.ARRAY,
-                        items: {
-                          type: Type.OBJECT,
-                          properties: {
-                            title: { type: Type.STRING },
-                            summary: { type: Type.STRING }
-                          }
-                        }
-                      }
-                    },
-                    required: ["content", "definitions", "subTopics"]
+                      term: { type: Type.STRING },
+                      description: { type: Type.STRING }
+                    }
+                  }
+                },
+                subTopics: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      title: { type: Type.STRING },
+                      summary: { type: Type.STRING }
+                    }
                   }
                 }
-              }, preferredModel);
-
-              const raw = (chapterResponse.text || '').trim();
-              if (raw) {
-                try {
-                  chapterData = JSON.parse(raw);
-                } catch {
-                  chapterData = JSON.parse(repairTruncatedJSON(raw));
-                }
-              }
-            } catch (chapterErr) {
-              console.warn(`Chapter ${chapterIndex + 1} (${chapterOutline.title}) expansion encountered error, utilizing outline focus:`, chapterErr);
+              },
+              required: ["content", "definitions", "subTopics"]
             }
+          }
+        }, preferredModel);
 
-            const chapterSourceIndex = chapterIndex % Math.max(1, verifiedSourcesPool.length);
-            const chapterSources = verifiedSourcesPool.length > 0
-              ? [
-                  verifiedSourcesPool[chapterSourceIndex],
-                  verifiedSourcesPool[(chapterSourceIndex + 1) % verifiedSourcesPool.length],
-                ].filter(Boolean)
-              : [];
-            const primaryUrl = chapterSources[0]?.url || (verifiedSourcesPool[0]?.url || '');
+        trackModel(chapterResponse);
 
-            return {
-              title: chapterOutline.title,
-              content: chapterData?.content || `${chapterOutline.focus}\n\nComprehensive exploration of ${chapterOutline.title} reveals interconnected principles, rigorous foundations, and actionable implementations across this domain.`,
-              definitions: (chapterData?.definitions || (chapterOutline.terms || []).map((t: string) => ({ term: t, description: `Key concept in ${chapterOutline.title}.` })))
-                .filter((d: any) => isMeaningful(d.term, d.description))
-                .map((d: any) => ({ ...d, sourceUrl: primaryUrl })),
-              subTopics: (chapterData?.subTopics || (chapterOutline.subTopicTitles || []).map((s: string) => ({ title: s, summary: `Detailed examination of ${s} within ${chapterOutline.title}.` })))
-                .filter((s: any) => isMeaningful(s.title, s.summary))
-                .map((s: any) => ({ ...s, sourceUrl: primaryUrl })),
-              sourceUrls: chapterSources.length > 0 ? chapterSources : verifiedSourcesPool.slice(0, 3),
-              visualSeed: chapterOutline.visualSeed || `${topic} ${chapterOutline.title}`,
-            };
-          })
-        );
-        chapters.push(...batchResults);
+        const chapterData = parseJsonObject(chapterResponse.text);
+        const chapterContent = String(chapterData?.content || '').trim();
+        // An empty or tiny chapter used to be replaced by a canned "Comprehensive exploration of ... reveals
+        // interconnected principles" sentence. That is filler presented as research, so the chapter fails instead.
+        if (countWords(chapterContent) < MIN_ACCEPTABLE_CHAPTER_WORDS) {
+          throw new SyntaxError(`Gemini returned no usable text for chapter "${chapterOutline.title}"`);
+        }
+
+        const chapterSourceIndex = chapterIndex % Math.max(1, verifiedSourcesPool.length);
+        const chapterSources = verifiedSourcesPool.length > 0
+          ? [
+              verifiedSourcesPool[chapterSourceIndex],
+              verifiedSourcesPool[(chapterSourceIndex + 1) % verifiedSourcesPool.length],
+            ].filter(Boolean)
+          : [];
+        const primaryUrl = chapterSources[0]?.url || (verifiedSourcesPool[0]?.url || '');
+
+        return {
+          title: chapterOutline.title,
+          content: chapterContent,
+          definitions: (chapterData?.definitions || [])
+            .filter((d: any) => isMeaningful(d.term, d.description))
+            .map((d: any) => ({ ...d, sourceUrl: primaryUrl })),
+          subTopics: (chapterData?.subTopics || [])
+            .filter((s: any) => isMeaningful(s.title, s.summary))
+            .map((s: any) => ({ ...s, sourceUrl: primaryUrl })),
+          sourceUrls: chapterSources.length > 0 ? chapterSources : verifiedSourcesPool.slice(0, 3),
+          visualSeed: chapterOutline.visualSeed || `${topic} ${chapterOutline.title}`,
+        } as Chapter;
+      };
+
+      const results = await runBounded(
+        outline.length,
+        CHAPTER_CONCURRENCY,
+        (index) => buildChapter(outline[index], index),
+        (error) => NON_RECOVERABLE_GEMINI_REASONS.has(detectGeminiFailureReason(error))
+      );
+
+      const chapters: Chapter[] = results.flatMap((result) => (result.status === 'ok' ? [result.value] : []));
+
+      if (chapters.length > 0) {
+        // One failed chapter no longer discards the others. The book keeps every chapter that was written, and the
+        // notice says plainly which ones are missing and why, instead of padding them.
+        const missing = results
+          .map((result, index) => ({ result, index }))
+          .filter(({ result }) => result.status !== 'ok');
+        const firstFailure = results.find((result): result is { status: 'failed'; error: unknown } => result.status === 'failed');
+        let partialNote = '';
+        if (missing.length > 0) {
+          const cause = classifyGeminiSearchFailure(firstFailure?.error);
+          const titles = missing.slice(0, 3).map(({ index }) => `"${outline[index]?.title}"`).join(', ');
+          const retryHint = NON_RECOVERABLE_GEMINI_REASONS.has(detectGeminiFailureReason(firstFailure?.error))
+            ? ''
+            : ' Search again in a minute to get a complete book.';
+          partialNote = ` ${chapters.length} of ${outline.length} chapters were written; ${missing.length} could not be generated (${GEMINI_SEARCH_CAUSE_PHRASES[cause]}) and are left out rather than padded: ${titles}${missing.length > 3 ? ', ...' : ''}.${retryHint}`;
+        }
+
+        return {
+          id: `book-${Date.now()}`,
+          topic: outlineData.topic || topic,
+          timestamp: Date.now(),
+          chapters,
+          sourceMode: searchResult?.sourceMode || 'gemini',
+          generationNote: appendFailoverNote(`${searchResult?.generationNote || 'Assembled via 2-stage evolutionary architecture.'}${partialNote}`),
+          fallbackSource: searchResult?.fallbackSource,
+          fallbackReason: searchResult?.fallbackReason,
+        };
       }
 
-      return {
-        id: `book-${Date.now()}`,
-        topic: outlineData.topic || topic,
-        timestamp: Date.now(),
-        chapters,
-        sourceMode: searchResult?.sourceMode || 'gemini',
-        generationNote: searchResult?.generationNote || 'Assembled via 2-stage evolutionary architecture.',
-        fallbackSource: searchResult?.fallbackSource,
-        fallbackReason: searchResult?.fallbackReason,
-      };
+      const firstFailure = results.find((result): result is { status: 'failed'; error: unknown } => result.status === 'failed');
+      assemblyFailure = firstFailure?.error ?? new SyntaxError('Gemini returned no chapters');
+    } else {
+      assemblyFailure = new SyntaxError('Gemini returned an empty book outline');
     }
-    assemblyFailure = new SyntaxError('Gemini returned an empty book outline');
   } catch (err) {
     console.warn("AI outline / chapter expansion failed, falling back to resilient synthesis...", err);
     assemblyFailure = err;
