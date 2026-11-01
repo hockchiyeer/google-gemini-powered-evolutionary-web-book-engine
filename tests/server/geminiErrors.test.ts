@@ -44,6 +44,17 @@ const QUOTA_FAILURE = (quotaId: string, quotaValue = '20') => ({
   assert.equal(c.retryable, false);
 }
 
+// Bare 429 (what Google returns for googleSearch grounding): no window, no delay -> not retried.
+{
+  const c = classifyGeminiError(apiError(429, {
+    status: 'RESOURCE_EXHAUSTED',
+    message: 'You exceeded your current quota, please check your plan and billing details.',
+    details: [{ '@type': 'type.googleapis.com/google.rpc.Help', links: [{ url: 'https://ai.google.dev/gemini-api/docs/rate-limits' }] }],
+  }));
+  assert.equal(c.reason, 'quota_unspecified');
+  assert.equal(c.retryable, false);
+}
+
 // 400 with a bad key is an auth problem; any other 400 is a bad request. Neither is a "connection" problem.
 {
   const bad = classifyGeminiError(apiError(400, {

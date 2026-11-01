@@ -17,6 +17,7 @@ export type GeminiErrorReason =
   | 'bad_request'       // other 400: a malformed request or an unsupported parameter combination
   | 'quota_daily'       // 429: a per-day quota is used up; waiting a minute will not help
   | 'no_free_tier'      // 429 with "limit: 0": this model has no quota at all on the project's tier
+  | 'quota_unspecified' // 429 with no per-minute/per-day detail at all (seen on Google Search grounding): treated as a standing limit
   | 'rate_limited'      // 429: per-minute request/token limit; clears after a short wait
   | 'overloaded'        // 503: model temporarily overloaded
   | 'internal'          // 500/502/504: transient Google-side failure
@@ -122,6 +123,10 @@ export function classifyGeminiError(err: any): ClassifiedGeminiError {
       violations.some((v) => /perday|per_day|daily/i.test(`${v?.quotaId ?? ''} ${v?.quotaMetric ?? ''}`)) ||
       /per ?day|daily|requestsperday/.test(lowered);
     if (perDay) return make('quota_daily', 429, false);
+
+    // A per-minute limit normally carries QuotaFailure and/or RetryInfo. A bare RESOURCE_EXHAUSTED with only a help link
+    // (observed on every model for googleSearch grounding) names no window and gives no delay, so retrying it is wasted time.
+    if (!retryInfo && violations.length === 0) return make('quota_unspecified', 429, false);
 
     return make('rate_limited', 429, true);
   }

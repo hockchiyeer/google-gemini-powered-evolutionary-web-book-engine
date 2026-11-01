@@ -7,6 +7,7 @@ export type GeminiFailureReason =
   | 'bad_request'
   | 'quota_daily'
   | 'no_free_tier'
+  | 'quota_unspecified'
   | 'quota_or_rate_limit'
   | 'service_unavailable'
   | 'network_unreachable';
@@ -22,6 +23,7 @@ export const NON_RECOVERABLE_GEMINI_REASONS: ReadonlySet<GeminiFailureReason> = 
   'bad_request',
   'quota_daily',
   'no_free_tier',
+  'quota_unspecified',
 ]);
 
 // Disable the client-side Gemini timeout so long-running grounding and
@@ -135,6 +137,9 @@ export function buildGeminiUserFacingErrorMessage(
       break;
     case 'no_free_tier':
       baseMessage = "The selected Gemini model has no quota on this API key's Google project (limit: 0), so waiting will not help. Choose a different model, or enable billing for the project.";
+      break;
+    case 'quota_unspecified':
+      baseMessage = 'Google reports a quota is exhausted but names no limit or retry time. For Google Search grounding this usually means the project has no (or no remaining) grounding allowance, while plain text generation can still work. Check https://ai.dev/rate-limit; another project or billing lifts it, and waiting a minute will not.';
       break;
     case 'quota_or_rate_limit':
       baseMessage = 'Gemini is currently busy or rate-limited. Please wait a minute and try again.';

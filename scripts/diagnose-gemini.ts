@@ -25,11 +25,28 @@ const ADVICE: Record<string, string> = {
   bad_request: 'HTTP 400: the request itself was rejected (see message). A configuration problem, not quota.',
   quota_daily: 'Daily quota used up for this MODEL on this PROJECT (not per key). Resets at midnight Pacific Time. Use another model or enable billing.',
   no_free_tier: 'limit: 0 - this model has no quota on this project\'s tier. Waiting will never fix it. Use another model or enable billing.',
+  quota_unspecified: 'HTTP 429 with no limit detail. On Google Search grounding this means the project has no (or no remaining) grounding allowance; plain text may still work. Check https://ai.dev/rate-limit; billing or another project lifts it. Waiting will not.',
   rate_limited: 'Per-minute limit. Clears after a short wait; the app now waits and retries by itself.',
   overloaded: 'HTTP 503: Google-side overload. Transient.',
   internal: 'Transient Google-side error.',
   network: 'No answer from Google at all: DNS/proxy/firewall/offline. The problem is the network, not the key or quota.',
 };
+
+function quotaDetail(text: string): string {
+  try {
+    const details = JSON.parse(text)?.error?.details;
+    if (!Array.isArray(details)) return '';
+    const parts: string[] = [];
+    for (const detail of details) {
+      for (const v of Array.isArray(detail?.violations) ? detail.violations : []) {
+        parts.push(`quotaMetric=${String(v.quotaMetric ?? '?').split('/').pop()} quotaId=${v.quotaId ?? '?'} limit=${v.quotaValue ?? '?'}`);
+      }
+    }
+    return parts.length > 0 ? ` [${parts.join('; ')}]` : '';
+  } catch {
+    return '';
+  }
+}
 
 async function call(model: string, body: unknown) {
   const startedAt = Date.now();
@@ -40,13 +57,22 @@ async function call(model: string, body: unknown) {
       body: JSON.stringify(body),
     });
     const text = await response.text();
-    if (response.ok) return { ok: true as const, ms: Date.now() - startedAt, reason: 'ok', detail: '' };
+    if (response.ok) {
+      let usage = '';
+      try {
+        const parsed = JSON.parse(text);
+        const u = parsed?.usageMetadata;
+        usage = `finish=${parsed?.candidates?.[0]?.finishReason ?? '?'} out=${u?.candidatesTokenCount ?? '?'} thinking=${u?.thoughtsTokenCount ?? 0}`;
+      } catch { /* ignore */ }
+      return { ok: true as const, ms: Date.now() - startedAt, reason: 'ok', detail: usage };
+    }
     const classified = classifyGeminiError(Object.assign(new Error(text), { status: response.status }));
     return {
       ok: false as const,
       ms: Date.now() - startedAt,
       reason: classified.reason,
-      detail: `HTTP ${classified.httpStatus}${classified.retryAfterMs != null ? `, retry in ${Math.ceil(classified.retryAfterMs / 1000)}s` : ''}: ${classified.message.slice(0, 160).replace(/\s+/g, ' ')}`,
+      // Full message + the structured quota fields: they say WHICH quota (per day / per minute / limit 0) was hit.
+      detail: `HTTP ${classified.httpStatus}${classified.retryAfterMs != null ? `, retry in ${Math.ceil(classified.retryAfterMs / 1000)}s` : ''}: ${classified.message.replace(/\s+/g, ' ').slice(0, 400)}${quotaDetail(text)}`,
     };
   } catch (error) {
     const classified = classifyGeminiError(error);
@@ -89,6 +115,18 @@ for (const model of models) {
       seen.add(result.reason);
     }
   }
+}
+
+// The app asks for ~700-900 word chapters. A hosting proxy that cuts requests at ~60 s would make every chapter fail
+// even though one-word requests work, so measure a request of that size on the first model.
+const probeModel = models[0];
+const chapterProbe = await call(probeModel, {
+  contents: [{ parts: [{ text: 'Write a detailed, well-structured essay of about 800 words on the history of the Malay language.' }] }],
+  generationConfig: { maxOutputTokens: 8192 },
+});
+console.log(`\nChapter-sized request on ${probeModel}: ${chapterProbe.ok ? `OK in ${(chapterProbe.ms / 1000).toFixed(1)} s (${chapterProbe.detail})` : `${chapterProbe.reason} - ${chapterProbe.detail}`}`);
+if (chapterProbe.ok && chapterProbe.ms > 50_000) {
+  console.log('   WARNING: over ~50 s. Hosted apps behind a proxy/gateway commonly cut requests at 60 s; chapter calls would then fail with 502/504.');
 }
 
 if (seen.size > 0) {

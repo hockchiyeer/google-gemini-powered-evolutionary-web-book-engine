@@ -63,3 +63,14 @@ Corrected in this branch:
 - Live Google behaviour (sandbox blocked). `npm run diagnose` closes this gap.
 - Whether `gemini-3.8-flash` grounded JSON truncates for you; the two-step recovery handles it if so.
 - Output length actually produced by the live model for the new 700-900 word prompt.
+
+## 6. Live results from the deployed project (1 Nov 2026, `npm run diagnose`)
+- Key valid; plain text generation OK on 3.5-flash-lite, 3.5, 3.6, 3.7 and 3.8 flash.
+- **Google Search grounding: HTTP 429 on every model**, a bare `RESOURCE_EXHAUSTED` with only a help link (no `QuotaFailure`, no `RetryInfo`). That names no window and no
+  delay, so it is now classified `quota_unspecified` (not retried on the same model; failover to a sibling is tried once; the message explains it). It is a grounding-specific limit,
+  separate from the text quota, so the midnight-Pacific reset may not clear it.
+- **Latency is the second problem.** One-word request: 1.6 s on 3.6, 30 s on 3.8, 65 s on 3.7 (104-180 s on 3.8/3.7 in another run). Chapter-sized request (~1,200 output
+  tokens): 16.6 s on 3.6, 36.1 s on 3.8 (72.9 s with thinking disabled). Hosts that cut requests near 60 s will fail a share of chapter and outline calls on 3.8.
+  A failed Stage-1 outline drops the whole book to the offline template, which matches the thin PDFs seen. (Timeout not yet confirmed.)
+- Correction to section 4: restoring `gemini-3.8-flash` as default was based on Google's docs; the measurements above favour `gemini-3.6-flash` here. Pick it in the model dropdown.
+

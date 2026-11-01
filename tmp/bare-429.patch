@@ -1,0 +1,196 @@
+From fa251f119cdbcf74fc876f9757684b53fc7b56cc Mon Sep 17 00:00:00 2001
+From: MY <malaysianblogger@gmail.com>
+Date: Sun, 1 Nov 2026 21:54:52 +0800
+Subject: [PATCH] fix: treat Google's bare 429 (grounding) as a standing limit,
+ not a per-minute one
+
+Live diagnose showed googleSearch grounding returns RESOURCE_EXHAUSTED with only a help link on every model.
+New reason quota_unspecified: not retried on the same model, one sibling failover, accurate message.
+Record the measured latency findings in DIAGNOSIS.md.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01YY6Sfykqo2vVWa21WxtgPg
+---
+ DIAGNOSIS.md                           | 10 ++++++++++
+ scripts/diagnose-gemini.ts             |  1 +
+ server/geminiErrors.ts                 |  5 +++++
+ src/services/evolutionService.ts       |  6 +++++-
+ src/services/geminiUserFacingErrors.ts |  5 +++++
+ tests/server/geminiErrors.test.ts      | 11 +++++++++++
+ tests/server/geminiRetry.test.ts       | 13 +++++++++++++
+ 7 files changed, 50 insertions(+), 1 deletion(-)
+
+diff --git a/DIAGNOSIS.md b/DIAGNOSIS.md
+index d5952da..e0fafe9 100644
+--- a/DIAGNOSIS.md
++++ b/DIAGNOSIS.md
+@@ -63,3 +63,13 @@ Corrected in this branch:
+ - Live Google behaviour (sandbox blocked). `npm run diagnose` closes this gap.
+ - Whether `gemini-3.8-flash` grounded JSON truncates for you; the two-step recovery handles it if so.
+ - Output length actually produced by the live model for the new 700-900 word prompt.
++
++## 6. Live results from the deployed project (1 Nov 2026, `npm run diagnose`)
++- Key valid; plain text generation OK on 3.5-flash-lite, 3.5, 3.6, 3.7 and 3.8 flash.
++- **Google Search grounding: HTTP 429 on every model**, a bare `RESOURCE_EXHAUSTED` with only a help link (no `QuotaFailure`, no `RetryInfo`). That names no window and no
++  delay, so it is now classified `quota_unspecified` (not retried on the same model; failover to a sibling is tried once; the message explains it). It is a grounding-specific limit,
++  separate from the text quota, so the midnight-Pacific reset may not clear it.
++- **Latency is the second problem.** One-word request: 1.6 s on 3.6, 30 s on 3.8, 65 s on 3.7 (104-180 s on 3.8/3.7 in another run). Chapter-sized request (~1,200 output
++  tokens): 16.6 s on 3.6, 36.1 s on 3.8 (72.9 s with thinking disabled). Hosts that cut requests near 60 s will fail a share of chapter and outline calls on 3.8.
++  A failed Stage-1 outline drops the whole book to the offline template, which matches the thin PDFs seen. (Timeout not yet confirmed.)
++- Correction to section 4: restoring `gemini-3.8-flash` as default was based on Google's docs; the measurements above favour `gemini-3.6-flash` here. Pick it in the model dropdown.
+diff --git a/scripts/diagnose-gemini.ts b/scripts/diagnose-gemini.ts
+index 1ebbbbe..d9b155a 100644
+--- a/scripts/diagnose-gemini.ts
++++ b/scripts/diagnose-gemini.ts
+@@ -25,6 +25,7 @@ const ADVICE: Record<string, string> = {
+   bad_request: 'HTTP 400: the request itself was rejected (see message). A configuration problem, not quota.',
+   quota_daily: 'Daily quota used up for this MODEL on this PROJECT (not per key). Resets at midnight Pacific Time. Use another model or enable billing.',
+   no_free_tier: 'limit: 0 - this model has no quota on this project\'s tier. Waiting will never fix it. Use another model or enable billing.',
++  quota_unspecified: 'HTTP 429 with no limit detail. On Google Search grounding this means the project has no (or no remaining) grounding allowance; plain text may still work. Check https://ai.dev/rate-limit; billing or another project lifts it. Waiting will not.',
+   rate_limited: 'Per-minute limit. Clears after a short wait; the app now waits and retries by itself.',
+   overloaded: 'HTTP 503: Google-side overload. Transient.',
+   internal: 'Transient Google-side error.',
+diff --git a/server/geminiErrors.ts b/server/geminiErrors.ts
+index 1340892..70101ae 100644
+--- a/server/geminiErrors.ts
++++ b/server/geminiErrors.ts
+@@ -17,6 +17,7 @@ export type GeminiErrorReason =
+   | 'bad_request'       // other 400: a malformed request or an unsupported parameter combination
+   | 'quota_daily'       // 429: a per-day quota is used up; waiting a minute will not help
+   | 'no_free_tier'      // 429 with "limit: 0": this model has no quota at all on the project's tier
++  | 'quota_unspecified' // 429 with no per-minute/per-day detail at all (seen on Google Search grounding): treated as a standing limit
+   | 'rate_limited'      // 429: per-minute request/token limit; clears after a short wait
+   | 'overloaded'        // 503: model temporarily overloaded
+   | 'internal'          // 500/502/504: transient Google-side failure
+@@ -123,6 +124,10 @@ export function classifyGeminiError(err: any): ClassifiedGeminiError {
+       /per ?day|daily|requestsperday/.test(lowered);
+     if (perDay) return make('quota_daily', 429, false);
+
++    // A per-minute limit normally carries QuotaFailure and/or RetryInfo. A bare RESOURCE_EXHAUSTED with only a help link
++    // (observed on every model for googleSearch grounding) names no window and gives no delay, so retrying it is wasted time.
++    if (!retryInfo && violations.length === 0) return make('quota_unspecified', 429, false);
++
+     return make('rate_limited', 429, true);
+   }
+
+diff --git a/src/services/evolutionService.ts b/src/services/evolutionService.ts
+index 375cada..feb16ca 100644
+--- a/src/services/evolutionService.ts
++++ b/src/services/evolutionService.ts
+@@ -179,6 +179,7 @@ const SERVER_REASON_TO_FAILURE: Record<string, GeminiFailureReason> = {
+   bad_request: 'bad_request',
+   quota_daily: 'quota_daily',
+   no_free_tier: 'no_free_tier',
++  quota_unspecified: 'quota_unspecified',
+   rate_limited: 'quota_or_rate_limit',
+   overloaded: 'service_unavailable',
+   internal: 'service_unavailable',
+@@ -273,7 +274,7 @@ function appendFailoverNote(note: string | undefined): string {
+ function canFailOverToSiblingModel(error: any): boolean {
+   if (Number(error?.status) === 404) return true;
+   const reason = detectGeminiFailureReason(error);
+-  return reason === 'quota_or_rate_limit' || reason === 'quota_daily' || reason === 'no_free_tier' || reason === 'service_unavailable';
++  return reason === 'quota_or_rate_limit' || reason === 'quota_daily' || reason === 'no_free_tier' || reason === 'quota_unspecified' || reason === 'service_unavailable';
+ }
+
+ async function requestGeminiOnce(model: string, requestParams: any): Promise<any> {
+@@ -513,6 +514,7 @@ type GeminiSearchCause = GeminiFailureReason | 'no_content' | 'model_unavailable
+ const GEMINI_SEARCH_CAUSE_PHRASES: Record<GeminiSearchCause, string> = {
+   quota_or_rate_limit: 'usage limit reached',
+   quota_daily: 'daily quota used up',
++  quota_unspecified: 'quota exhausted, no detail from Google',
+   no_free_tier: 'no quota for this model on the API key\'s project',
+   invalid_api_key: 'API key rejected',
+   missing_api_key: 'API key missing',
+@@ -527,6 +529,7 @@ const GEMINI_SEARCH_CAUSE_PHRASES: Record<GeminiSearchCause, string> = {
+ const GEMINI_SEARCH_CAUSE_TO_FALLBACK_REASON: Record<GeminiSearchCause, SearchFallbackReason> = {
+   quota_or_rate_limit: 'quota_exhausted',
+   quota_daily: 'quota_exhausted',
++  quota_unspecified: 'quota_exhausted',
+   no_free_tier: 'quota_exhausted',
+   invalid_api_key: 'unreachable',
+   missing_api_key: 'unreachable',
+@@ -722,6 +725,7 @@ const KNOWLEDGE_SYNTHESIS_CAUSES = new Set<GeminiSearchCause>([
+   'quota_or_rate_limit',
+   'quota_daily',
+   'no_free_tier',
++  'quota_unspecified',
+   'service_unavailable',
+   'no_content',
+ ]);
+diff --git a/src/services/geminiUserFacingErrors.ts b/src/services/geminiUserFacingErrors.ts
+index bd9b23e..79bb2cd 100644
+--- a/src/services/geminiUserFacingErrors.ts
++++ b/src/services/geminiUserFacingErrors.ts
+@@ -7,6 +7,7 @@ export type GeminiFailureReason =
+   | 'bad_request'
+   | 'quota_daily'
+   | 'no_free_tier'
++  | 'quota_unspecified'
+   | 'quota_or_rate_limit'
+   | 'service_unavailable'
+   | 'network_unreachable';
+@@ -22,6 +23,7 @@ export const NON_RECOVERABLE_GEMINI_REASONS: ReadonlySet<GeminiFailureReason> =
+   'bad_request',
+   'quota_daily',
+   'no_free_tier',
++  'quota_unspecified',
+ ]);
+
+ // Disable the client-side Gemini timeout so long-running grounding and
+@@ -136,6 +138,9 @@ export function buildGeminiUserFacingErrorMessage(
+     case 'no_free_tier':
+       baseMessage = "The selected Gemini model has no quota on this API key's Google project (limit: 0), so waiting will not help. Choose a different model, or enable billing for the project.";
+       break;
++    case 'quota_unspecified':
++      baseMessage = 'Google reports a quota is exhausted but names no limit or retry time. For Google Search grounding this usually means the project has no (or no remaining) grounding allowance, while plain text generation can still work. Check https://ai.dev/rate-limit; another project or billing lifts it, and waiting a minute will not.';
++      break;
+     case 'quota_or_rate_limit':
+       baseMessage = 'Gemini is currently busy or rate-limited. Please wait a minute and try again.';
+       break;
+diff --git a/tests/server/geminiErrors.test.ts b/tests/server/geminiErrors.test.ts
+index 922f98f..9f412f0 100644
+--- a/tests/server/geminiErrors.test.ts
++++ b/tests/server/geminiErrors.test.ts
+@@ -44,6 +44,17 @@ const QUOTA_FAILURE = (quotaId: string, quotaValue = '20') => ({
+   assert.equal(c.retryable, false);
+ }
+
++// Bare 429 (what Google returns for googleSearch grounding): no window, no delay -> not retried.
++{
++  const c = classifyGeminiError(apiError(429, {
++    status: 'RESOURCE_EXHAUSTED',
++    message: 'You exceeded your current quota, please check your plan and billing details.',
++    details: [{ '@type': 'type.googleapis.com/google.rpc.Help', links: [{ url: 'https://ai.google.dev/gemini-api/docs/rate-limits' }] }],
++  }));
++  assert.equal(c.reason, 'quota_unspecified');
++  assert.equal(c.retryable, false);
++}
+
+ // 400 with a bad key is an auth problem; any other 400 is a bad request. Neither is a "connection" problem.
+ {
+   const bad = classifyGeminiError(apiError(400, {
+diff --git a/tests/server/geminiRetry.test.ts b/tests/server/geminiRetry.test.ts
+index b253aa5..fad68b1 100644
+--- a/tests/server/geminiRetry.test.ts
++++ b/tests/server/geminiRetry.test.ts
+@@ -39,6 +39,19 @@ const retryInfo = (delay: string) => ({ '@type': 'type.googleapis.com/google.rpc
+   assert.equal(calls, 1);
+ }
+
++// A bare 429 (grounding) fails at once instead of being retried with backoff.
++{
++  let calls = 0;
++  await assert.rejects(
++    callGemini(async () => {
++      calls += 1;
++      throw apiError(429, { status: 'RESOURCE_EXHAUSTED', message: 'You exceeded your current quota, please check your plan and billing details.' });
++    }),
++    (err: unknown) => err instanceof GeminiCallError && err.classified.reason === 'quota_unspecified'
++  );
++  assert.equal(calls, 1);
++}
+
+ // Auth, permission and bad-request errors are never retried.
+ for (const [status, reason] of [[400, 'bad_request'], [403, 'permission_denied'], [404, 'model_not_found']] as const) {
+   let calls = 0;

@@ -39,6 +39,19 @@ const retryInfo = (delay: string) => ({ '@type': 'type.googleapis.com/google.rpc
   assert.equal(calls, 1);
 }
 
+// A bare 429 (grounding) fails at once instead of being retried with backoff.
+{
+  let calls = 0;
+  await assert.rejects(
+    callGemini(async () => {
+      calls += 1;
+      throw apiError(429, { status: 'RESOURCE_EXHAUSTED', message: 'You exceeded your current quota, please check your plan and billing details.' });
+    }),
+    (err: unknown) => err instanceof GeminiCallError && err.classified.reason === 'quota_unspecified'
+  );
+  assert.equal(calls, 1);
+}
+
 // Auth, permission and bad-request errors are never retried.
 for (const [status, reason] of [[400, 'bad_request'], [403, 'permission_denied'], [404, 'model_not_found']] as const) {
   let calls = 0;

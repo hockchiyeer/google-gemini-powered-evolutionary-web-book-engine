@@ -182,6 +182,12 @@ function detectGeminiFailureReason(err: any): GeminiFailureReason {
   if (status === 403 || reason === 'permission_denied' || message.includes('permission_denied') || message.includes('403')) {
     return 'permission_denied';
   }
+  if (reason === 'no_free_tier' || message.includes('no_free_tier')) {
+    return 'no_free_tier';
+  }
+  if (reason === 'quota_unspecified' || message.includes('quota_unspecified')) {
+    return 'quota_unspecified';
+  }
   if (
     reason === 'quota_daily' ||
     reason === 'quota_exceeded' ||
@@ -263,7 +269,7 @@ async function generateWithModelFallback(
       const message = String(err?.message || '').toLowerCase();
       const reason = detectGeminiFailureReason(err);
 
-      if (NON_RECOVERABLE_GEMINI_REASONS.has(reason) && reason !== 'quota_daily') {
+      if (NON_RECOVERABLE_GEMINI_REASONS.has(reason) && reason !== 'quota_daily' && reason !== 'quota_unspecified') {
         throw err;
       }
 
@@ -469,6 +475,7 @@ const GEMINI_SEARCH_CAUSE_PHRASES: Record<GeminiSearchCause, string> = {
   bad_request: 'invalid request',
   quota_daily: 'daily quota exhausted',
   no_free_tier: 'no quota for this model',
+  quota_unspecified: 'quota exhausted, no detail from Google',
   service_unavailable: 'service temporarily unavailable',
   network_unreachable: 'could not be reached',
   no_content: 'no usable sources returned',
@@ -483,6 +490,7 @@ const GEMINI_SEARCH_CAUSE_TO_FALLBACK_REASON: Record<GeminiSearchCause, SearchFa
   bad_request: 'unreachable',
   quota_daily: 'quota_exhausted',
   no_free_tier: 'quota_exhausted',
+  quota_unspecified: 'quota_exhausted',
   service_unavailable: 'unreachable',
   network_unreachable: 'network_unreachable',
   no_content: 'no_content',
@@ -893,7 +901,13 @@ export async function searchAndExtract(
   }
 
   // Fallback search execution
-  const fallbackPayload = await fetchGoogleSearchFallback(query, options);
+  let fallbackPayload: SearchFallbackPayload | null = null;
+  try {
+    fallbackPayload = await fetchGoogleSearchFallback(query, options);
+  } catch (fallbackError) {
+    console.warn("Fallback search execution failed:", fallbackError);
+  }
+
   // A synthetic payload is a placeholder the server fabricates when Google and DuckDuckGo both return nothing.
   // When live search returns 0 results or synthetic fallback, seamlessly synthesize from Gemini knowledge base
   // rather than stopping the run with an error.
