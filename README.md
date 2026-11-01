@@ -4,14 +4,20 @@ An advanced AI-powered engine that synthesizes comprehensive, authoritative, mul
 
 ---
 
+## Purpose
+
+Searching a topic returns many pages that repeat each other, and asking an LLM for a "complete guide" in one shot produces thin, unverifiable text. This project exists to turn a single query into one deduplicated, source-linked, multi-chapter reference: candidate evidence is gathered (Gemini with Google Search grounding, or Google / DuckDuckGo as fallbacks), an evolutionary algorithm keeps the most informative, authoritative and non-redundant material, and Gemini writes the book from that evidence. When evidence or a chapter cannot be produced, the engine says so rather than padding the book with filler. It is also a reference implementation of a server-side Gemini app in the Google AI Studio style (see `GOOGLE_AI_STUDIO_UPLOAD.md`).
+
+---
+
 ## Key Features
 
 - **Two-Stage Evolutionary Content Synthesis**:
   - **Stage 1 (Architectural Roadmap)**: Synthesizes a structured 10-chapter outline flowing logically from historical foundations to core architecture, deep technical mechanics, and future horizons.
-  - **Stage 2 (Parallel Chapter Expansion)**: Concurrently expands each chapter with rigorous technical definitions, sub-topic deep dives, and generative visual seeds.
+  - **Stage 2 (Parallel Chapter Expansion)**: Writes each chapter (700-900 words, 5-7 paragraphs) from the evolved evidence, with up to 3 chapters in flight at once, plus technical definitions, sub-topic deep dives, and visual seeds. A chapter Gemini cannot write is omitted and named in the notice; it is never replaced by filler text.
 - **Configurable AI Models**:
-  - Dynamic model selection supporting modern Gemini models (`gemini-3.8-flash`, `gemini-2.5-flash`, `gemini-3-flash-preview`, `gemini-flash-latest`).
-  - Runtime model discovery (`GET /api/gemini/models` lists the models your key can really use). The selected model is tried first; if it cannot serve a request for a model-specific reason (quota, overload, no longer offered) up to two sibling Flash models are tried, and the book's notice names every model that actually answered. Errors that fail identically on every model (bad key, HTTP 403, HTTP 400) are never retried on siblings.
+  - Dynamic model selection from the list in `GEMINI_MODELS` (`src/types.ts`): `gemini-3.6-flash` (default), `gemini-3.5-flash`, `gemini-3.7-flash`, `gemini-3.8-flash`, `gemini-flash-latest`, `gemini-3.5-flash-lite`.
+  - Runtime model discovery (`GET /api/gemini/models` lists the models your key can really use). The selected model is tried first; if it cannot serve a request for a model-specific reason (quota, overload, timeout, no longer offered) up to two sibling Flash models are tried, fastest first (3.6, 3.5, 3.5-flash-lite, 3.1-flash-lite, then 3.7 and 3.8), and the book's notice names every model that actually answered. Errors that fail identically on every model (bad key, HTTP 403, HTTP 400) are never retried on siblings.
 - **Multi-Tier Search Fallback Resilience**:
   - Graceful degradation when Gemini API quotas or rate limits are reached.
   - Configurable fallback routing: `Google + DuckDuckGo`, `Google only`, `DuckDuckGo only`, or `Off (Gemini only)`.
@@ -29,7 +35,7 @@ An advanced AI-powered engine that synthesizes comprehensive, authoritative, mul
   - **HTML Webpage**: Standalone responsive document with self-contained styling and navigational anchors.
   - **Plain Text (.txt)**: Clean, unformatted hierarchical text.
 - **Dual-Layer Persistence & History**:
-  - Cloud persistence via Firebase Firestore with anonymous authentication.
+  - Cloud persistence via Firebase Firestore with anonymous authentication (configured through the `VITE_FIREBASE_*` variables, see Environment Setup).
   - Local browser storage caching for offline review and instant retrieval.
 
 ---
@@ -41,32 +47,65 @@ An advanced AI-powered engine that synthesizes comprehensive, authoritative, mul
 | **Frontend Framework** | React 19, TypeScript, Vite 6 |
 | **Styling & UI** | Tailwind CSS v4, Motion (`motion/react`), Lucide React |
 | **AI Integration** | Google Gemini API via `@google/genai` |
-| **Document Export** | `jspdf`, `html2pdf.js`, `fflate` (DOCX OpenXML packaging) |
+| **Document Export** | `jspdf` (installed through `html2pdf.js`), `html2pdf.js`, `html2canvas`, `fflate` (DOCX OpenXML packaging; also used by the packaging script) |
 | **Persistence** | Firebase Firestore, Firebase Auth, Web LocalStorage |
-| **Server & Middleware** | Node.js, Express, Vite Server Plugin Middleware |
-| **Testing** | Cypress with `@badeball/cypress-cucumber-preprocessor` (BDD Gherkin) |
+| **Server & Middleware** | Node.js, Express, `tsx`, Vite plugin middleware, `ws` (Gemini Live WebSocket relay), `dotenv` |
+| **Testing** | Cypress 16 with `@badeball/cypress-cucumber-preprocessor` (BDD Gherkin, esbuild bundling) and reporters (mochawesome, JUnit, multiple-cucumber-html-reporter); `tsx` + `node:assert` server-side unit tests |
+| **Package management** | npm (`.npmrc` sets `legacy-peer-deps=true`); a `bun.lock` is also tracked |
+
+---
+
+## System Architecture & API
+
+The same route handlers run in two hosts: Vite plugins during `npm run dev` / `npm run test`, and the Express server in `server/server.ts` for `npm start`.
+
+| Route | Method | Host | Purpose |
+| :--- | :--- | :--- | :--- |
+| `/api/gemini/generate` | POST | `server/geminiService.ts` | Proxies `generateContent` with error classification, retries, a concurrency gate and a per-request timeout |
+| `/api/gemini/stream` | POST | `server/geminiService.ts` | Streaming variant of the above |
+| `/api/gemini/health` | GET | `server/geminiService.ts` | Per-model connectivity check (never returns the key) |
+| `/api/gemini/models` | GET | `server/geminiService.ts` | Models the key can use (live list cached for 10 minutes, built-in list as fallback) |
+| `/api/gemini/live` | WebSocket | `server/server.ts` only | Gemini Live relay |
+| `/api/search-fallback` | GET | `server/googleSearchFallback.ts` | Google / DuckDuckGo evidence collection used when Gemini search is unavailable |
+| `/api/search`, `/api/evolve` | GET, POST | `server/googleSearchFallback.ts` | Legacy-compatible search and population-evolution endpoints |
+| `/__pdf` | POST | `server/server.ts` only | Server PDF hook. `server/pdfBridge.ts` is a stub that always fails, so the client falls back to the vector jsPDF export (Cypress stubs this route) |
+
+**Gemini request pipeline** (`server/geminiService.ts`, `server/geminiErrors.ts`): the client is created lazily and re-created when `GEMINI_API_KEY` changes; every Google error is classified into a reason (`invalid_api_key`, `permission_denied`, `model_not_found`, `bad_request`, `quota_daily`, `no_free_tier`, `quota_unspecified`, `rate_limited`, `overloaded`, `internal`, `timeout`, `network`) from Google's structured details rather than message wording; only transient reasons are retried, honouring Google's retry delay; a timeout is never retried on the same model.
+
+**Client engine** (`src/hooks/useWebBookEngine.ts` -> `src/services/evolutionService.ts`): search and extraction, evolution, assembly and history are orchestrated in the hook; model failover and the notice shown with each book live in the service.
 
 ---
 
 ## Repository Structure
 
 ```text
+├── .cypress-cucumber-preprocessorrc.json # Cucumber preprocessor config (repo-root copy)
 ├── .env.example                         # Environment variable template
+├── .gitignore / .npmrc                  # Git ignores; npm config (legacy-peer-deps=true)
+├── DIAGNOSIS.md                         # Findings on thin books and Gemini connectivity/latency failures
+├── GOOGLE_AI_STUDIO_UPLOAD.md           # Notes on the Google AI Studio upload archive
+├── LICENSE.txt                          # MIT License
+├── README.md                            # This document
+├── bun.lock                             # Dependency lockfile
 ├── index.html                           # Application entry HTML
 ├── metadata.json                        # AI Studio applet capabilities and metadata
 ├── package.json                         # Project dependencies and npm scripts
 ├── tsconfig.json                        # TypeScript configuration
-├── vite.config.ts                       # Vite configuration with Tailwind and search middleware
+├── vite.config.ts                       # Vite configuration with Tailwind, Gemini and search middleware plugins
 │
 ├── scripts/
-│   ├── package-google-ai-studio.mjs     # Packaging utility for Google AI Studio deployments
-│   ├── start-preview.mjs                # Production preview server runner
-│   └── update_options.cjs               # Configuration synchronization script
+│   ├── diagnose-gemini.ts               # `npm run diagnose`: asks Google directly, per model (plain + Search grounding)
+│   ├── make-cjk-font-subset.sh          # Rebuilds the embedded Noto Sans SC subset font
+│   ├── package-google-ai-studio.mjs     # `npm run package:aistudio`: builds the lean source ZIP
+│   ├── start-preview.mjs                # Builds, then runs `vite preview` (not wired to an npm script)
+│   └── update_options.cjs               # Legacy one-off codemod that threaded `geminiModel` through services (not used by any script)
 │
 ├── server/
-│   ├── googleSearchFallback.ts          # Express & Vite middleware for search fallback routes
-│   ├── pdfBridge.ts                     # Server-side PDF generation bridge
-│   ├── server.ts                        # Standalone full-stack server entry
+│   ├── geminiErrors.ts                  # Classifies Google/Gemini errors into reasons, retry hints and user messages
+│   ├── geminiService.ts                 # /api/gemini/* routes, retry, concurrency gate, timeout, Live WebSocket relay
+│   ├── googleSearchFallback.ts          # Search fallback routes and query handling (Express & Vite middleware)
+│   ├── pdfBridge.ts                     # Server PDF stub (Puppeteer disabled; client vector export is used)
+│   ├── server.ts                        # Standalone full-stack server entry (`npm start`)
 │   └── searchStrategies/
 │       ├── duckDuckGoStrategy.ts        # DuckDuckGo fallback scraper strategy
 │       ├── googleStrategy.ts            # Google Search fallback strategy
@@ -79,7 +118,11 @@ An advanced AI-powered engine that synthesizes comprehensive, authoritative, mul
 │   ├── WebBookErrorBoundary.tsx         # Component-level error boundary
 │   ├── index.css                        # Global Tailwind styles and print media rules
 │   ├── main.tsx                         # Client application bootstrap
-│   ├── types.ts                         # Core domain and genotype types
+│   ├── types.ts                         # Core domain types, `GEMINI_MODELS`, fallback mode/reason guards
+│   ├── vite-env.d.ts                    # Vite client typings
+│   │
+│   ├── assets/fonts/
+│   │   └── NotoSansSC-Subset.ttf        # Embedded CJK font for High-Res PDF export
 │   │
 │   ├── components/
 │   │   ├── AppHeader.tsx                # Header with navigation, model status, and export dropdown
@@ -92,14 +135,16 @@ An advanced AI-powered engine that synthesizes comprehensive, authoritative, mul
 │   ├── services/
 │   │   ├── documentTitle.ts             # Dynamic document title formatter
 │   │   ├── docxExport.ts                # Word OpenXML (.docx) document builder
-│   │   ├── evolutionService.ts          # Genetic algorithm, fitness evaluation, and Gemini assembly
+│   │   ├── evolutionService.ts          # Genetic algorithm, fitness evaluation, model failover and Gemini assembly
 │   │   ├── exportDocument.ts            # Document prep, inlining, and HTML print shells
 │   │   ├── exportService.ts             # Multi-format export coordinator (PDF, Print, Word, HTML, TXT)
-│   │   ├── printFriendlyReportExport.ts # Reader-mode print-friendly report generator (vector PDF via print, per-page JPG)
 │   │   ├── fallbackPayloadHeuristics.ts # Heuristic quality scorers for search results
 │   │   ├── geminiUserFacingErrors.ts    # Friendly error translation for API responses
 │   │   ├── googleSearchFallbackClient.ts# Client interface to fallback search middleware
 │   │   ├── historyService.ts            # Firestore and LocalStorage persistence layer
+│   │   ├── pdfCjkFont.ts                # Loads and registers the embedded CJK font for jsPDF
+│   │   ├── printFriendlyReportExport.ts # Reader-mode print-friendly report generator (vector PDF via print, per-page JPG)
+│   │   ├── safeResponse.ts              # Defensive JSON parsing; detects HTML or proxy pages returned instead of JSON
 │   │   ├── searchFallbackShared.ts      # Shared scoring and URL builders
 │   │   └── searchIntakeParser.ts        # Robust JSON and text stream parser
 │   │
@@ -107,18 +152,23 @@ An advanced AI-powered engine that synthesizes comprehensive, authoritative, mul
 │       └── webBookRender.ts             # Pagination planner and source link sanitizers
 │
 └── tests/
-    ├── .cypress-cucumber-preprocessorrc.json # Cucumber BDD preprocessor configuration
+    ├── .cypress-cucumber-preprocessorrc.json # Cucumber BDD preprocessor configuration (report paths, step definitions)
     ├── cypress.config.cjs               # Cypress test configuration
+    ├── cypress.env.config.cjs           # Environment/base-URL resolution for Cypress
     ├── cypress/
-    │   ├── fixtures/                    # Test fixtures for deterministic search mock data
-    │   ├── support/                     # Cypress commands and export stubs
+    │   ├── fixtures/                    # Deterministic search fallback mock data and a 1x1 image
+    │   ├── support/                     # Cypress commands (network and export stubs) and e2e setup
     │   └── e2e/
     │       ├── features/
-    │       │   └── webbook-generation.feature # BDD feature specifications
-    │       ├── common/                  # Cucumber step definitions (Given, When, Then)
+    │       │   └── webbook-generation.feature # BDD feature specifications (26 scenarios)
+    │       ├── common/                  # Cucumber step definitions (given, when, then)
     │       └── pageObjects/             # Page object locators
-    ├── scripts/                         # Server lifecycle and HTML report generator scripts
-    └── server/                          # Server-side unit and regression tests
+    ├── scripts/
+    │   ├── generate-cucumber-report.cjs # Compiles the HTML report from Cucumber JSON
+    │   ├── run-cypress-with-reports.cjs # Runs Cypress, then the report generator
+    │   ├── run-local-cypress.cjs        # Starts the dev server if needed, runs Cypress, stops the server
+    │   └── smoke/                       # Manual scripts (import, PDF bridge, Google fetch); not run by npm scripts
+    └── server/                          # 14 `tsx` unit/regression tests, run by `npm run test:server`
 ```
 
 ---
@@ -136,11 +186,7 @@ An advanced AI-powered engine that synthesizes comprehensive, authoritative, mul
 npm install
 ```
 
-If inter-dependency conflicts occur during package installation:
-```bash
-# Workaround to enable installation given potential inter-dependencies conflicts
-npm install --legacy-peer-deps
-```
+`.npmrc` already sets `legacy-peer-deps=true`, so peer-dependency conflicts need no extra flag.
 
 To inspect and resolve package security vulnerabilities:
 ```bash
@@ -153,11 +199,21 @@ npm audit fix --force
 
 ### 3. Environment Setup
 
-Create a `.env` file in the project root:
+Copy `.env.example` to `.env` in the project root and set at least:
 
 ```env
 GEMINI_API_KEY=your_gemini_api_key_here
 ```
+
+| Variable | Required | Default | Purpose |
+| :--- | :--- | :--- | :--- |
+| `GEMINI_API_KEY` | Yes (not needed for `npm test`) | none | Server-side Gemini access (the key is never sent to the browser) |
+| `VITE_FIREBASE_*` (`API_KEY`, `APP_ID`, `AUTH_DOMAIN`, `MEASUREMENT_ID`, `MESSAGING_SENDER_ID`, `PROJECT_ID`, `STORAGE_BUCKET`) | No | none | Firebase cloud history (see Dual-Layer Persistence) |
+| `GEMINI_MAX_CONCURRENCY` | No | 3 | Simultaneous requests to Google from this server |
+| `GEMINI_MAX_ATTEMPTS` | No | 4 | Tries per request for rate-limit, overload and transient errors |
+| `GEMINI_MAX_RETRY_WAIT_MS` | No | 45000 | Longest single retry wait before giving up |
+| `GEMINI_REQUEST_TIMEOUT_MS` | No | 50000 | Longest wait for one Google answer (0 = off); a timeout triggers failover to a sibling model |
+| `PORT` | No | 3000 | Port for `npm start` |
 
 ### 4. Development Server
 
@@ -167,7 +223,7 @@ Start the local development server:
 npm run dev
 ```
 
-The application will be accessible at `http://localhost:3000`.
+The application will be accessible at `http://localhost:3000`. Vite serves the `/api/gemini/*` and search fallback routes through plugins; the Live WebSocket and `/__pdf` routes exist only in the standalone server below.
 
 ### 5. Production Build & Deployment
 
@@ -178,7 +234,7 @@ npm run build
 # Start full-stack production server (serves frontend & API fallback routes)
 npm start
 
-# (Optional) Preview production client build locally
+# (Optional) Preview production client build locally (serves the search fallback routes but not /api/gemini/*)
 npm run preview
 ```
 
@@ -196,8 +252,8 @@ npm test
 ```
 
 **How the automated flow works:**
-1. **Local Server Detection & Auto-Launch**: The runner checks whether `http://localhost:3000` is active. If not running, it automatically boots the local App server in the background and waits until it is ready.
-2. **Deterministic & Safe Execution**: All 24 BDD test scenarios execute headlessly against mocked fixtures. **No Gemini API key or paid quota is required**, ensuring fast, reliable execution with zero risk to content integrity.
+1. **Local Server Detection & Auto-Launch**: The runner checks whether `http://localhost:3000` is active. If not running, it automatically boots the Vite dev server (`npm run dev:test`) in the background and waits until it is ready.
+2. **Deterministic & Safe Execution**: All 26 BDD test scenarios execute headlessly against mocked fixtures. **No Gemini API key or paid quota is required**, ensuring fast, reliable execution with zero risk to content integrity.
 3. **Automated Server Teardown**: Automatically terminates the background server process once testing completes.
 4. **HTML Report Generation**: Automatically compiles the visual, interactive HTML test report.
 
@@ -212,22 +268,24 @@ Convenient one-line commands to open the report directly:
 - **Windows**: `start test-results/chromeReport/multiple-cucumber-html-report/index.html`
 - **Linux**: `xdg-open test-results/chromeReport/multiple-cucumber-html-report/index.html`
 
+Cypress also writes mochawesome JSON/HTML, JUnit XML, Cucumber JSON/HTML/messages and screenshots under `test-results/chromeReport/`. The base URL can be overridden with `CYPRESS_BASE_URL`. `tests/scripts/smoke/` holds manual diagnostic scripts that are not part of any npm script.
+
 #### Test CLI Commands & Server Launch Matrix
 
 The table below clarifies whether each `npm` / `npm run` command manages the local App server automatically or expects a pre-running server:
 
 | Command | Local Server Launch | Purpose / Description |
 | :--- | :--- | :--- |
-| `npm test`<br>*(or `npm run test`)* | **Automatic** *(Self-managed; no manual start required)* | **Recommended primary command**. Automatically boots local server if not active, runs all 24 BDD scenarios headlessly, stops server, and compiles HTML report. |
+| `npm test`<br>*(or `npm run test`)* | **Automatic** *(Self-managed; no manual start required)* | **Recommended primary command**. Automatically boots local server if not active, runs all 26 BDD scenarios headlessly, stops server, and compiles HTML report. |
 | `npm run test:e2e`<br>*(or `npm run cy:run:local`)* | **Requires Running Server**<br>*(Run `npm run dev` first)* | Runs the full BDD test suite headlessly and compiles the HTML report against an already running local server. |
 | `npm run cy:run` | **Requires Running Server**<br>*(Run `npm run dev` first)* | Runs Cypress headlessly against an already running server without re-generating HTML report. |
 | `npm run cy:open` | **Requires Running Server**<br>*(Run `npm run dev` first)* | Opens the interactive Cypress GUI for visual step-by-step browser testing. |
-| `npm run test:server` | **Not Required** *(Standalone)* | Runs server-side unit and regression tests (title extraction, search fallback routing, and evolution algorithms). |
+| `npm run test:server` | **Not Required** *(Standalone)* | Runs the 14 `tsx` unit/regression tests in `tests/server/`: Gemini error classification and retry, search fallback routing and client, fallback notices, evolution and chapter assembly, content filters, document titles, hyperlinked/CJK/print-friendly exports and the CJK font. |
 | `npm run report:generate` | **Not Required** *(Standalone)* | Compiles the visual HTML report from existing Cucumber JSON test result artifacts. |
 
 ### 6a. Troubleshooting Gemini connectivity
 
-The UI used to report almost every failure as "could not be reached" or "busy, wait a minute". It now reports what Google actually answered (key rejected, HTTP 403, HTTP 400, daily quota, model with no quota, per-minute limit, overload, real network failure).
+The UI used to report almost every failure as "could not be reached" or "busy, wait a minute". It now reports what Google actually answered (key rejected, HTTP 403, HTTP 400, daily quota, model with no quota, per-minute limit, overload, slow-model timeout, real network failure). `DIAGNOSIS.md` records the measured causes of thin books and connectivity failures.
 
 ```bash
 npm run diagnose                 # asks Google directly, per model: plain request + Google Search grounding
@@ -235,7 +293,7 @@ curl http://localhost:3000/api/gemini/health   # same check through the running 
 ```
 
 - Quotas are per Google **project** and per **model**, not per key; a new key in the same project shares them. Daily quotas reset at **midnight Pacific Time**, not 24 hours after you hit them.
-- Optional tunables in `.env`: `GEMINI_MAX_CONCURRENCY` (default 3), `GEMINI_MAX_ATTEMPTS` (default 4), `GEMINI_MAX_RETRY_WAIT_MS` (default 45000).
+- A bare HTTP 429 on Google Search grounding (no quota detail) is a standing grounding limit that waiting may not clear. Slow models (for example `gemini-3.8-flash` in recent measurements) are cut off by `GEMINI_REQUEST_TIMEOUT_MS` and the request moves to a faster sibling. Tunables are listed under Environment Setup.
 - A chapter that Gemini cannot write is left out and named in the notice; it is never replaced by filler text.
 - If live search is unavailable the engine can write from the model's own knowledge. Such a book is labelled **Model knowledge (not verified against live sources)** and carries no source links.
 
@@ -253,7 +311,7 @@ npm run lint
 npm run package:aistudio
 ```
 
-Generates a deployable source ZIP archive at `artifacts/evolutionary-web-book-engine-google-ai-studio-upload.zip`.
+Generates a deployable source ZIP archive at `artifacts/evolutionary-web-book-engine-google-ai-studio-upload.zip` containing the app source, server, scripts, config and metadata, and excluding `tests/`, `node_modules/`, `dist/` and `test-results/`. See `GOOGLE_AI_STUDIO_UPLOAD.md` for limitations and the `process.env.GEMINI_API_KEY` runtime note.
 
 ---
 
@@ -262,10 +320,10 @@ Generates a deployable source ZIP archive at `artifacts/evolutionary-web-book-en
 1. **Targeted Ingestion**: Gathers initial candidate sources via Gemini with Google Search grounding, preserving verified search URLs and domain citations. If quotas or rate limits are reached, the query transparently routes through the selected fallback provider (`Google + DuckDuckGo`, `Google`, or `DuckDuckGo`), and the notice reports the selected Gemini model, why it was unavailable, and which fallback providers actually supplied evidence. If the fallback providers also return nothing, generation stops with a message (instead of building a book from placeholder content) and the query stays in the search box so you can retry it as-is or refine the wording.
 2. **Evolutionary Optimization**:
    - **Fitness Function**: Evaluates candidate text based on Informative Value $I(w)$, Source Authority $A(w)$, and a Redundancy Penalty $R(w, S)$.
-   - **Selection & Crossover**: Selects top-scoring genotypes across successive generations to eliminate redundant boilerplate while preserving novel technical facts.
+   - **Selection & Crossover**: Selects top-scoring genotypes across successive generations (3 by default) to eliminate redundant boilerplate while preserving novel technical facts. Offspring only recombine their parents' text, so assembly draws its evidence from the original sources (a pool of up to 8).
 3. **Two-Stage Phenotype Assembly**:
    - Generates a holistic 10-chapter roadmap outline.
-   - Concurrently expands chapters with detailed narrative prose, domain definitions, deeper exploratory angles, and visual concept seeds.
+   - Expands chapters from an evidence digest with detailed narrative prose, domain definitions, deeper exploratory angles, and visual concept seeds.
 4. **Interactive Presentation & Export**:
    - Delivers an interactive multi-page WebBook with jump navigation, concept glossary, and source citations.
    - Enables one-click exports across PDF (with interactive TOC hyperlinks), Word, HTML, and text.
@@ -274,5 +332,4 @@ Generates a deployable source ZIP archive at `artifacts/evolutionary-web-book-en
 
 ## License
 
-Apache-2.0
-
+MIT (see `LICENSE.txt`)
