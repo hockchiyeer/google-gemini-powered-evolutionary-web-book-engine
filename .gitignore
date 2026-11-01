@@ -29,3 +29,8 @@ public/
 
 # AI Studio runtime prompt uploads and attachments
 public/assets/aistudio/
+
+# Patch files and temporary directories
+*.patch
+tmp/
+
