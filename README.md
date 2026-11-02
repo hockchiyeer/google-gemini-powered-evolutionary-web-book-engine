@@ -334,4 +334,4 @@ Generates a deployable source ZIP archive at `artifacts/evolutionary-web-book-en
 
 ## License
 
-MIT (see `LICENSE.txt`)
+MIT (Please refer to [LICENSE.txt](LICENSE.txt))
