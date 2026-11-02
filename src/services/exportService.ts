@@ -2,6 +2,7 @@ import type { WebBook } from '../types';
 import type { DocxChapterImageAsset } from './docxExport';
 import { buildWebBookDocx } from './docxExport';
 import { getWebBookDocumentTitle } from './documentTitle';
+import { getExportLabels } from './exportLabels';
 import { getChapterSourceLinks, sanitizeWebBookForPresentation } from '../utils/webBookRender';
 import {
   buildPdfHtmlDocument,
@@ -19,19 +20,21 @@ function formatSourceLink(source: string | { title: string; url: string }): stri
 
 export async function exportWebBookToTxt(webBook: WebBook): Promise<void> {
   const safeWebBook = sanitizeWebBookForPresentation(webBook);
+  const L = getExportLabels(safeWebBook);
   let text = `${safeWebBook.topic.toUpperCase()}\n`;
-  text += `Generated on: ${new Date(safeWebBook.timestamp).toLocaleString()}\n\n`;
+  text += `${L.generatedOn}${L.colon}${new Date(safeWebBook.timestamp).toLocaleString(L.dateLocale)}\n\n`;
 
   safeWebBook.chapters.forEach((chapter, index) => {
-    text += `CHAPTER ${index + 1}: ${chapter.title}\n`;
-    text += `${'='.repeat(chapter.title.length + 11)}\n\n`;
+    const chapterHeading = `${L.upper(L.chapter(index + 1))}${L.colon}${chapter.title}`;
+    text += `${chapterHeading}\n`;
+    text += `${'='.repeat(chapterHeading.length)}\n\n`;
     text += `${chapter.content}\n\n`;
     if (chapter.visualSeed?.trim()) {
-      text += `VISUAL CONCEPT: ${chapter.visualSeed.trim()}\n\n`;
+      text += `${L.upper(L.visualConcept)}${L.colon}${chapter.visualSeed.trim()}\n\n`;
     }
 
     if (chapter.definitions && chapter.definitions.length > 0) {
-      text += 'CORE CONCEPTS:\n';
+      text += `${L.upper(L.coreConcepts)}${L.colon.trim()}\n`;
       chapter.definitions.forEach((definition) => {
         text += `- ${definition.term}: ${definition.description}\n`;
       });
@@ -39,7 +42,7 @@ export async function exportWebBookToTxt(webBook: WebBook): Promise<void> {
     }
 
     if (chapter.subTopics && chapter.subTopics.length > 0) {
-      text += 'SUB-TOPICS:\n';
+      text += `${L.upper(L.subTopics)}${L.colon.trim()}\n`;
       chapter.subTopics.forEach((subTopic) => {
         text += `- ${subTopic.title}: ${subTopic.summary}\n`;
       });
@@ -48,7 +51,7 @@ export async function exportWebBookToTxt(webBook: WebBook): Promise<void> {
 
     const sourceLinks = getChapterSourceLinks(chapter, { includeSearchResults: true, maxItems: 8 });
     if (sourceLinks.length > 0) {
-      text += 'SOURCES:\n';
+      text += `${L.upper(L.sources)}${L.colon.trim()}\n`;
       sourceLinks.forEach((sourceLink) => {
         text += `- ${sourceLink.title} (${sourceLink.hostname}) - ${sourceLink.url}\n`;
       });
@@ -97,6 +100,7 @@ export async function exportWebBookWithJsPdf(
   chapterImages: Array<DocxChapterImageAsset | null> = []
 ): Promise<void> {
   const safeWebBook = sanitizeWebBookForPresentation(webBook);
+  const L = getExportLabels(safeWebBook);
 
   // jsPDF's built-in fonts lack CJK glyphs, so CJK books register an embedded Unicode TrueType font and keep the
   // full High-Res layout. There is deliberately NO reroute to the reader-mode export here: if the font cannot be
@@ -161,7 +165,7 @@ export async function exportWebBookWithJsPdf(
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(170, 168, 164);
-  doc.text('EVOLUTIONARY WEB-BOOK ENGINE', pageWidth / 2, 230, { align: 'center' });
+  doc.text(L.upper(L.engineName), pageWidth / 2, 230, { align: 'center' });
 
   // Main Cover Title - dynamic font size and line spacing to elegantly accommodate long topics without collision
   doc.setTextColor(255, 255, 255);
@@ -205,9 +209,9 @@ export async function exportWebBookWithJsPdf(
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(160, 158, 154);
-  doc.text('CHAPTERS', col1, metaY, { align: 'center' });
-  doc.text('CONCEPTS', col2, metaY, { align: 'center' });
-  doc.text('DATE', col3, metaY, { align: 'center' });
+  doc.text(L.upper(L.chapters), col1, metaY, { align: 'center' });
+  doc.text(L.upper(L.concepts), col2, metaY, { align: 'center' });
+  doc.text(L.upper(L.date), col3, metaY, { align: 'center' });
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(20);
@@ -219,7 +223,7 @@ export async function exportWebBookWithJsPdf(
   doc.text(String(safeWebBook.chapters.length), col1, metaY + 24, { align: 'center' });
   doc.text(String(conceptCount), col2, metaY + 24, { align: 'center' });
   doc.text(
-    new Date(safeWebBook.timestamp).toLocaleDateString(undefined, { month: 'short', year: 'numeric' }),
+    new Date(safeWebBook.timestamp).toLocaleDateString(L.dateLocale, { month: 'short', year: 'numeric' }),
     col3,
     metaY + 24,
     { align: 'center' }
@@ -229,7 +233,7 @@ export async function exportWebBookWithJsPdf(
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(140, 138, 134);
-  doc.text('MITIGATING SEARCH REDUNDANCY VIA EVOLUTIONARY COMPUTING', pageWidth / 2, pageHeight - 50, { align: 'center' });
+  doc.text(L.upper(L.tagline), pageWidth / 2, pageHeight - 50, { align: 'center' });
 
   // --- Page 2: Table of Contents Placeholder (Filled in Pass 2) ---
   doc.addPage();
@@ -243,6 +247,22 @@ export async function exportWebBookWithJsPdf(
       doc.addPage();
       currentY = 60;
     }
+  }
+
+  function drawSectionBadge(label: string, minWidth: number) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7);
+    const textWidth = doc.getTextWidth(label);
+    const badgeW = Math.max(minWidth, textWidth + 18);
+    doc.setFillColor(20, 20, 20);
+    doc.rect(margin, currentY, badgeW, 14, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.text(label, margin + badgeW / 2, currentY + 9.5, { align: 'center' });
+
+    doc.setDrawColor(220, 220, 220);
+    doc.setLineWidth(0.5);
+    doc.line(margin + badgeW + 6, currentY + 7, pageWidth - margin, currentY + 7);
+    currentY += 22;
   }
 
   safeWebBook.chapters.forEach((chapter, index) => {
@@ -261,7 +281,7 @@ export async function exportWebBookWithJsPdf(
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7.5);
     doc.setTextColor(120, 120, 120);
-    doc.text(`CHAPTER ${index + 1} OF ${safeWebBook.chapters.length}   |   OVERVIEW & NARRATIVE`, margin + 38, currentY + 9);
+    doc.text(`${L.upper(L.chapterOf(index + 1, safeWebBook.chapters.length))}   |   ${L.upper(L.overviewNarrative)}`, margin + 38, currentY + 9);
 
     doc.setFont('times', 'bolditalic');
     doc.setFontSize(18);
@@ -298,7 +318,7 @@ export async function exportWebBookWithJsPdf(
           doc.setFont('helvetica', 'normal');
           doc.setFontSize(7.5);
           doc.setTextColor(120, 120, 120);
-          doc.text(`Visual concept: "${chapter.visualSeed}"`, margin + contentWidth / 2, currentY + 8, { align: 'center' });
+          doc.text(`${L.visualConcept}${L.colon}"${chapter.visualSeed}"`, margin + contentWidth / 2, currentY + 8, { align: 'center' });
           currentY += 16;
         }
       } catch (imgErr) {
@@ -314,12 +334,14 @@ export async function exportWebBookWithJsPdf(
       doc.rect(margin, currentY, contentWidth, boxHeight, 'FD');
 
       // Badge
-      doc.setFillColor(20, 20, 20);
-      doc.rect(margin + 12, currentY + 8, 88, 12, 'F');
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(6.5);
+      const seedBadge = L.upper(L.visualConceptSeed);
+      const seedBadgeW = Math.max(88, doc.getTextWidth(seedBadge) + 16);
+      doc.setFillColor(20, 20, 20);
+      doc.rect(margin + 12, currentY + 8, seedBadgeW, 12, 'F');
       doc.setTextColor(255, 255, 255);
-      doc.text('VISUAL CONCEPT SEED', margin + 56, currentY + 16.5, { align: 'center' });
+      doc.text(seedBadge, margin + 12 + seedBadgeW / 2, currentY + 16.5, { align: 'center' });
 
       doc.setFont('times', 'italic');
       doc.setFontSize(9);
@@ -360,17 +382,7 @@ export async function exportWebBookWithJsPdf(
     if (chapter.definitions && chapter.definitions.length > 0) {
       checkPageSpace(100);
       currentY += 8;
-      doc.setFillColor(20, 20, 20);
-      doc.rect(margin, currentY, 110, 14, 'F');
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(7);
-      doc.setTextColor(255, 255, 255);
-      doc.text('KEY DOMAIN CONCEPTS', margin + 55, currentY + 9.5, { align: 'center' });
-
-      doc.setDrawColor(220, 220, 220);
-      doc.setLineWidth(0.5);
-      doc.line(margin + 116, currentY + 7, pageWidth - margin, currentY + 7);
-      currentY += 22;
+      drawSectionBadge(L.upper(L.keyDomainConcepts), 110);
 
       chapter.definitions.forEach((def) => {
         doc.setFont('helvetica', 'normal');
@@ -403,8 +415,10 @@ export async function exportWebBookWithJsPdf(
           doc.setFont('helvetica', 'bold');
           doc.setFontSize(8);
           doc.setTextColor(30, 58, 138);
-          doc.text('Source Article »', margin + 12, linkY);
-          doc.link(margin + 12, linkY - 8, 70, 11, { url: def.sourceUrl });
+          const linkText = `${L.sourceArticle} »`;
+          doc.text(linkText, margin + 12, linkY);
+          const linkW = Math.max(70, doc.getTextWidth(linkText) + 4);
+          doc.link(margin + 12, linkY - 8, linkW, 11, { url: def.sourceUrl });
         }
 
         currentY += cardHeight + 8;
@@ -415,17 +429,7 @@ export async function exportWebBookWithJsPdf(
     if (chapter.subTopics && chapter.subTopics.length > 0) {
       checkPageSpace(100);
       currentY += 8;
-      doc.setFillColor(20, 20, 20);
-      doc.rect(margin, currentY, 140, 14, 'F');
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(7);
-      doc.setTextColor(255, 255, 255);
-      doc.text('DEEPER ANGLES & EXPLORATION', margin + 70, currentY + 9.5, { align: 'center' });
-
-      doc.setDrawColor(220, 220, 220);
-      doc.setLineWidth(0.5);
-      doc.line(margin + 146, currentY + 7, pageWidth - margin, currentY + 7);
-      currentY += 22;
+      drawSectionBadge(L.upper(L.deeperAngles), 140);
 
       chapter.subTopics.forEach((sub) => {
         doc.setFont('helvetica', 'normal');
@@ -454,8 +458,10 @@ export async function exportWebBookWithJsPdf(
           doc.setFont('helvetica', 'bold');
           doc.setFontSize(8);
           doc.setTextColor(30, 58, 138);
-          doc.text('Source Article »', margin + 12, linkY);
-          doc.link(margin + 12, linkY - 8, 70, 11, { url: sub.sourceUrl });
+          const linkText = `${L.sourceArticle} »`;
+          doc.text(linkText, margin + 12, linkY);
+          const linkW = Math.max(70, doc.getTextWidth(linkText) + 4);
+          doc.link(margin + 12, linkY - 8, linkW, 11, { url: sub.sourceUrl });
         }
 
         currentY += cardHeight + 8;
@@ -467,17 +473,7 @@ export async function exportWebBookWithJsPdf(
     if (uniqueSources.length > 0) {
       checkPageSpace(80);
       currentY += 8;
-      doc.setFillColor(20, 20, 20);
-      doc.rect(margin, currentY, 130, 14, 'F');
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(7);
-      doc.setTextColor(255, 255, 255);
-      doc.text('VERIFIED SOURCE CITATIONS', margin + 65, currentY + 9.5, { align: 'center' });
-
-      doc.setDrawColor(220, 220, 220);
-      doc.setLineWidth(0.5);
-      doc.line(margin + 136, currentY + 7, pageWidth - margin, currentY + 7);
-      currentY += 22;
+      drawSectionBadge(L.upper(L.verifiedSources), 130);
 
       uniqueSources.forEach((sourceLink) => {
         checkPageSpace(20);
@@ -519,18 +515,18 @@ export async function exportWebBookWithJsPdf(
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8);
   doc.setTextColor(20, 20, 20);
-  doc.text('SYNTHESIS VERIFIED', margin + 36, currentY + 15);
+  doc.text(L.upper(L.synthesisVerified), margin + 36, currentY + 15);
 
   doc.setFont('courier', 'normal');
   doc.setFontSize(6.5);
   doc.setTextColor(110, 110, 110);
-  doc.text('Engine v2.5 - Evolutionary Pass Complete', margin + 36, currentY + 25);
+  doc.text(L.passComplete, margin + 36, currentY + 25);
 
   // "Back to Top" hyperlink (Internal navigation jumping back to Page 1)
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8);
   doc.setTextColor(20, 20, 20);
-  const backToTopText = 'BACK TO TOP »';
+  const backToTopText = `${L.upper(L.backToTop)} »`;
   const backToTopWidth = doc.getTextWidth(backToTopText);
   const backToTopX = pageWidth - margin - backToTopWidth - 14;
   const backToTopY = currentY + 20;
@@ -552,12 +548,12 @@ export async function exportWebBookWithJsPdf(
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(16);
   doc.setTextColor(20, 20, 20);
-  doc.text('TABLE OF CONTENTS', margin, 70);
+  doc.text(L.upper(L.tableOfContents), margin, 70);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(110, 110, 110);
-  doc.text('CLICK ANY CHAPTER TO NAVIGATE DIRECTLY', margin, 84);
+  doc.text(L.upper(L.tocHint), margin, 84);
 
   doc.setDrawColor(20, 20, 20);
   doc.setLineWidth(1.5);
@@ -584,7 +580,7 @@ export async function exportWebBookWithJsPdf(
     doc.text(displayTitle, margin + 28, tocY);
 
     const titleW = doc.getTextWidth(displayTitle);
-    const pageLabel = `P. ${pNum}`;
+    const pageLabel = L.pageRef(pNum);
     const pageW = doc.getTextWidth(pageLabel);
 
     // Dotted leader line
@@ -622,7 +618,7 @@ export async function exportWebBookWithJsPdf(
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
     doc.setTextColor(140, 140, 140);
-    doc.text('EVOLUTIONARY WEB-BOOK ENGINE', margin, 30);
+    doc.text(L.upper(L.engineName), margin, 30);
     const maxTopicLen = 50;
     const displayTopic = safeWebBook.topic.length > maxTopicLen ? `${safeWebBook.topic.slice(0, maxTopicLen)}...` : safeWebBook.topic;
     doc.text(displayTopic.toUpperCase(), pageWidth - margin, 30, { align: 'right' });
@@ -635,12 +631,12 @@ export async function exportWebBookWithJsPdf(
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
     doc.setTextColor(150, 150, 150);
-    doc.text('MITIGATING SEARCH REDUNDANCY VIA EVOLUTIONARY COMPUTING', margin, pageHeight - 22);
+    doc.text(L.upper(L.tagline), margin, pageHeight - 22);
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8);
     doc.setTextColor(60, 60, 60);
-    doc.text(`PAGE ${p} OF ${totalPages}`, pageWidth - margin, pageHeight - 22, { align: 'right' });
+    doc.text(L.upper(L.pageOf(p, totalPages)), pageWidth - margin, pageHeight - 22, { align: 'right' });
   }
 
   const pdfBlob = doc.output('blob');

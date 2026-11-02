@@ -2,6 +2,7 @@ import type { Chapter, Definition, SubTopic, WebBook } from '../types';
 import { getChapterSourceLinks, sanitizeWebBookForPresentation } from '../utils/webBookRender';
 import { downloadBlob, getExportFileName } from './exportDocument';
 import { getWebBookDocumentTitle } from './documentTitle';
+import { getExportLabels } from './exportLabels';
 
 // ---------------------------------------------------------------------------
 // Print-friendly report, "reader mode" edition
@@ -30,12 +31,8 @@ function getExecutiveOverview(webBook: WebBook): string {
   if (webBook.generationNote) {
     return webBook.generationNote;
   }
-  return `Comprehensive evolutionary synthesis covering foundations, core mechanisms, and future horizons for "${webBook.topic}".`;
+  return getExportLabels(webBook).overviewFallback(webBook.topic);
 }
-
-const CONCLUSION_TITLE = 'Evolutionary Synthesis & Evidence Verification';
-const CONCLUSION_TEXT =
-  'This full-text report was produced using multi-generational genetic algorithms that evaluate informative novelty while pruning repetitive search fragments. All references have been normalized and validated against primary source hostnames.';
 
 // ---------------------------------------------------------------------------
 // Geometry (CSS px @ 96dpi)
@@ -195,15 +192,15 @@ function itemBlock(label: string, text: string): ReportBlock {
   };
 }
 
-function sourcesBlock(chapter: Chapter): ReportBlock | null {
+function sourcesBlock(chapter: Chapter, L: ReturnType<typeof getExportLabels>): ReportBlock | null {
   const links = getChapterSourceLinks(chapter);
   if (links.length === 0) return null;
 
   const labels = links.map((link) => link.hostname || link.title);
   const anchors = links.map((link, index) => `<a href="${escapeHtml(link.url)}">${escapeHtml(labels[index])}</a>`).join(', ');
-  const labelText = `Sources: ${labels.join(', ')}`;
+  const labelText = `${L.sources}${L.colon}${labels.join(', ')}`;
   return {
-    html: `<p class="pf-sources"><strong>Sources:</strong> ${anchors}</p>`,
+    html: `<p class="pf-sources"><strong>${escapeHtml(L.sources)}${escapeHtml(L.colon.trim())}</strong> ${anchors}</p>`,
     height: estimateLines(labelText, 14, IMAGE_CONTENT_WIDTH_PX) * 14 * 1.6 + 14 * 1.25 + 8,
     keepWithNext: false,
   };
@@ -218,7 +215,7 @@ function formatChapterHeading(title: string, index: number): string {
   return `${index + 1}. ${trimmed}`;
 }
 
-function getChapterBlocks(chapter: Chapter, chapterIndex: number, splitLongParagraphs: boolean): ReportBlock[] {
+function getChapterBlocks(chapter: Chapter, chapterIndex: number, splitLongParagraphs: boolean, L: ReturnType<typeof getExportLabels>): ReportBlock[] {
   const headingText = formatChapterHeading(chapter.title, chapterIndex);
   const blocks: ReportBlock[] = [headingBlock(2, headingText)];
 
@@ -226,17 +223,17 @@ function getChapterBlocks(chapter: Chapter, chapterIndex: number, splitLongParag
 
   const concepts = (chapter.definitions || []).map((d: Definition) => ({ label: d.term, text: d.description }));
   if (concepts.length > 0) {
-    blocks.push(headingBlock(3, 'Core concepts'));
+    blocks.push(headingBlock(3, L.coreConcepts));
     concepts.forEach((item) => blocks.push(itemBlock(item.label, item.text)));
   }
 
   const dimensions = (chapter.subTopics || []).map((s: SubTopic) => ({ label: s.title, text: s.summary }));
   if (dimensions.length > 0) {
-    blocks.push(headingBlock(3, 'Key dimensions'));
+    blocks.push(headingBlock(3, L.keyDimensions));
     dimensions.forEach((item) => blocks.push(itemBlock(item.label, item.text)));
   }
 
-  const sources = sourcesBlock(chapter);
+  const sources = sourcesBlock(chapter, L);
   if (sources) {
     // A sources line must never be stranded alone at the top of a page: tie it to the block before it.
     blocks[blocks.length - 1].keepWithNext = true;
@@ -248,15 +245,16 @@ function getChapterBlocks(chapter: Chapter, chapterIndex: number, splitLongParag
 function getHeaderBlock(webBook: WebBook): ReportBlock {
   const chapters = webBook.chapters || [];
   const totalConcepts = chapters.reduce((acc, ch) => acc + (Array.isArray(ch.definitions) ? ch.definitions.length : 0), 0);
-  const dateStr = new Date(webBook.timestamp).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  const L = getExportLabels(webBook);
+  const dateStr = new Date(webBook.timestamp).toLocaleDateString(L.dateLocale, { year: 'numeric', month: 'short', day: 'numeric' });
   const mode = webBook.sourceMode === 'fallback_search'
-    ? 'Fallback search'
+    ? L.fallbackSearch
     : webBook.sourceMode === 'model_knowledge'
-      ? 'Model knowledge (not verified against live sources)'
-      : 'Grounded AI';
+      ? L.modelKnowledge
+      : L.groundedAi;
   const meta = [
-    `${chapters.length} ${chapters.length === 1 ? 'chapter' : 'chapters'}`,
-    `${totalConcepts} core ${totalConcepts === 1 ? 'concept' : 'concepts'}`,
+    L.chapterCount(chapters.length),
+    L.conceptCount(totalConcepts),
     dateStr,
     mode,
   ].join(' · ');
@@ -264,10 +262,10 @@ function getHeaderBlock(webBook: WebBook): ReportBlock {
 
   return {
     html:
-      `<p class="pf-kicker">Evolutionary Web-Book Engine</p>` +
+      `<p class="pf-kicker">${escapeHtml(L.engineName)}</p>` +
       `<h1>${escapeHtml(webBook.topic)}</h1>` +
       `<p class="pf-meta">${escapeHtml(meta)}</p>` +
-      `<div class="pf-abstract"><p class="pf-label">Abstract</p><p>${escapeHtml(overview)}</p></div>`,
+      `<div class="pf-abstract"><p class="pf-label">${escapeHtml(L.abstract)}</p><p>${escapeHtml(overview)}</p></div>`,
     height:
       40 +
       estimateLines(webBook.topic, 34, IMAGE_CONTENT_WIDTH_PX) * 34 * 1.2 +
@@ -278,20 +276,21 @@ function getHeaderBlock(webBook: WebBook): ReportBlock {
   };
 }
 
-function getConclusionBlock(): ReportBlock {
+function getConclusionBlock(L: ReturnType<typeof getExportLabels>): ReportBlock {
   return {
-    html: `<div class="pf-note"><p class="pf-label">${escapeHtml(CONCLUSION_TITLE)}</p><p>${escapeHtml(CONCLUSION_TEXT)}</p></div>`,
-    height: 60 + estimateLines(CONCLUSION_TEXT, 14, IMAGE_CONTENT_WIDTH_PX) * 14 * 1.6,
+    html: `<div class="pf-note"><p class="pf-label">${escapeHtml(L.evidenceSynthesisTitle)}</p><p>${escapeHtml(L.conclusionText)}</p></div>`,
+    height: 60 + estimateLines(L.conclusionText, 14, IMAGE_CONTENT_WIDTH_PX) * 14 * 1.6,
     keepWithNext: false,
   };
 }
 
 function buildReportBlocks(webBook: WebBook, splitLongParagraphs: boolean): ReportBlock[] {
   const chapters = webBook.chapters || [];
+  const L = getExportLabels(webBook);
   return [
     getHeaderBlock(webBook),
-    ...chapters.flatMap((chapter, index) => getChapterBlocks(chapter, index, splitLongParagraphs)),
-    getConclusionBlock(),
+    ...chapters.flatMap((chapter, index) => getChapterBlocks(chapter, index, splitLongParagraphs, L)),
+    getConclusionBlock(L),
   ];
 }
 
@@ -475,13 +474,13 @@ export function paginateBlockHeights(heights: number[], keepWithNext: boolean[],
   return pages;
 }
 
-function renderImagePageHtml(blocks: ReportBlock[], blockIndexes: number[], pageNum: number, totalPages: number, title: string): string {
+function renderImagePageHtml(blocks: ReportBlock[], blockIndexes: number[], pageNum: number, totalPages: number, title: string, pageLabel: string): string {
   const body = blockIndexes.map((i) => `<div class="pf-blk">${blocks[i].html}</div>`).join('');
   return `<div class="pf-page" style="position: relative; width: ${PAGE_WIDTH_PX}px; height: ${PAGE_HEIGHT_PX}px; box-sizing: border-box; padding: ${IMAGE_PAGE_PADDING_TOP_PX}px ${IMAGE_PAGE_PADDING_X_PX}px 0 ${IMAGE_PAGE_PADDING_X_PX}px; background: #ffffff; overflow: hidden;">
   <div class="pf-doc" style="width: ${IMAGE_CONTENT_WIDTH_PX}px; height: ${IMAGE_CONTENT_HEIGHT_PX}px; overflow: hidden;">${body}</div>
   <div class="pf-doc" style="position: absolute; left: ${IMAGE_PAGE_PADDING_X_PX}px; right: ${IMAGE_PAGE_PADDING_X_PX}px; bottom: 28px; display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid #cfcfcf; padding-top: 8px; font-size: 12px; line-height: 1.4; color: #595959;">
     <span>${escapeHtml(title)}</span>
-    <span style="white-space: nowrap; font-weight: 700; color: #1f1f1f;">Page ${pageNum} of ${totalPages}</span>
+    <span style="white-space: nowrap; font-weight: 700; color: #1f1f1f;">${escapeHtml(pageLabel)}</span>
   </div>
 </div>`;
 }
@@ -499,8 +498,9 @@ export function buildPrintFriendlyReportPagesHtml(webBook: WebBook, measuredHeig
     blocks.map((block) => block.keepWithNext),
     IMAGE_CONTENT_HEIGHT_PX - PAGE_FIT_SAFETY_PX
   );
+  const L = getExportLabels(safeWebBook);
   return layout.map((indexes, pageIndex) =>
-    renderImagePageHtml(blocks, indexes, pageIndex + 1, layout.length, 'Evolutionary Web-Book Engine')
+    renderImagePageHtml(blocks, indexes, pageIndex + 1, layout.length, L.engineName, L.pageOf(pageIndex + 1, layout.length))
   );
 }
 

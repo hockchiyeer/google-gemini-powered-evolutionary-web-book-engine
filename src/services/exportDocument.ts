@@ -1,3 +1,4 @@
+import { getExportLabels } from './exportLabels';
 import type { WebBook } from '../types';
 import type { DocxChapterImageAsset } from './docxExport';
 import { getWebBookDocumentTitle } from './documentTitle';
@@ -356,9 +357,9 @@ function buildPdfHtmlShell(title: string, htmlContent: string, extraCss: string)
 // buildHtmlShell is used by standalone HTML export, the print/save path, and
 // the high-res PDF path. The inline readiness script gives Puppeteer a stable
 // signal once external styles and fonts have finished loading.
-function buildHtmlShell(title: string, htmlContent: string, headContent: string, bodyAttributes = ''): string {
+function buildHtmlShell(title: string, htmlContent: string, headContent: string, bodyAttributes = '', lang = 'en'): string {
   return `<!DOCTYPE html>
-<html>
+<html lang="${lang}">
 <head>
   <meta charset="utf-8">
   <title>${title}</title>
@@ -394,7 +395,9 @@ export function buildStandaloneHtmlDocument(webBook: WebBook, htmlContent: strin
           .web-book-page:last-child { break-after: auto; page-break-after: auto; }
         }
       </style>
-    `
+    `,
+    '',
+    getExportLabels(webBook).locale
   );
 }
 
@@ -435,6 +438,8 @@ export function buildPrintHtmlDocument(webBook: WebBook, htmlContent: string): s
           @page { size: A4; margin: 0; }
         }
       </style>
-    `
+    `,
+    '',
+    getExportLabels(webBook).locale
   );
 }

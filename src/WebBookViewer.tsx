@@ -1,6 +1,7 @@
 import React from 'react';
 import { ArrowUpRight, BookOpen, CheckCircle2, Globe2, Image as ImageIcon, Layers } from 'lucide-react';
 import type { WebBook } from './types';
+import { getExportLabels, type ExportLabels } from './services/exportLabels';
 import { buildChapterRenderPlan, getChapterSourceLinks, normalizeSourceLink, sanitizeWebBookForPresentation } from './utils/webBookRender';
 
 interface WebBookViewerProps {
@@ -14,14 +15,15 @@ function getParagraphs(content: string): string[] {
     .filter(Boolean);
 }
 
-function getNarrativeLabel(pageIndex: number): string {
-  if (pageIndex === 0) return 'Overview';
-  if (pageIndex === 1) return 'Evidence & Context';
-  return 'Synthesis & Implications';
+function getNarrativeLabel(pageIndex: number, L: ExportLabels): string {
+  if (pageIndex === 0) return L.overview;
+  if (pageIndex === 1) return L.evidenceContext;
+  return L.synthesisImplications;
 }
 
 export function WebBookViewer({ webBook }: WebBookViewerProps) {
   const safeWebBook = sanitizeWebBookForPresentation(webBook);
+  const L = getExportLabels(safeWebBook);
   const safeChapters = Array.isArray(safeWebBook?.chapters) ? safeWebBook.chapters : [];
   const chapterRenderPlan = buildChapterRenderPlan(safeChapters, { sourceMode: safeWebBook?.sourceMode });
   const finalDocumentPageNumber = chapterRenderPlan.length > 0
@@ -36,22 +38,22 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
             <div className="w-12 h-12 border-2 border-[#E4E3E0] flex items-center justify-center rotate-45">
               <Layers size={24} className="-rotate-45" />
             </div>
-            <span className="text-[10px] uppercase tracking-[0.5em] opacity-60">Evolutionary Web-Book Engine</span>
+            <span className="text-[10px] uppercase tracking-[0.5em] opacity-60">{L.engineName}</span>
           </div>
           <h2 className="text-5xl md:text-7xl font-serif italic font-bold tracking-tighter leading-tight mb-8 break-words">{safeWebBook.topic}</h2>
           <div className="w-24 h-1 bg-[#E4E3E0] mx-auto mb-12 opacity-30" />
           <div className="flex justify-center gap-16">
             <div className="flex flex-col">
-              <span className="text-[9px] uppercase opacity-50 mb-2 tracking-widest">Chapters</span>
+              <span className="text-[9px] uppercase opacity-50 mb-2 tracking-widest">{L.chapters}</span>
               <span className="text-3xl font-mono">{safeChapters.length}</span>
             </div>
             <div className="flex flex-col">
-              <span className="text-[9px] uppercase opacity-50 mb-2 tracking-widest">Concepts</span>
+              <span className="text-[9px] uppercase opacity-50 mb-2 tracking-widest">{L.concepts}</span>
               <span className="text-3xl font-mono">{safeChapters.reduce((accumulator, chapter) => accumulator + (Array.isArray(chapter.definitions) ? chapter.definitions.length : 0), 0)}</span>
             </div>
             <div className="flex flex-col">
-              <span className="text-[9px] uppercase opacity-50 mb-2 tracking-widest">Date</span>
-              <span className="text-3xl font-mono">{new Date(safeWebBook.timestamp).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}</span>
+              <span className="text-[9px] uppercase opacity-50 mb-2 tracking-widest">{L.date}</span>
+              <span className="text-3xl font-mono">{new Date(safeWebBook.timestamp).toLocaleDateString(L.dateLocale, { month: 'short', year: 'numeric' })}</span>
             </div>
           </div>
         </div>
@@ -59,22 +61,22 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
           <div className="absolute top-10 left-10 w-80 h-80 border border-white rounded-full" />
           <div className="absolute bottom-10 right-10 w-96 h-96 border border-white rounded-full" />
         </div>
-        <div className="absolute bottom-12 left-1/2 -translate-x-1/2 text-[10px] font-mono opacity-40 print:hidden">PAGE 1</div>
+        <div className="absolute bottom-12 left-1/2 -translate-x-1/2 text-[10px] font-mono opacity-40 print:hidden">{L.upper(L.pageShort(1))}</div>
       </section>
 
       <section id="page-2" data-pdf-page-number="2" data-pdf-page-kind="toc" className="web-book-page p-12 md:p-20 bg-[#FAFAFA] min-h-[1000px] md:min-h-[1123px] flex flex-col relative border border-[#141414] shadow-[12px_12px_0px_0px_rgba(20,20,20,0.12)] print:shadow-none print:border-none print:block print:min-h-0 print:h-auto print:page-break-after-always">
-        <h3 className="text-[14px] uppercase font-bold mb-16 tracking-[0.3em] border-b-2 border-[#141414] pb-6 inline-block self-start">Table of Contents</h3>
+        <h3 className="text-[14px] uppercase font-bold mb-16 tracking-[0.3em] border-b-2 border-[#141414] pb-6 inline-block self-start">{L.tableOfContents}</h3>
         <div className="space-y-8 flex-1 print:space-y-0">
           {chapterRenderPlan.map(({ chapter, titlePageNumber }, index) => (
-            <a key={chapter.title + index} href={`#chapter-${index}`} target="_self" data-pdf-target-page={titlePageNumber} title={`Navigate to Chapter ${index + 1}`} className="flex items-end gap-4 md:gap-6 group">
+            <a key={chapter.title + index} href={`#chapter-${index}`} target="_self" data-pdf-target-page={titlePageNumber} title={L.navigateTo(index + 1)} className="flex items-end gap-4 md:gap-6 group">
               <span className="font-mono text-base opacity-40">0{index + 1}</span>
               <span className="text-lg md:text-xl font-medium group-hover:underline underline-offset-8 decoration-1 break-words">{chapter.title}</span>
               <div className="flex-1 border-b border-dotted border-[#141414] opacity-20 mb-2" />
-              <span className="font-mono text-base opacity-40">P.{titlePageNumber}</span>
+              <span className="font-mono text-base opacity-40">{L.locale === 'en' ? `P.${titlePageNumber}` : L.pageRef(titlePageNumber)}</span>
             </a>
           ))}
         </div>
-        <div className="mt-auto pt-12 flex justify-center text-[10px] font-mono opacity-40 print:hidden">PAGE 2</div>
+        <div className="mt-auto pt-12 flex justify-center text-[10px] font-mono opacity-40 print:hidden">{L.upper(L.pageShort(2))}</div>
       </section>
 
       <div data-pdf-page-stack="chapters" className="space-y-8 print:space-y-0 print:block">
@@ -130,7 +132,7 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                             <span className="w-10 h-10 bg-[#141414] text-white flex items-center justify-center font-mono text-sm">0{index + 1}</span>
                             <h3 className="text-3xl md:text-4xl font-serif italic font-bold tracking-tight break-words">{chapter.title}</h3>
                           </div>
-                          <div className="text-[10px] uppercase font-bold opacity-30 tracking-widest">Chapter {index + 1} / {chapterRenderPlan.length}</div>
+                          <div className="text-[10px] uppercase font-bold opacity-30 tracking-widest">{L.chapterSlash(index + 1, chapterRenderPlan.length)}</div>
                         </div>
 
                         <div className="mb-10 relative group">
@@ -151,10 +153,10 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                     ) : (
                       <div className="mb-8 flex items-center justify-between gap-4 border-b border-[#141414]/10 pb-5">
                         <div className="min-w-0">
-                          <div className="text-[10px] uppercase tracking-[0.28em] font-bold text-[#141414]/45 mb-3">{getNarrativeLabel(pageIndex)}</div>
+                          <div className="text-[10px] uppercase tracking-[0.28em] font-bold text-[#141414]/45 mb-3">{getNarrativeLabel(pageIndex, L)}</div>
                           <h4 className="text-2xl md:text-3xl font-serif italic font-bold break-words">{chapter.title}</h4>
                         </div>
-                        <div className="text-[10px] uppercase font-bold tracking-widest opacity-35">Continuation</div>
+                        <div className="text-[10px] uppercase font-bold tracking-widest opacity-35">{L.continuation}</div>
                       </div>
                     )}
 
@@ -195,7 +197,7 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="border border-[#141414] bg-white px-4 py-4 hover:bg-[#141414] hover:text-white transition-colors group"
-                                title="Open the supporting article in a new tab"
+                                title={L.tipOpenArticle}
                               >
                                 <div className="flex items-start justify-between gap-3">
                                   <div className="min-w-0">
@@ -213,7 +215,7 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                       {isFinalNarrativePage && synthesisSubTopics.length > 0 && (
                         <div className="space-y-5">
                           <div className="text-[10px] uppercase font-bold tracking-[0.28em] text-[#141414]/60 border-t border-[#141414]/10 pt-6">
-                            Deeper Angles
+                            {L.deeperAnglesShort}
                           </div>
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                             {synthesisSubTopics.map((subTopic, subTopicIndex) => {
@@ -229,9 +231,9 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                                       target="_blank"
                                       rel="noopener noreferrer"
                                       className="inline-flex items-center gap-2 mt-auto text-[11px] uppercase tracking-[0.18em] font-bold text-[#141414] hover:underline"
-                                      title="Open the supporting article for this angle"
+                                      title={L.tipOpenAngle}
                                     >
-                                      Source Article <ArrowUpRight size={12} />
+                                      {L.sourceArticle} <ArrowUpRight size={12} />
                                     </a>
                                   )}
                                 </div>
@@ -244,7 +246,7 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
 
                     <div className="mt-auto pt-10 flex justify-between items-center border-t border-[#141414]/5 text-[10px] font-mono opacity-40 print:hidden">
                       <span className="break-words">{safeWebBook.topic}</span>
-                      <span>PAGE {textPage.pageNumber}</span>
+                      <span>{L.upper(L.pageShort(textPage.pageNumber))}</span>
                     </div>
                   </section>
                 );
@@ -259,18 +261,18 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                 <div className="flex items-center justify-between gap-4 mb-10 border-b border-[#141414]/10 pb-5">
                   <div className="min-w-0">
                     <div className="text-[10px] uppercase tracking-[0.28em] font-bold text-[#141414]/45 mb-3">
-                      {glossaryDefinitions.length > 0 ? 'Technical Glossary' : 'Reference & Sources'}
+                      {glossaryDefinitions.length > 0 ? L.technicalGlossary : L.referenceAndSources}
                     </div>
                     <h4 className="text-2xl md:text-3xl font-serif italic font-bold break-words">{chapter.title}</h4>
                   </div>
-                  <div className="text-[10px] uppercase font-bold tracking-widest opacity-35">Reference Page</div>
+                  <div className="text-[10px] uppercase font-bold tracking-widest opacity-35">{L.referencePage}</div>
                 </div>
 
                 {glossaryDefinitions.length > 0 ? (
                   <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1.55fr_0.9fr] gap-8">
                     <div className="bg-[#141414] text-white p-8 shadow-xl">
                       <h4 className="text-[10px] uppercase font-bold tracking-[0.3em] mb-8 flex items-center gap-3 opacity-70 border-b border-white/10 pb-5">
-                        <BookOpen size={16} /> Core Terms
+                        <BookOpen size={16} /> {L.coreTerms}
                       </h4>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-8">
                         {glossaryDefinitions.map((definition, definitionIndex) => {
@@ -292,10 +294,10 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                                   href={definitionSourceUrl}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  title="Read the source behind this term"
+                                  title={L.tipReadTerm}
                                   className="inline-flex items-center gap-2 mt-4 text-[11px] uppercase tracking-[0.2em] font-bold text-blue-400 hover:underline"
                                 >
-                                  Source Article <ArrowUpRight size={12} />
+                                  {L.sourceArticle} <ArrowUpRight size={12} />
                                 </a>
                               )}
                             </div>
@@ -307,7 +309,7 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                     <div className="space-y-6">
                       <div className="border border-[#141414] bg-[#F7F4EE] p-6">
                         <div className="text-[10px] uppercase font-bold tracking-[0.24em] text-[#141414]/60 mb-4 flex items-center gap-2">
-                          <Globe2 size={12} /> Credible Reading Trail
+                          <Globe2 size={12} /> {L.readingTrail}
                         </div>
                         <div className="space-y-4">
                           {readingTrailLinks.map((sourceLink, sourceIndex) => (
@@ -317,7 +319,7 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                               target="_blank"
                               rel="noopener noreferrer"
                               className="block border border-[#141414] bg-white px-4 py-4 hover:bg-[#141414] hover:text-white transition-colors group"
-                              title="Open the supporting article in a new tab"
+                              title={L.tipOpenArticle}
                             >
                               <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
@@ -332,7 +334,7 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                       </div>
 
                       <div className="border border-[#141414]/10 p-6 bg-white">
-                        <div className="text-[10px] uppercase font-bold tracking-[0.24em] text-[#141414]/60 mb-4">Source Verification</div>
+                        <div className="text-[10px] uppercase font-bold tracking-[0.24em] text-[#141414]/60 mb-4">{L.sourceVerification}</div>
                         <div className="text-sm leading-relaxed text-gray-600 font-light">
                           {verificationSource ? (
                             readingTrailLinks.some((sourceLink) => sourceLink.url === verificationSource.url) ? (
@@ -344,14 +346,14 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                                 href={verificationSource.url}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                title="Verify this chapter at a supporting source"
+                                title={L.tipVerifyChapter}
                                 className="inline-flex items-center gap-2 font-semibold text-[#141414] hover:underline break-all"
                               >
                                 {verificationSource.title} <ArrowUpRight size={14} />
                               </a>
                             )
                           ) : (
-                            'No supporting source link is available for this chapter.'
+                            L.noSupportingSource
                           )}
                         </div>
                       </div>
@@ -364,7 +366,7 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                         <Globe2 size={14} /> Credible Reading Trail
                       </div>
                       <p className="text-xs text-gray-600 font-light mb-4 leading-relaxed">
-                        Curated source materials and primary references synthesized for this chapter.
+                        {L.readingTrailNote}
                       </p>
                       <div className="space-y-4">
                         {readingTrailLinks.map((sourceLink, sourceIndex) => (
@@ -374,7 +376,7 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                             target="_blank"
                             rel="noopener noreferrer"
                             className="block border border-[#141414] bg-white px-4 py-4 hover:bg-[#141414] hover:text-white transition-colors group"
-                            title="Open the supporting article in a new tab"
+                            title={L.tipOpenArticle}
                           >
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
@@ -404,14 +406,14 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                                 href={verificationSource.url}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                title="Verify this chapter at a supporting source"
+                                title={L.tipVerifyChapter}
                                 className="inline-flex items-center gap-2 font-semibold text-[#141414] hover:underline break-all"
                               >
                                 {verificationSource.title} <ArrowUpRight size={14} />
                               </a>
                             )
                           ) : (
-                            'No supporting source link is available for this chapter.'
+                            L.noSupportingSource
                           )}
                         </div>
                         {verificationSource?.url && (
@@ -423,7 +425,7 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                               rel="noopener noreferrer"
                               className="font-bold uppercase tracking-wider text-[10px] hover:underline inline-flex items-center gap-1 shrink-0"
                             >
-                              Inspect Source <ArrowUpRight size={12} />
+                              {L.inspectSource} <ArrowUpRight size={12} />
                             </a>
                           </div>
                         )}
@@ -432,7 +434,7 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                       {hostnames.length > 0 && (
                         <div className="border border-[#141414]/10 bg-[#FAFAFA] p-6">
                           <div className="text-[10px] uppercase font-bold tracking-[0.24em] text-[#141414]/60 mb-3">
-                            Verified Source Domains
+                            {L.verifiedDomains}
                           </div>
                           <div className="flex flex-wrap gap-2">
                             {hostnames.map((hostname) => (
@@ -448,8 +450,8 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                 )}
 
                 <div className="mt-auto pt-10 flex justify-between items-center border-t border-[#141414]/5 text-[10px] font-mono opacity-40 print:hidden">
-                  <span>Evolutionary Node {index + 1}.{chapter.visualSeed?.length || 0}</span>
-                  <span>PAGE {glossaryPageNumber}</span>
+                  <span>{L.evolutionaryNode} {index + 1}.{chapter.visualSeed?.length || 0}</span>
+                  <span>{L.upper(L.pageShort(glossaryPageNumber))}</span>
                 </div>
               </section>
             </React.Fragment>
@@ -464,21 +466,21 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
               <CheckCircle2 className="text-green-600" size={20} />
             </div>
             <div className="flex flex-col">
-              <span className="text-[10px] uppercase font-bold tracking-widest">Synthesis Verified</span>
-              <span className="text-[9px] opacity-50 font-mono text-left">Engine v2.5 - Evolutionary Pass Complete</span>
+              <span className="text-[10px] uppercase font-bold tracking-widest">{L.synthesisVerified}</span>
+              <span className="text-[9px] opacity-50 font-mono text-left">{L.passComplete}</span>
             </div>
           </div>
           <a
             href="#top"
             target="_self"
             data-pdf-target-page={1}
-            title="Scroll back to the beginning of the book"
+            title={L.tipScrollTop}
             className="shrink-0 text-[10px] uppercase font-bold hover:underline inline-flex items-center justify-end gap-2 text-right"
           >
-            Back to Top
+            {L.backToTop}
           </a>
         </div>
-        <div className="text-[10px] font-mono opacity-40 print:hidden">PAGE {finalDocumentPageNumber}</div>
+        <div className="text-[10px] font-mono opacity-40 print:hidden">{L.upper(L.pageShort(finalDocumentPageNumber))}</div>
       </section>
     </div>
   );
