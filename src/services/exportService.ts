@@ -18,6 +18,28 @@ function formatSourceLink(source: string | { title: string; url: string }): stri
   return typeof source === 'string' ? source : `${source.title} - ${source.url}`;
 }
 
+function getTextVisualWidth(str: string): number {
+  let width = 0;
+  for (const ch of str) {
+    const code = ch.codePointAt(0) || 0;
+    if (
+      (code >= 0x1100 && code <= 0x11ff) ||
+      (code >= 0x2e80 && code <= 0xa4cf) ||
+      (code >= 0xac00 && code <= 0xd7af) ||
+      (code >= 0xf900 && code <= 0xfaff) ||
+      (code >= 0xff01 && code <= 0xff60) ||
+      (code >= 0xffe0 && code <= 0xffe6) ||
+      (code >= 0x4e00 && code <= 0x9fff) ||
+      (code >= 0x3400 && code <= 0x4dbf)
+    ) {
+      width += 2;
+    } else {
+      width += 1;
+    }
+  }
+  return width;
+}
+
 export async function exportWebBookToTxt(webBook: WebBook): Promise<void> {
   const safeWebBook = sanitizeWebBookForPresentation(webBook);
   const L = getExportLabels(safeWebBook);
@@ -27,7 +49,7 @@ export async function exportWebBookToTxt(webBook: WebBook): Promise<void> {
   safeWebBook.chapters.forEach((chapter, index) => {
     const chapterHeading = `${L.upper(L.chapter(index + 1))}${L.colon}${chapter.title}`;
     text += `${chapterHeading}\n`;
-    text += `${'='.repeat(chapterHeading.length)}\n\n`;
+    text += `${'='.repeat(getTextVisualWidth(chapterHeading))}\n\n`;
     text += `${chapter.content}\n\n`;
     if (chapter.visualSeed?.trim()) {
       text += `${L.upper(L.visualConcept)}${L.colon}${chapter.visualSeed.trim()}\n\n`;
@@ -249,11 +271,13 @@ export async function exportWebBookWithJsPdf(
     }
   }
 
+  const isCjk = Boolean(cjkFontBase64);
+
   function drawSectionBadge(label: string, minWidth: number) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7);
     const textWidth = doc.getTextWidth(label);
-    const badgeW = Math.max(minWidth, textWidth + 18);
+    const badgeW = isCjk ? Math.max(textWidth + 18, 56) : Math.max(minWidth, textWidth + 18);
     doc.setFillColor(20, 20, 20);
     doc.rect(margin, currentY, badgeW, 14, 'F');
     doc.setTextColor(255, 255, 255);
@@ -337,7 +361,7 @@ export async function exportWebBookWithJsPdf(
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(6.5);
       const seedBadge = L.upper(L.visualConceptSeed);
-      const seedBadgeW = Math.max(88, doc.getTextWidth(seedBadge) + 16);
+      const seedBadgeW = isCjk ? Math.max(56, doc.getTextWidth(seedBadge) + 16) : Math.max(88, doc.getTextWidth(seedBadge) + 16);
       doc.setFillColor(20, 20, 20);
       doc.rect(margin + 12, currentY + 8, seedBadgeW, 12, 'F');
       doc.setTextColor(255, 255, 255);
