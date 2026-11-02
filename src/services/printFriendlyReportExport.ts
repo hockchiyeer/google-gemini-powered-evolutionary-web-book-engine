@@ -474,7 +474,7 @@ export function paginateBlockHeights(heights: number[], keepWithNext: boolean[],
   return pages;
 }
 
-function renderImagePageHtml(blocks: ReportBlock[], blockIndexes: number[], pageNum: number, totalPages: number, title: string, pageLabel: string): string {
+function renderImagePageHtml(blocks: ReportBlock[], blockIndexes: number[], title: string, pageLabel: string): string {
   const body = blockIndexes.map((i) => `<div class="pf-blk">${blocks[i].html}</div>`).join('');
   return `<div class="pf-page" style="position: relative; width: ${PAGE_WIDTH_PX}px; height: ${PAGE_HEIGHT_PX}px; box-sizing: border-box; padding: ${IMAGE_PAGE_PADDING_TOP_PX}px ${IMAGE_PAGE_PADDING_X_PX}px 0 ${IMAGE_PAGE_PADDING_X_PX}px; background: #ffffff; overflow: hidden;">
   <div class="pf-doc" style="width: ${IMAGE_CONTENT_WIDTH_PX}px; height: ${IMAGE_CONTENT_HEIGHT_PX}px; overflow: hidden;">${body}</div>
@@ -500,7 +500,7 @@ export function buildPrintFriendlyReportPagesHtml(webBook: WebBook, measuredHeig
   );
   const L = getExportLabels(safeWebBook);
   return layout.map((indexes, pageIndex) =>
-    renderImagePageHtml(blocks, indexes, pageIndex + 1, layout.length, L.engineName, L.pageOf(pageIndex + 1, layout.length))
+    renderImagePageHtml(blocks, indexes, L.engineName, L.pageOf(pageIndex + 1, layout.length))
   );
 }
 

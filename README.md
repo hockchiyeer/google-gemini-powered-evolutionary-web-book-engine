@@ -26,6 +26,7 @@ Searching a topic returns many pages that repeat each other, and asking an LLM f
   - Heuristic screening for machine-code artifacts, hex bytes, and digit noise.
   - Automatic filtering of copyright disclaimers, scraper warnings, and promotional boilerplate.
 - **Comprehensive Multi-Format Export**:
+  - **Localised Fixed Labels**: Fixed document furniture (chapter headers, Table of Contents, visual concept badges, key domain concepts, deeper exploration angles, verified sources, and running footers) automatically adapts to the language of the generated book (covering Simplified & Traditional Chinese, Japanese, Korean, Malay, Spanish, French, German, and falling back cleanly to English).
   - **PDF Document (High Res)**: Vector-grade document featuring a museum-grade cover, an interactive Table of Contents with clickable hyperlinks that jump directly to each chapter, and an editorial chapter layout (lead paragraph accent bars, key concept callout cards, deeper angle cards, and verified clickable source citations).
   - **Print / Save as PDF**: Responsive print-to-PDF formatting utilizing clean `@media print` rules, dedicated page breaks, and iframe + window print resilience.
   - **CJK books in the High-Res PDF**: CJK Web-books keep the full High-Res layout using the embedded font `src/assets/fonts/NotoSansSC-Subset.ttf` (tracked in git and bundled by Vite; do not move it into the git-ignored `public/`). If the font cannot be loaded the export reports an error instead of switching to the reader layout. Rebuild the font with `scripts/make-cjk-font-subset.sh`.
@@ -137,6 +138,7 @@ The same route handlers run in two hosts: Vite plugins during `npm run dev` / `n
 │   │   ├── docxExport.ts                # Word OpenXML (.docx) document builder
 │   │   ├── evolutionService.ts          # Genetic algorithm, fitness evaluation, model failover and Gemini assembly
 │   │   ├── exportDocument.ts            # Document prep, inlining, and HTML print shells
+│   │   ├── exportLabels.ts              # Locale-aware fixed labels & script/stop-word language detection
 │   │   ├── exportService.ts             # Multi-format export coordinator (PDF, Print, Word, HTML, TXT)
 │   │   ├── fallbackPayloadHeuristics.ts # Heuristic quality scorers for search results
 │   │   ├── geminiUserFacingErrors.ts    # Friendly error translation for API responses
@@ -168,7 +170,7 @@ The same route handlers run in two hosts: Vite plugins during `npm run dev` / `n
     │   ├── run-cypress-with-reports.cjs # Runs Cypress, then the report generator
     │   ├── run-local-cypress.cjs        # Starts the dev server if needed, runs Cypress, stops the server
     │   └── smoke/                       # Manual scripts (import, PDF bridge, Google fetch); not run by npm scripts
-    └── server/                          # 14 `tsx` unit/regression tests, run by `npm run test:server`
+    └── server/                          # 15 `tsx` unit/regression tests, run by `npm run test:server`
 ```
 
 ---
@@ -280,7 +282,7 @@ The table below clarifies whether each `npm` / `npm run` command manages the loc
 | `npm run test:e2e`<br>*(or `npm run cy:run:local`)* | **Requires Running Server**<br>*(Run `npm run dev` first)* | Runs the full BDD test suite headlessly and compiles the HTML report against an already running local server. |
 | `npm run cy:run` | **Requires Running Server**<br>*(Run `npm run dev` first)* | Runs Cypress headlessly against an already running server without re-generating HTML report. |
 | `npm run cy:open` | **Requires Running Server**<br>*(Run `npm run dev` first)* | Opens the interactive Cypress GUI for visual step-by-step browser testing. |
-| `npm run test:server` | **Not Required** *(Standalone)* | Runs the 14 `tsx` unit/regression tests in `tests/server/`: Gemini error classification and retry, search fallback routing and client, fallback notices, evolution and chapter assembly, content filters, document titles, hyperlinked/CJK/print-friendly exports and the CJK font. |
+| `npm run test:server` | **Not Required** *(Standalone)* | Runs the 15 `tsx` unit/regression tests in `tests/server/`: Gemini error classification and retry, search fallback routing and client, fallback notices, evolution and chapter assembly, content filters, document titles, hyperlinked/CJK/print-friendly exports, CJK font, and export label localisation. |
 | `npm run report:generate` | **Not Required** *(Standalone)* | Compiles the visual HTML report from existing Cucumber JSON test result artifacts. |
 
 ### 6a. Troubleshooting Gemini connectivity
