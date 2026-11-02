@@ -308,6 +308,50 @@ function detectLanguage(text: string): string {
 const PRINT_DOCUMENT_CSS = `
 html { background: #ffffff; }
 body { margin: 0; background: #ffffff; }
+.pf-cover-page {
+  background: #141414;
+  color: #E4E3E0;
+  padding: 80px 48px;
+  box-sizing: border-box;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  break-after: page;
+  page-break-after: always;
+}
+.pf-cover-emblem { display: flex; flex-direction: column; align-items: center; margin-bottom: 24px; }
+.pf-diamond { width: 44px; height: 44px; border: 1.5px solid #E4E3E0; transform: rotate(45deg); display: flex; align-items: center; justify-content: center; margin-bottom: 16px; }
+.pf-diamond svg { transform: rotate(-45deg); }
+.pf-cover-engine { font-size: 12px; font-weight: 600; letter-spacing: 0.35em; text-transform: uppercase; color: #a0a0a0; }
+.pf-cover-title { font-family: Georgia, serif; font-weight: 700; font-size: 38px; line-height: 1.25; color: #ffffff; margin: 0 0 24px 0; max-width: 90%; word-break: break-word; }
+.pf-cover-divider { width: 60px; height: 2px; background: rgba(228, 227, 224, 0.4); margin: 0 auto 32px; }
+.pf-cover-stats { display: flex; justify-content: center; gap: 48px; text-align: center; }
+.pf-stat-col { display: flex; flex-direction: column; align-items: center; }
+.pf-stat-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.15em; color: #888888; margin-bottom: 6px; }
+.pf-stat-val { font-size: 24px; font-weight: 700; color: #ffffff; }
+.pf-cover-circle-1 { position: absolute; top: -100px; left: -100px; width: 400px; height: 400px; border: 1px solid rgba(255,255,255,0.06); border-radius: 50%; pointer-events: none; }
+.pf-cover-circle-2 { position: absolute; bottom: -120px; right: -120px; width: 480px; height: 480px; border: 1px solid rgba(255,255,255,0.06); border-radius: 50%; pointer-events: none; }
+
+.pf-toc-page {
+  background: #ffffff;
+  padding: 64px 48px;
+  box-sizing: border-box;
+  min-height: 100vh;
+  break-after: page;
+  page-break-after: always;
+}
+.pf-toc-title { font-size: 28px; font-weight: 800; color: #111111; margin: 0 0 12px 0; letter-spacing: -0.02em; }
+.pf-toc-line { width: 80px; height: 3px; background: #111111; margin-bottom: 40px; }
+.pf-toc-item { display: flex; align-items: baseline; gap: 16px; margin-bottom: 20px; font-size: 16px; line-height: 1.5; }
+.pf-toc-num { font-weight: 700; color: #8c8c8c; font-family: monospace, sans-serif; font-size: 15px; shrink: 0; min-width: 28px; }
+.pf-toc-item-title { font-weight: 700; color: #111111; max-width: 80%; word-break: break-word; }
+.pf-toc-dots { flex: 1; border-bottom: 1px dotted #d0d0d0; margin-bottom: 4px; }
+
 .pf-article { max-width: 40em; margin: 0 auto; padding: 48px 24px 72px; }
 @page {
   size: A4;
@@ -316,6 +360,8 @@ body { margin: 0; background: #ffffff; }
 }
 @media print {
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .pf-cover-page { break-after: page; page-break-after: always; min-height: 100vh; max-height: 100vh; box-sizing: border-box; margin: 0; }
+  .pf-toc-page { break-after: page; page-break-after: always; min-height: 100vh; max-height: 100vh; box-sizing: border-box; margin: 0; }
   .pf-article { max-width: none; margin: 0; padding: 0; }
   .pf-doc h1, .pf-doc h2, .pf-doc h3, .pf-label { break-after: avoid; page-break-after: avoid; }
   .pf-doc p { orphans: 3; widows: 3; }
@@ -327,6 +373,60 @@ body { margin: 0; background: #ffffff; }
 export function buildPrintFriendlyReportHtml(webBook: WebBook): string {
   const safeWebBook = sanitizeWebBookForPresentation(webBook);
   const title = getWebBookDocumentTitle(safeWebBook.topic);
+  const L = getExportLabels(safeWebBook);
+  const chapters = safeWebBook.chapters || [];
+  const totalConcepts = chapters.reduce((acc, ch) => acc + (Array.isArray(ch.definitions) ? ch.definitions.length : 0), 0);
+  const dateStr = new Date(safeWebBook.timestamp).toLocaleDateString(L.dateLocale, { year: 'numeric', month: 'short' });
+
+  const coverHtml = `
+<div class="pf-cover-page">
+  <div class="pf-cover-circle-1"></div>
+  <div class="pf-cover-circle-2"></div>
+  <div class="pf-cover-emblem">
+    <div class="pf-diamond">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#E4E3E0" stroke-width="1.5">
+        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+      </svg>
+    </div>
+    <div class="pf-cover-engine">${escapeHtml(L.engineName)}</div>
+  </div>
+  <h1 class="pf-cover-title">${escapeHtml(safeWebBook.topic)}</h1>
+  <div class="pf-cover-divider"></div>
+  <div class="pf-cover-stats">
+    <div class="pf-stat-col">
+      <span class="pf-stat-label">${escapeHtml(L.chapters)}</span>
+      <span class="pf-stat-val">${chapters.length}</span>
+    </div>
+    <div class="pf-stat-col">
+      <span class="pf-stat-label">${escapeHtml(L.concepts)}</span>
+      <span class="pf-stat-val">${totalConcepts}</span>
+    </div>
+    <div class="pf-stat-col">
+      <span class="pf-stat-label">${escapeHtml(L.date)}</span>
+      <span class="pf-stat-val">${escapeHtml(dateStr)}</span>
+    </div>
+  </div>
+</div>`;
+
+  const tocItems = chapters.map((ch, idx) => `
+    <div class="pf-toc-item">
+      <span class="pf-toc-num">${String(idx + 1).padStart(2, '0')}</span>
+      <span class="pf-toc-item-title">${escapeHtml(ch.title)}</span>
+      <span class="pf-toc-dots"></span>
+    </div>
+  `).join('');
+
+  const tocHtml = `
+<div class="pf-toc-page">
+  <div class="pf-toc-header">
+    <div class="pf-toc-title">${escapeHtml(L.tableOfContents)}</div>
+    <div class="pf-toc-line"></div>
+  </div>
+  <div class="pf-toc-list">
+    ${tocItems}
+  </div>
+</div>`;
+
   const body = buildReportBlocks(safeWebBook, false)
     .map((block) => block.html)
     .join('\n');
@@ -340,6 +440,8 @@ export function buildPrintFriendlyReportHtml(webBook: WebBook): string {
 <style>${READER_CSS}${PRINT_DOCUMENT_CSS}</style>
 </head>
 <body>
+${coverHtml}
+${tocHtml}
 <main class="pf-doc pf-article">
 ${body}
 </main>
@@ -485,6 +587,77 @@ function renderImagePageHtml(blocks: ReportBlock[], blockIndexes: number[], titl
 </div>`;
 }
 
+function renderImageCoverPageHtml(webBook: WebBook, L: ReturnType<typeof getExportLabels>, totalPages: number): string {
+  const chapters = webBook.chapters || [];
+  const totalConcepts = chapters.reduce((acc, ch) => acc + (Array.isArray(ch.definitions) ? ch.definitions.length : 0), 0);
+  const dateStr = new Date(webBook.timestamp).toLocaleDateString(L.dateLocale, { year: 'numeric', month: 'short' });
+
+  return `<div class="pf-page" style="position: relative; width: ${PAGE_WIDTH_PX}px; height: ${PAGE_HEIGHT_PX}px; box-sizing: border-box; padding: 80px 56px; background: #141414; color: #E4E3E0; overflow: hidden; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;">
+  <div style="position: absolute; top: -100px; left: -100px; width: 400px; height: 400px; border: 1px solid rgba(255,255,255,0.06); border-radius: 50%; pointer-events: none;"></div>
+  <div style="position: absolute; bottom: -120px; right: -120px; width: 480px; height: 480px; border: 1px solid rgba(255,255,255,0.06); border-radius: 50%; pointer-events: none;"></div>
+  
+  <div style="position: relative; z-index: 10; display: flex; flex-direction: column; align-items: center; width: 100%;">
+    <div style="width: 44px; height: 44px; border: 1.5px solid #E4E3E0; transform: rotate(45deg); display: flex; align-items: center; justify-content: center; margin-bottom: 20px;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#E4E3E0" stroke-width="1.5" style="transform: rotate(-45deg);">
+        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+      </svg>
+    </div>
+    <div style="font-size: 12px; font-weight: 600; letter-spacing: 0.35em; text-transform: uppercase; color: #a0a0a0; margin-bottom: 36px;">${escapeHtml(L.engineName)}</div>
+    
+    <h1 style="font-family: Georgia, serif; font-weight: 700; font-size: 40px; line-height: 1.25; color: #ffffff; margin: 0 0 32px 0; letter-spacing: -0.02em; word-break: break-word; max-width: 640px;">${escapeHtml(webBook.topic)}</h1>
+    
+    <div style="width: 60px; height: 2px; background: rgba(228, 227, 224, 0.4); margin: 0 auto 40px;"></div>
+    
+    <div style="display: flex; justify-content: center; gap: 56px; text-align: center;">
+      <div>
+        <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.15em; color: #888888; margin-bottom: 8px;">${escapeHtml(L.chapters)}</div>
+        <div style="font-family: monospace, sans-serif; font-size: 30px; font-weight: 700; color: #ffffff;">${chapters.length}</div>
+      </div>
+      <div>
+        <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.15em; color: #888888; margin-bottom: 8px;">${escapeHtml(L.concepts)}</div>
+        <div style="font-family: monospace, sans-serif; font-size: 30px; font-weight: 700; color: #ffffff;">${totalConcepts}</div>
+      </div>
+      <div>
+        <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.15em; color: #888888; margin-bottom: 8px;">${escapeHtml(L.date)}</div>
+        <div style="font-family: sans-serif; font-size: 22px; font-weight: 700; color: #ffffff; padding-top: 6px;">${escapeHtml(dateStr)}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pf-doc" style="position: absolute; left: ${IMAGE_PAGE_PADDING_X_PX}px; right: ${IMAGE_PAGE_PADDING_X_PX}px; bottom: 28px; display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid rgba(255,255,255,0.15); padding-top: 8px; font-size: 12px; line-height: 1.4; color: #a0a0a0;">
+    <span>${escapeHtml(L.engineName)}</span>
+    <span style="white-space: nowrap; font-weight: 700; color: #ffffff;">${escapeHtml(L.pageOf(1, totalPages))}</span>
+  </div>
+</div>`;
+}
+
+function renderImageTocPageHtml(webBook: WebBook, L: ReturnType<typeof getExportLabels>, totalPages: number): string {
+  const chapters = webBook.chapters || [];
+
+  const items = chapters.map((ch, idx) => `
+    <div style="display: flex; align-items: baseline; gap: 16px; margin-bottom: 22px; font-size: 16px; line-height: 1.5;">
+      <span style="font-weight: 700; color: #8c8c8c; font-family: monospace, sans-serif; font-size: 15px; min-width: 28px;">${String(idx + 1).padStart(2, '0')}</span>
+      <span style="font-weight: 700; color: #111111; max-width: 80%; word-break: break-word;">${escapeHtml(ch.title)}</span>
+      <span style="flex: 1; border-bottom: 1px dotted #d0d0d0; margin-bottom: 4px;"></span>
+    </div>
+  `).join('');
+
+  return `<div class="pf-page" style="position: relative; width: ${PAGE_WIDTH_PX}px; height: ${PAGE_HEIGHT_PX}px; box-sizing: border-box; padding: 72px 64px; background: #ffffff; overflow: hidden; display: flex; flex-direction: column;">
+  <div style="margin-bottom: 40px;">
+    <h2 style="font-size: 32px; font-weight: 800; color: #111111; margin: 0 0 12px 0; letter-spacing: -0.02em;">${escapeHtml(L.tableOfContents)}</h2>
+    <div style="width: 80px; height: 3px; background: #111111;"></div>
+  </div>
+  <div style="flex: 1;">
+    ${items}
+  </div>
+
+  <div class="pf-doc" style="position: absolute; left: ${IMAGE_PAGE_PADDING_X_PX}px; right: ${IMAGE_PAGE_PADDING_X_PX}px; bottom: 28px; display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid #cfcfcf; padding-top: 8px; font-size: 12px; line-height: 1.4; color: #595959;">
+    <span>${escapeHtml(L.engineName)}</span>
+    <span style="white-space: nowrap; font-weight: 700; color: #1f1f1f;">${escapeHtml(L.pageOf(2, totalPages))}</span>
+  </div>
+</div>`;
+}
+
 /**
  * Builds the HTML of each A4 image page. `measuredHeights` are real block heights from a browser layout; without
  * them (Node, tests) the built-in estimates are used.
@@ -499,9 +672,19 @@ export function buildPrintFriendlyReportPagesHtml(webBook: WebBook, measuredHeig
     IMAGE_CONTENT_HEIGHT_PX - PAGE_FIT_SAFETY_PX
   );
   const L = getExportLabels(safeWebBook);
-  return layout.map((indexes, pageIndex) =>
-    renderImagePageHtml(blocks, indexes, L.engineName, L.pageOf(pageIndex + 1, layout.length))
-  );
+  const totalPages = 2 + layout.length;
+
+  const pages: string[] = [];
+  pages.push(renderImageCoverPageHtml(safeWebBook, L, totalPages));
+  pages.push(renderImageTocPageHtml(safeWebBook, L, totalPages));
+
+  layout.forEach((indexes, pageIndex) => {
+    pages.push(
+      renderImagePageHtml(blocks, indexes, L.engineName, L.pageOf(pageIndex + 3, totalPages))
+    );
+  });
+
+  return pages;
 }
 
 const DUMMY_JPEG_DATA_URL =
