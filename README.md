@@ -25,6 +25,10 @@ Searching a topic returns many pages that repeat each other, and asking an LLM f
 - **Content Sanitization & Anti-Poisoning Heuristics**:
   - Heuristic screening for machine-code artifacts, hex bytes, and digit noise.
   - Automatic filtering of copyright disclaimers, scraper warnings, and promotional boilerplate.
+- **Intelligent Title Summarization & Word-Boundary Clipping**:
+  - Deterministically shortens overly lengthy user query titles on cover pages (on-screen viewer, Print Friendly PDF, and Print Friendly JPGs) to a 90-unit display budget (double-weighted for CJK characters).
+  - Cuts cleanly at natural clause or word boundaries, strips trailing dangling connectors (e.g., `and`, `or`, `of`), and appends a single ellipsis (`…`), preventing mid-word truncations.
+  - Heading labels use word-boundary clipping (`clipLabelAtWordBoundary`) to ensure content headers never leave partial words behind.
 - **Comprehensive Multi-Format Export**:
   - **Localised Fixed Labels**: Fixed document furniture (chapter headers, Table of Contents, visual concept badges, key domain concepts, deeper exploration angles, verified sources, and running footers) automatically adapts to the language of the generated book (covering Simplified & Traditional Chinese, Japanese, Korean, Malay, Spanish, French, German, and falling back cleanly to English). Model-generated content (such as visual-concept prompts), the initial generation notice, and export filenames remain as generated.
   - **PDF Document (High Res)**: Vector-grade document featuring a museum-grade cover, an interactive Table of Contents with clickable hyperlinks that jump directly to each chapter, and an editorial chapter layout (lead paragraph accent bars, key concept callout cards, deeper angle cards, and verified clickable source citations).
@@ -52,7 +56,7 @@ Searching a topic returns many pages that repeat each other, and asking an LLM f
 | **Persistence** | Firebase Firestore, Firebase Auth, Web LocalStorage |
 | **Server & Middleware** | Node.js, Express, `tsx`, Vite plugin middleware, `ws` (Gemini Live WebSocket relay), `dotenv` |
 | **Testing** | Cypress 16 with `@badeball/cypress-cucumber-preprocessor` (BDD Gherkin, esbuild bundling) and reporters (mochawesome, JUnit, multiple-cucumber-html-reporter); `tsx` + `node:assert` server-side unit tests |
-| **Package management** | npm (`.npmrc` sets `legacy-peer-deps=true`); a `bun.lock` is also tracked |
+| **Package management** | npm (`.npmrc` sets `legacy-peer-deps=true`) |
 
 ---
 
@@ -87,7 +91,6 @@ The same route handlers run in two hosts: Vite plugins during `npm run dev` / `n
 ├── GOOGLE_AI_STUDIO_UPLOAD.md           # Notes on the Google AI Studio upload archive
 ├── LICENSE.txt                          # MIT License
 ├── README.md                            # This document
-├── bun.lock                             # Dependency lockfile
 ├── index.html                           # Application entry HTML
 ├── metadata.json                        # AI Studio applet capabilities and metadata
 ├── package.json                         # Project dependencies and npm scripts
@@ -236,7 +239,7 @@ npm run build
 # Start full-stack production server (serves frontend & API fallback routes)
 npm start
 
-# (Optional) Preview production client build locally (serves the search fallback routes but not /api/gemini/*)
+# (Optional) Preview production client build locally (serves frontend, /api/gemini/*, and search fallback routes)
 npm run preview
 ```
 
@@ -282,7 +285,7 @@ The table below clarifies whether each `npm` / `npm run` command manages the loc
 | `npm run test:e2e`<br>*(or `npm run cy:run:local`)* | **Requires Running Server**<br>*(Run `npm run dev` first)* | Runs the full BDD test suite headlessly and compiles the HTML report against an already running local server. |
 | `npm run cy:run` | **Requires Running Server**<br>*(Run `npm run dev` first)* | Runs Cypress headlessly against an already running server without re-generating HTML report. |
 | `npm run cy:open` | **Requires Running Server**<br>*(Run `npm run dev` first)* | Opens the interactive Cypress GUI for visual step-by-step browser testing. |
-| `npm run test:server` | **Not Required** *(Standalone)* | Runs the 15 `tsx` unit/regression tests in `tests/server/`: Gemini error classification and retry, search fallback routing and client, fallback notices, evolution and chapter assembly, content filters, document titles, hyperlinked/CJK/print-friendly exports, CJK font, and export label localisation. |
+| `npm run test:server` | **Not Required** *(Standalone)* | Runs the 15 `tsx` unit/regression tests in `tests/server/`: Gemini error classification and retry, search fallback routing and client, fallback notices, evolution and chapter assembly, content filters, document titles and boundary summarization, hyperlinked/CJK/print-friendly exports, CJK font, and export label localisation. |
 | `npm run report:generate` | **Not Required** *(Standalone)* | Compiles the visual HTML report from existing Cucumber JSON test result artifacts. |
 
 ### 6a. Troubleshooting Gemini connectivity
