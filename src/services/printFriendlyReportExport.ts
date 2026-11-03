@@ -1,7 +1,7 @@
 import type { Chapter, Definition, SubTopic, WebBook } from '../types';
 import { getChapterSourceLinks, sanitizeWebBookForPresentation } from '../utils/webBookRender';
 import { downloadBlob, getExportFileName } from './exportDocument';
-import { getWebBookDocumentTitle } from './documentTitle';
+import { getWebBookDocumentTitle, summarizeTitle } from './documentTitle';
 import { getExportLabels } from './exportLabels';
 
 // ---------------------------------------------------------------------------
@@ -390,7 +390,7 @@ export function buildPrintFriendlyReportHtml(webBook: WebBook): string {
     </div>
     <div class="pf-cover-engine">${escapeHtml(L.engineName)}</div>
   </div>
-  <h1 class="pf-cover-title">${escapeHtml(safeWebBook.topic)}</h1>
+  <h1 class="pf-cover-title">${escapeHtml(summarizeTitle(safeWebBook.topic))}</h1>
   <div class="pf-cover-divider"></div>
   <div class="pf-cover-stats">
     <div class="pf-stat-col">
@@ -604,7 +604,7 @@ function renderImageCoverPageHtml(webBook: WebBook, L: ReturnType<typeof getExpo
     </div>
     <div style="font-size: 12px; font-weight: 600; letter-spacing: 0.35em; text-transform: uppercase; color: #a0a0a0; margin-bottom: 36px;">${escapeHtml(L.engineName)}</div>
     
-    <h1 style="font-family: Georgia, serif; font-weight: 700; font-size: 40px; line-height: 1.25; color: #ffffff; margin: 0 0 32px 0; letter-spacing: -0.02em; word-break: break-word; max-width: 640px;">${escapeHtml(webBook.topic)}</h1>
+    <h1 style="font-family: Georgia, serif; font-weight: 700; font-size: 40px; line-height: 1.25; color: #ffffff; margin: 0 0 32px 0; letter-spacing: -0.02em; word-break: break-word; max-width: 640px;">${escapeHtml(summarizeTitle(webBook.topic))}</h1>
     
     <div style="width: 60px; height: 2px; background: rgba(228, 227, 224, 0.4); margin: 0 auto 40px;"></div>
     

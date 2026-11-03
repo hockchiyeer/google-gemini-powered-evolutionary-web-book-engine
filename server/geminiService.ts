@@ -419,6 +419,9 @@ export function geminiPlugin(): Plugin {
     configureServer(server) {
       server.middlewares.use(createGeminiMiddleware());
     },
+    configurePreviewServer(server) {
+      server.middlewares.use(createGeminiMiddleware());
+    },
   };
 }
 

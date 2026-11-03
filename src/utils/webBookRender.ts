@@ -1,5 +1,6 @@
 import type { Chapter, WebBook, WebBookSourceMode } from "../types.ts";
 import { CJK_CHAR_PATTERN, countWords, splitIntoSentences } from "../services/searchFallbackShared.ts";
+import { clipLabelAtWordBoundary } from "../services/documentTitle.ts";
 
 export { CJK_CHAR_PATTERN, countWords, splitIntoSentences };
 
@@ -278,7 +279,7 @@ export function sanitizeStructuredLabel(text?: string | null, fallback = ""): st
     return fallback.trim();
   }
 
-  return candidate.slice(0, 160).trim() || fallback.trim();
+  return clipLabelAtWordBoundary(candidate, 160).trim() || fallback.trim();
 }
 
 function sanitizeChapterForPresentation(chapter: Chapter, index: number, topic = ""): Chapter {

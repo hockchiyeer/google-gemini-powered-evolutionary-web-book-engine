@@ -66,6 +66,22 @@ const longBook: WebBook = { id: 'test-long', topic: 'Long Form Topic', timestamp
   assert.ok(!escaped.includes('<script>alert(1)</script>'), 'Topic must be HTML-escaped');
 }
 
+// 1b. Over-long query-derived topics: the cover shows a complete summarized title, never a mid-word cut
+{
+  const longTopic =
+    "AI's biggest drivers and sources of revenue are cloud infrastructure, cloud services, energy, real estate, " +
+    'semiconductors, AI chips, and hardware peripherals, networking and cooling systems';
+  const book: WebBook = { ...longBook, topic: longTopic };
+  const html = buildPrintFriendlyReportHtml(book);
+  const decode = (value: string) => value.replace(/&#0?39;|&#x27;/g, "'").replace(/&amp;/g, '&');
+  const cover = decode(/<h1 class="pf-cover-title">([^<]*)<\/h1>/.exec(html)?.[1] ?? '');
+  assert.ok(cover.endsWith('…') && cover.length <= 90, 'PDF cover title is summarized to fit');
+  assert.ok(longTopic.startsWith(cover.slice(0, -1)), 'PDF cover title is a clean prefix of the topic');
+  assert.ok(!/,\s*n…?$/.test(cover), 'No half-word remains on the cover');
+  const imageCover = buildPrintFriendlyReportPagesHtml(book)[0];
+  assert.ok(decode(imageCover).includes(`${cover}</h1>`), 'JPG cover uses the same summarized title');
+}
+
 // 2. Image pages: complete content, one A4 page per image, stable numbering
 {
   const pages = buildPrintFriendlyReportPagesHtml(longBook);

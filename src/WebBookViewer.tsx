@@ -2,6 +2,7 @@ import React from 'react';
 import { ArrowUpRight, BookOpen, CheckCircle2, Globe2, Image as ImageIcon, Layers } from 'lucide-react';
 import type { WebBook } from './types';
 import { getExportLabels, type ExportLabels } from './services/exportLabels';
+import { summarizeTitle } from './services/documentTitle';
 import { buildChapterRenderPlan, getChapterSourceLinks, normalizeSourceLink, sanitizeWebBookForPresentation } from './utils/webBookRender';
 
 interface WebBookViewerProps {
@@ -40,7 +41,7 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
             </div>
             <span className="text-[10px] uppercase tracking-[0.5em] opacity-60">{L.engineName}</span>
           </div>
-          <h2 className="text-5xl md:text-7xl font-serif italic font-bold tracking-tighter leading-tight mb-8 break-words">{safeWebBook.topic}</h2>
+          <h2 className="text-5xl md:text-7xl font-serif italic font-bold tracking-tighter leading-tight mb-8 break-words">{summarizeTitle(safeWebBook.topic)}</h2>
           <div className="w-24 h-1 bg-[#E4E3E0] mx-auto mb-12 opacity-30" />
           <div className="flex justify-center gap-16">
             <div className="flex flex-col">
