@@ -13,6 +13,7 @@ import {
   WebPageGenotype,
 } from "../types";
 import { fetchGoogleSearchFallback } from "./googleSearchFallbackClient";
+import { summarizeTitle } from "./documentTitle";
 import { buildGeminiUserFacingErrorMessage, GeminiFailureReason, NON_RECOVERABLE_GEMINI_REASONS } from "./geminiUserFacingErrors";
 import { isNonJsonResponseText } from "./safeResponse";
 import {
@@ -1263,7 +1264,153 @@ function parseJsonObject(text: string | undefined): any {
   }
 }
 
-export async function assembleWebBook(
+// ---------------------------------------------------------------------------
+// References for books written from the model's own knowledge
+// ---------------------------------------------------------------------------
+// When neither grounded search nor the fallback search returns evidence, the book is synthesized from Gemini's knowledge
+// (sourceMode "model_knowledge"). Its pages carry no URL, so the chapters used to end up with no references at all. The
+// text is not changed, but each chapter now gets links the reader can follow: live search results for the chapter's
+// subject when a search is reachable, otherwise plain search links. Neither kind is presented as a source of the text.
+
+export const KNOWLEDGE_REFERENCES_PER_CHAPTER = 3;
+const KNOWLEDGE_REFERENCE_LOOKUP_TIMEOUT_MS = 15_000;
+const KNOWLEDGE_REFERENCE_CONCURRENCY = 3;
+const REFERENCE_QUERY_TOPIC_UNITS = 60;
+const CJK_ANY = /[ᄀ-ᇿ⺀-꓏가-힯豈-﫿＀-￯]/;
+
+type ReferenceLookup = (query: string, options: EngineOptions) => Promise<SearchFallbackPayload>;
+
+function isSearchEnginePage(url: URL): boolean {
+  const host = url.hostname.replace(/^www\./i, '').toLowerCase();
+  return (
+    ((host === 'google.com' || host.endsWith('.google.com')) && url.pathname === '/search') ||
+    host === 'duckduckgo.com'
+  );
+}
+
+function buildReferenceQuery(topic: string, chapterTitle: string): string {
+  const shortTopic = summarizeTitle(topic, REFERENCE_QUERY_TOPIC_UNITS).replace(/…$/, '').trim();
+  const title = String(chapterTitle || '').trim();
+  if (!title) return shortTopic;
+  if (!shortTopic || title.toLowerCase().includes(shortTopic.toLowerCase())) return title;
+  return `${shortTopic} ${title}`.trim();
+}
+
+/** Plain search links for a chapter. They search for the subject; they do not point at a page that supports the text. */
+export function buildReferenceSearchLinks(topic: string, chapterTitle: string): Array<{ title: string; url: string }> {
+  const query = buildReferenceQuery(topic, chapterTitle);
+  if (!query) return [];
+  const wikipediaHost = CJK_ANY.test(query) ? 'zh.wikipedia.org' : 'en.wikipedia.org';
+  const encoded = encodeURIComponent(query);
+  return [
+    { title: `Wikipedia search: ${query}`, url: `https://${wikipediaHost}/w/index.php?search=${encoded}` },
+    { title: `Google Scholar search: ${query}`, url: `https://scholar.google.com/scholar?q=${encoded}` },
+  ];
+}
+
+function pickReferenceResults(payload: SearchFallbackPayload | null | undefined, used: Set<string>): Array<{ title: string; url: string }> {
+  if (!payload || isSyntheticFallbackPayload(payload) || !Array.isArray(payload.results)) return [];
+  const picked: Array<{ title: string; url: string }> = [];
+  for (const result of payload.results) {
+    const rawUrl = String(result?.url || '').trim();
+    if (!/^https?:\/\//i.test(rawUrl)) continue;
+    try {
+      const parsed = new URL(rawUrl);
+      if (isSearchEnginePage(parsed) || parsed.hostname.includes('source-') || parsed.hostname === 'knowledge-base.org') continue;
+      const url = parsed.toString();
+      if (used.has(url) || picked.some((entry) => entry.url === url)) continue;
+      picked.push({ title: String(result.title || '').trim() || parsed.hostname.replace(/^www\./i, ''), url });
+    } catch {
+      // not a usable URL
+    }
+    if (picked.length >= KNOWLEDGE_REFERENCES_PER_CHAPTER) break;
+  }
+  return picked;
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('Reference lookup timed out.')), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
+/**
+ * Gives every reference-less chapter of a model-knowledge book links to follow. Live results are tried first (one short
+ * query per chapter; the first failed lookup stops further ones so an unreachable search cannot delay the book); chapters
+ * left without any get search links. The generation notice says which kind of links the book contains.
+ */
+export async function attachKnowledgeReferences(
+  book: WebBook,
+  options?: EngineOptions,
+  lookup: ReferenceLookup = fetchGoogleSearchFallback
+): Promise<WebBook> {
+  const targets = book.chapters
+    .map((chapter, index) => ({ chapter, index }))
+    .filter(({ chapter }) => !Array.isArray(chapter.sourceUrls) || chapter.sourceUrls.length === 0);
+  if (targets.length === 0) return book;
+
+  const liveByChapter = new Map<number, Array<{ title: string; url: string }>>();
+  const searchOptions: EngineOptions = options || { mode: 'google_duckduckgo' };
+
+  if (searchOptions.mode !== 'off') {
+    const used = new Set<string>();
+    const results = await runBounded(
+      targets.length,
+      KNOWLEDGE_REFERENCE_CONCURRENCY,
+      async (i) => {
+        const { chapter, index } = targets[i];
+        const payload = await withTimeout(
+          lookup(buildReferenceQuery(book.topic, chapter.title), searchOptions),
+          KNOWLEDGE_REFERENCE_LOOKUP_TIMEOUT_MS
+        );
+        const picked = pickReferenceResults(payload, used);
+        picked.forEach((entry) => used.add(entry.url));
+        if (picked.length > 0) liveByChapter.set(index, picked);
+        return picked.length;
+      },
+      () => true
+    );
+    void results;
+  }
+
+  let liveChapters = 0;
+  let linkChapters = 0;
+  const chapters = book.chapters.map((chapter, index) => {
+    if (!targets.some((target) => target.index === index)) return chapter;
+    const live = liveByChapter.get(index);
+    if (live && live.length > 0) {
+      liveChapters += 1;
+      return { ...chapter, sourceUrls: live };
+    }
+    const links = buildReferenceSearchLinks(book.topic, chapter.title);
+    if (links.length > 0) linkChapters += 1;
+    return { ...chapter, sourceUrls: links };
+  });
+
+  const notes: string[] = [];
+  if (liveChapters > 0) {
+    notes.push('Chapter reference links are related pages found by a live search for each chapter\'s subject; they were not used to write the text.');
+  }
+  if (linkChapters > 0) {
+    notes.push(
+      liveChapters > 0
+        ? 'Chapters without a live result list search links (Wikipedia, Google Scholar) instead.'
+        : 'No live sources could be retrieved, so chapter references are search links (Wikipedia, Google Scholar) for checking the content; they are not cited sources.'
+    );
+  }
+
+  return {
+    ...book,
+    chapters,
+    generationNote: [book.generationNote, ...notes].filter(Boolean).join(' '),
+  };
+}
+
+async function assembleWebBookCore(
   optimalPopulation: WebPageGenotype[],
   topic: string,
   searchResult?: any,
@@ -1295,6 +1442,9 @@ export async function assembleWebBook(
 
   const assemblyPages = selectAssemblyPages(optimalPopulation);
   const evidenceDigest = buildEvidenceDigest(assemblyPages);
+  const evidenceLabel = searchResult?.sourceMode === 'model_knowledge'
+    ? 'Background notes written from the model\'s own knowledge (not live sources)'
+    : 'Research evidence gathered from live sources';
 
   const preferredModel = options?.geminiModel || DEFAULT_GEMINI_MODEL;
   let assemblyFailure: unknown = null;
@@ -1320,7 +1470,7 @@ export async function assembleWebBook(
     // Stage 1: Generate detailed 10-chapter outline
     const outlineResponse = await generateWithModelFallback({
       contents: `Topic: ${topic}.
-      Research evidence gathered from live sources:
+      ${evidenceLabel}:
       ${evidenceDigest}
 
       Create a detailed 10-chapter outline for a comprehensive, full-length Web-book. 
@@ -1375,7 +1525,7 @@ export async function assembleWebBook(
 
           Chapter ${chapterIndex + 1}: ${chapterOutline.title}. Focus: ${chapterOutline.focus}.
 
-          Research evidence gathered from live sources (ground the chapter in it; never invent facts, figures or URLs):
+          ${evidenceLabel} (ground the chapter in it; never invent facts, figures or URLs):
           ${evidenceDigest}
 
           Write a comprehensive, high-quality chapter of ${CHAPTER_TARGET_WORDS.min}-${CHAPTER_TARGET_WORDS.max} words (for Chinese, Japanese or Korean, roughly ${CHAPTER_TARGET_WORDS.min * 2}-${CHAPTER_TARGET_WORDS.max * 2} characters) in 5 to 7 well-developed paragraphs separated by blank lines. Include concrete facts, examples, mechanisms and trade-offs from the evidence.
@@ -1522,4 +1672,15 @@ export async function assembleWebBook(
     });
   }
   return synthesizeFallbackWebBook(topic, optimalPopulation, searchResult);
+}
+
+export async function assembleWebBook(
+  optimalPopulation: WebPageGenotype[],
+  topic: string,
+  searchResult?: any,
+  options?: EngineOptions
+): Promise<WebBook> {
+  const book = await assembleWebBookCore(optimalPopulation, topic, searchResult, options);
+  // Books written from the model's own knowledge have no source pages; give their chapters something to follow.
+  return book.sourceMode === 'model_knowledge' ? attachKnowledgeReferences(book, options) : book;
 }

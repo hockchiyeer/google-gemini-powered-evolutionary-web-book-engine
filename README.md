@@ -173,7 +173,7 @@ The same route handlers run in two hosts: Vite plugins during `npm run dev` / `n
     │   ├── run-cypress-with-reports.cjs # Runs Cypress, then the report generator
     │   ├── run-local-cypress.cjs        # Starts the dev server if needed, runs Cypress, stops the server
     │   └── smoke/                       # Manual scripts (import, PDF bridge, Google fetch); not run by npm scripts
-    └── server/                          # 15 `tsx` unit/regression tests, run by `npm run test:server`
+    └── server/                          # 16 `tsx` unit/regression tests, run by `npm run test:server`
 ```
 
 ---
@@ -285,7 +285,7 @@ The table below clarifies whether each `npm` / `npm run` command manages the loc
 | `npm run test:e2e`<br>*(or `npm run cy:run:local`)* | **Requires Running Server**<br>*(Run `npm run dev` first)* | Runs the full BDD test suite headlessly and compiles the HTML report against an already running local server. |
 | `npm run cy:run` | **Requires Running Server**<br>*(Run `npm run dev` first)* | Runs Cypress headlessly against an already running server without re-generating HTML report. |
 | `npm run cy:open` | **Requires Running Server**<br>*(Run `npm run dev` first)* | Opens the interactive Cypress GUI for visual step-by-step browser testing. |
-| `npm run test:server` | **Not Required** *(Standalone)* | Runs the 15 `tsx` unit/regression tests in `tests/server/`: Gemini error classification and retry, search fallback routing and client, fallback notices, evolution and chapter assembly, content filters, document titles and boundary summarization, hyperlinked/CJK/print-friendly exports, CJK font, and export label localisation. |
+| `npm run test:server` | **Not Required** *(Standalone)* | Runs the 16 `tsx` unit/regression tests in `tests/server/`: Gemini error classification and retry, search fallback routing and client, fallback notices, evolution and chapter assembly, knowledge references, content filters, document titles and boundary summarization, hyperlinked/CJK/print-friendly exports, CJK font, and export label localisation. |
 | `npm run report:generate` | **Not Required** *(Standalone)* | Compiles the visual HTML report from existing Cucumber JSON test result artifacts. |
 
 ### 6a. Troubleshooting Gemini connectivity
@@ -300,7 +300,7 @@ curl http://localhost:3000/api/gemini/health   # same check through the running 
 - Quotas are per Google **project** and per **model**, not per key; a new key in the same project shares them. Daily quotas reset at **midnight Pacific Time**, not 24 hours after you hit them.
 - A bare HTTP 429 on Google Search grounding (no quota detail) is a standing grounding limit that waiting may not clear. Slow models (for example `gemini-3.8-flash` in recent measurements) are cut off by `GEMINI_REQUEST_TIMEOUT_MS` and the request moves to a faster sibling. Tunables are listed under Environment Setup.
 - A chapter that Gemini cannot write is left out and named in the notice; it is never replaced by filler text.
-- If live search is unavailable the engine can write from the model's own knowledge. Such a book is labelled **Model knowledge (not verified against live sources)** and carries no source links.
+- If live search is unavailable the engine can write from the model's own knowledge. Such a book is labelled **Model knowledge (not verified against live sources)** and attaches related references (live subject searches or Wikipedia/Google Scholar links) to each chapter without claiming them as cited sources.
 
 ### 7. Code Verification
 
