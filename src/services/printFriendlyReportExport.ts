@@ -1,4 +1,5 @@
 import type { Chapter, Definition, SubTopic, WebBook } from '../types';
+import { isSnippetOnlySourceMode } from '../types';
 import { getChapterSourceLinks, sanitizeWebBookForPresentation } from '../utils/webBookRender';
 import { downloadBlob, getExportFileName } from './exportDocument';
 import { getWebBookDocumentTitle, summarizeTitle } from './documentTitle';
@@ -247,7 +248,7 @@ function getHeaderBlock(webBook: WebBook): ReportBlock {
   const totalConcepts = chapters.reduce((acc, ch) => acc + (Array.isArray(ch.definitions) ? ch.definitions.length : 0), 0);
   const L = getExportLabels(webBook);
   const dateStr = new Date(webBook.timestamp).toLocaleDateString(L.dateLocale, { year: 'numeric', month: 'short', day: 'numeric' });
-  const mode = webBook.sourceMode === 'fallback_search'
+  const mode = isSnippetOnlySourceMode(webBook.sourceMode)
     ? L.fallbackSearch
     : webBook.sourceMode === 'model_knowledge'
       ? L.modelKnowledge

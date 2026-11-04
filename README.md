@@ -173,7 +173,7 @@ The same route handlers run in two hosts: Vite plugins during `npm run dev` / `n
     │   ├── run-cypress-with-reports.cjs # Runs Cypress, then the report generator
     │   ├── run-local-cypress.cjs        # Starts the dev server if needed, runs Cypress, stops the server
     │   └── smoke/                       # Manual scripts (import, PDF bridge, Google fetch); not run by npm scripts
-    └── server/                          # 16 `tsx` unit/regression tests, run by `npm run test:server`
+    └── server/                          # 17 `tsx` unit/regression tests, run by `npm run test:server`
 ```
 
 ---
@@ -285,7 +285,7 @@ The table below clarifies whether each `npm` / `npm run` command manages the loc
 | `npm run test:e2e`<br>*(or `npm run cy:run:local`)* | **Requires Running Server**<br>*(Run `npm run dev` first)* | Runs the full BDD test suite headlessly and compiles the HTML report against an already running local server. |
 | `npm run cy:run` | **Requires Running Server**<br>*(Run `npm run dev` first)* | Runs Cypress headlessly against an already running server without re-generating HTML report. |
 | `npm run cy:open` | **Requires Running Server**<br>*(Run `npm run dev` first)* | Opens the interactive Cypress GUI for visual step-by-step browser testing. |
-| `npm run test:server` | **Not Required** *(Standalone)* | Runs the 16 `tsx` unit/regression tests in `tests/server/`: Gemini error classification and retry, search fallback routing and client, fallback notices, evolution and chapter assembly, knowledge references, content filters, document titles and boundary summarization, hyperlinked/CJK/print-friendly exports, CJK font, and export label localisation. |
+| `npm run test:server` | **Not Required** *(Standalone)* | Runs the 17 `tsx` unit/regression tests in `tests/server/`: Gemini error classification and retry, search fallback routing and client, fallback notices, evolution and chapter assembly, knowledge references, snippet-only pagination, content filters, document titles and boundary summarization, hyperlinked/CJK/print-friendly exports, CJK font, and export label localisation. |
 | `npm run report:generate` | **Not Required** *(Standalone)* | Compiles the visual HTML report from existing Cucumber JSON test result artifacts. |
 
 ### 6a. Troubleshooting Gemini connectivity

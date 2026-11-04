@@ -1,4 +1,5 @@
 import type { Chapter, WebBook, WebBookSourceMode } from "../types.ts";
+import { isSnippetOnlySourceMode } from "../types.ts";
 import { CJK_CHAR_PATTERN, countWords, splitIntoSentences } from "../services/searchFallbackShared.ts";
 import { clipLabelAtWordBoundary } from "../services/documentTitle.ts";
 
@@ -60,7 +61,6 @@ export function containsPoisonBoilerplate(...texts: Array<string | null | undefi
 }
 const CJK_SENTENCE_END_PATTERN = /[。！？][”’」』）)]*$/;
 export const MIN_CHAPTER_TEXT_PAGES = 3;
-const SEARCH_FALLBACK_TEXT_PAGES = 1;
 const TARGET_WORDS_PER_TEXT_PAGE = 250;
 const STRUCTURED_EXPORT_HEADING_PATTERN = /^(?:VISUAL CONCEPT|CORE CONCEPTS|SUB-TOPICS|SOURCES|DEFINITIONS|GLOSSARY|TECHNICAL GLOSSARY)\s*:/i;
 const EXPORT_METADATA_LINE_PATTERN = /^(?:Generated on:|CHAPTER\s+\d+\s*:)/i;
@@ -585,15 +585,27 @@ function normalizeChapterParagraphs(content: string, minimumParagraphs = MIN_CHA
   return ensureMinimumParagraphs(generatedParagraphs, minimumParagraphs);
 }
 
-function buildNarrativePageContents(content: string, pageCount = MIN_CHAPTER_TEXT_PAGES): string[] {
-  const paragraphs = normalizeChapterParagraphs(content, pageCount);
+/**
+ * Splits a chapter into narrative pages. The page count follows the amount of real text: a chapter never gets a page
+ * it has no new text for, and no paragraph is ever repeated to fill one.
+ *  - Snippet-only books (no Gemini key) get as many pages as their text fills at TARGET_WORDS_PER_TEXT_PAGE, 1..3.
+ *  - Gemini-written books aim for MIN_CHAPTER_TEXT_PAGES, but fall back to fewer pages if the text cannot be split
+ *    into that many distinct paragraphs.
+ */
+function buildNarrativePageContents(content: string, snippetOnly = false): string[] {
+  const requestedPages = snippetOnly ? 1 : MIN_CHAPTER_TEXT_PAGES;
+  const paragraphs = normalizeChapterParagraphs(content, requestedPages);
   if (paragraphs.length === 0) {
-    return Array.from({ length: pageCount }, () => "");
+    return [];
   }
 
+  const totalWords = paragraphs.reduce((sum, paragraph) => sum + countWords(paragraph), 0);
+  const wantedPages = snippetOnly
+    ? Math.max(1, Math.min(MIN_CHAPTER_TEXT_PAGES, Math.round(totalWords / TARGET_WORDS_PER_TEXT_PAGE)))
+    : MIN_CHAPTER_TEXT_PAGES;
+  const pageCount = Math.max(1, Math.min(wantedPages, paragraphs.length));
   const balancedParagraphs = ensureMinimumParagraphs(paragraphs, pageCount);
-  const totalWords = balancedParagraphs.reduce((sum, paragraph) => sum + countWords(paragraph), 0);
-  const targetWords = Math.max(TARGET_WORDS_PER_TEXT_PAGE, Math.ceil(totalWords / pageCount));
+  const targetWords = Math.max(1, Math.ceil(totalWords / pageCount));
   const pages = Array.from({ length: pageCount }, () => [] as string[]);
 
   let pageIndex = 0;
@@ -618,40 +630,15 @@ function buildNarrativePageContents(content: string, pageCount = MIN_CHAPTER_TEX
     currentPageWords += words;
   }
 
-  for (let index = 1; index < pages.length; index += 1) {
-    if (pages[index].length > 0) {
-      continue;
-    }
-
-    for (let donorIndex = index - 1; donorIndex >= 0; donorIndex -= 1) {
-      if (pages[donorIndex].length > 1) {
-        const movedParagraph = pages[donorIndex].pop();
-        if (movedParagraph) {
-          pages[index].push(movedParagraph);
-          break;
-        }
-      }
-    }
-  }
-
-  return pages.map((page, index) => {
-    if (page.length > 0) {
-      return page.join("\n\n");
-    }
-
-    return balancedParagraphs[index] || balancedParagraphs[balancedParagraphs.length - 1] || content.trim();
-  });
-}
-
-function getNarrativePageCount(sourceMode?: WebBookSourceMode): number {
-  return sourceMode === "search-fallback" ? SEARCH_FALLBACK_TEXT_PAGES : MIN_CHAPTER_TEXT_PAGES;
+  // Empty pages are dropped, never filled with a copy of another paragraph.
+  return pages.filter((page) => page.length > 0).map((page) => page.join("\n\n"));
 }
 
 export function buildChapterRenderPlan(
   chapters: Chapter[],
   options: { sourceMode?: WebBookSourceMode } = {}
 ): ChapterRenderPlan[] {
-  const narrativePageCount = getNarrativePageCount(options.sourceMode);
+  const snippetOnly = isSnippetOnlySourceMode(options.sourceMode);
   const safeChapters = Array.isArray(chapters) ? chapters.map((chapter, index) => normalizeChapterForRender(chapter, index)) : [];
   let nextPageNumber = 3;
   const pageKinds: ChapterNarrativePage["pageKind"][] = ["opening", "analysis", "synthesis"];
@@ -659,7 +646,7 @@ export function buildChapterRenderPlan(
   return safeChapters.map((chapter) => {
     const renderableDefinitions = getRenderableDefinitions(chapter.definitions || [], 8);
     const renderableSubTopics = getRenderableSubTopics(chapter.subTopics || []).slice(0, 4);
-    const textPageContents = buildNarrativePageContents(chapter.content, narrativePageCount);
+    const textPageContents = buildNarrativePageContents(chapter.content, snippetOnly);
     const titlePageNumber = nextPageNumber;
     const textPages = textPageContents.map((content, index) => ({
       pageNumber: titlePageNumber + index,

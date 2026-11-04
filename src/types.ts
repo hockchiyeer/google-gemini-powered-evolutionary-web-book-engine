@@ -95,6 +95,14 @@ export function isSearchFallbackSource(val: unknown): val is SearchFallbackSourc
   return typeof val === 'string' && ['google', 'duckduckgo', 'google_duckduckgo', 'gemini'].includes(val);
 }
 
+/**
+ * True when the book was written from scraped search snippets only (no Gemini synthesis). The engine emits
+ * 'fallback_search' and the search server emits 'search-fallback'; both mean the same thing and must be treated alike.
+ */
+export function isSnippetOnlySourceMode(mode: unknown): boolean {
+  return mode === 'fallback_search' || mode === 'search-fallback';
+}
+
 export function isWebBookSourceMode(val: unknown): val is WebBookSourceMode {
   return typeof val === 'string' && ['gemini', 'fallback_search', 'hybrid', 'search-fallback', 'model_knowledge'].includes(val);
 }

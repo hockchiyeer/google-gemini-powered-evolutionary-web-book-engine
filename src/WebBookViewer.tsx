@@ -1,6 +1,7 @@
 import React from 'react';
 import { ArrowUpRight, BookOpen, CheckCircle2, Globe2, Image as ImageIcon, Layers } from 'lucide-react';
 import type { WebBook } from './types';
+import { isSnippetOnlySourceMode } from './types';
 import { getExportLabels, type ExportLabels } from './services/exportLabels';
 import { summarizeTitle } from './services/documentTitle';
 import { buildChapterRenderPlan, getChapterSourceLinks, normalizeSourceLink, sanitizeWebBookForPresentation } from './utils/webBookRender';
@@ -16,7 +17,9 @@ function getParagraphs(content: string): string[] {
     .filter(Boolean);
 }
 
-function getNarrativeLabel(pageIndex: number, L: ExportLabels): string {
+// Snippet-only books have no analysis/synthesis structure, so they get no scripted section labels.
+function getNarrativeLabel(pageIndex: number, L: ExportLabels, snippetOnly: boolean): string {
+  if (snippetOnly) return '';
   if (pageIndex === 0) return L.overview;
   if (pageIndex === 1) return L.evidenceContext;
   return L.synthesisImplications;
@@ -26,6 +29,7 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
   const safeWebBook = sanitizeWebBookForPresentation(webBook);
   const L = getExportLabels(safeWebBook);
   const safeChapters = Array.isArray(safeWebBook?.chapters) ? safeWebBook.chapters : [];
+  const snippetOnly = isSnippetOnlySourceMode(safeWebBook?.sourceMode);
   const chapterRenderPlan = buildChapterRenderPlan(safeChapters, { sourceMode: safeWebBook?.sourceMode });
   const finalDocumentPageNumber = chapterRenderPlan.length > 0
     ? chapterRenderPlan[chapterRenderPlan.length - 1].glossaryPageNumber + 1
@@ -137,6 +141,11 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                         </div>
 
                         <div className="mb-10 relative group">
+                          {snippetOnly ? (
+                            <div className="h-24 w-full border border-[#141414] bg-[#F5F5F5] flex items-center justify-center">
+                              <span className="text-[10px] uppercase font-bold tracking-[0.3em] text-[#141414]/40">{chapter.title}</span>
+                            </div>
+                          ) : (
                           <div className="aspect-[16/9] w-full overflow-hidden border border-[#141414] bg-[#F5F5F5] shadow-inner">
                             <img
                               src={`https://picsum.photos/seed/${chapter.visualSeed || chapter.title}/1200/800`}
@@ -146,15 +155,16 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                               className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all duration-1000 scale-105 group-hover:scale-100"
                             />
                           </div>
-                          <div className="absolute -bottom-4 right-8 max-w-[75%] bg-white border border-[#141414] px-4 py-2 text-[10px] uppercase font-bold tracking-widest flex items-center gap-3 shadow-md break-words">
+                          )}
+                          {!snippetOnly && <div className="absolute -bottom-4 right-8 max-w-[75%] bg-white border border-[#141414] px-4 py-2 text-[10px] uppercase font-bold tracking-widest flex items-center gap-3 shadow-md break-words">
                             <ImageIcon size={12} /> {chapter.visualSeed}
-                          </div>
+                          </div>}
                         </div>
                       </>
                     ) : (
                       <div className="mb-8 flex items-center justify-between gap-4 border-b border-[#141414]/10 pb-5">
                         <div className="min-w-0">
-                          <div className="text-[10px] uppercase tracking-[0.28em] font-bold text-[#141414]/45 mb-3">{getNarrativeLabel(pageIndex, L)}</div>
+                          {getNarrativeLabel(pageIndex, L, snippetOnly) && <div className="text-[10px] uppercase tracking-[0.28em] font-bold text-[#141414]/45 mb-3">{getNarrativeLabel(pageIndex, L, snippetOnly)}</div>}
                           <h4 className="text-2xl md:text-3xl font-serif italic font-bold break-words">{chapter.title}</h4>
                         </div>
                         <div className="text-[10px] uppercase font-bold tracking-widest opacity-35">{L.continuation}</div>
@@ -162,7 +172,7 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                     )}
 
                     <div className="flex-1 flex flex-col gap-8">
-                      {hostnames.length > 0 && (
+                      {isOpeningPage && hostnames.length > 0 && (
                         <div className="flex flex-wrap gap-2">
                           {hostnames.map((hostname) => (
                             <span key={hostname} className="px-3 py-1 border border-[#141414]/15 bg-[#F7F4EE] text-[10px] uppercase font-bold tracking-[0.18em] text-[#141414]/65">
@@ -334,6 +344,7 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                         </div>
                       </div>
 
+                      {verificationSource && !readingTrailLinks.some((sourceLink) => sourceLink.url === verificationSource.url) && (
                       <div className="border border-[#141414]/10 p-6 bg-white">
                         <div className="text-[10px] uppercase font-bold tracking-[0.24em] text-[#141414]/60 mb-4">{L.sourceVerification}</div>
                         <div className="text-sm leading-relaxed text-gray-600 font-light">
@@ -358,6 +369,7 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                           )}
                         </div>
                       </div>
+                      )}
                     </div>
                   </div>
                 ) : (
@@ -392,45 +404,6 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                     </div>
 
                     <div className="space-y-6">
-                      <div className="border border-[#141414] bg-white p-6 shadow-sm">
-                        <div className="text-[10px] uppercase font-bold tracking-[0.24em] text-[#141414]/60 mb-3 flex items-center gap-2">
-                          <CheckCircle2 size={14} className="text-green-600" /> Primary Source Verification
-                        </div>
-                        <div className="text-sm leading-relaxed text-gray-700 font-light mb-4">
-                          {verificationSource ? (
-                            readingTrailLinks.some((sourceLink) => sourceLink.url === verificationSource.url) ? (
-                              <span className="font-semibold text-[#141414] break-words">
-                                {verificationSource.title}
-                              </span>
-                            ) : (
-                              <a
-                                href={verificationSource.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                title={L.tipVerifyChapter}
-                                className="inline-flex items-center gap-2 font-semibold text-[#141414] hover:underline break-all"
-                              >
-                                {verificationSource.title} <ArrowUpRight size={14} />
-                              </a>
-                            )
-                          ) : (
-                            L.noSupportingSource
-                          )}
-                        </div>
-                        {verificationSource?.url && (
-                          <div className="pt-3 border-t border-[#141414]/10 flex items-center justify-between text-[11px]">
-                            <span className="font-mono opacity-50 truncate mr-2">{verificationSource.hostname}</span>
-                            <a
-                              href={verificationSource.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="font-bold uppercase tracking-wider text-[10px] hover:underline inline-flex items-center gap-1 shrink-0"
-                            >
-                              {L.inspectSource} <ArrowUpRight size={12} />
-                            </a>
-                          </div>
-                        )}
-                      </div>
 
                       {hostnames.length > 0 && (
                         <div className="border border-[#141414]/10 bg-[#FAFAFA] p-6">
