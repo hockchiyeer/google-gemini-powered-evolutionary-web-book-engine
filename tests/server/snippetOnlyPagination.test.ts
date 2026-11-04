@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { isSnippetOnlySourceMode } from '../../src/types.ts';
 import { buildChapterRenderPlan } from '../../src/utils/webBookRender.ts';
-import type { Chapter } from '../../src/types.ts';
+import { WebBookViewer } from '../../src/WebBookViewer.tsx';
+import type { Chapter, WebBook } from '../../src/types.ts';
 
 // 1. isSnippetOnlySourceMode recognises both fallback_search and search-fallback
 {
@@ -109,6 +112,29 @@ import type { Chapter } from '../../src/types.ts';
   const plan = buildChapterRenderPlan([emptyChapter], { sourceMode: 'fallback_search' });
   assert.equal(plan.length, 1);
   assert.equal(plan[0].textPages.length, 0, 'Empty chapter should drop narrative pages entirely');
+}
+
+// 6. Chapter images are rendered in snippet-only / fallback mode for HTML & High Res export
+{
+  const fallbackBook: WebBook = {
+    id: 'b-fallback',
+    topic: 'Offline Semiconductor Analysis',
+    timestamp: 1_700_000_000_000,
+    sourceMode: 'fallback_search',
+    chapters: [{
+      title: 'Chapter 1: Foundational Architecture',
+      content: 'Short evidence text describing semiconductor design patterns.',
+      definitions: [],
+      subTopics: [],
+      sourceUrls: [],
+      visualSeed: 'silicon wafer layout',
+    }],
+  };
+
+  const markup = renderToStaticMarkup(React.createElement(WebBookViewer, { webBook: fallbackBook }));
+  assert.ok(markup.includes('<img '), 'WebBookViewer must render img element for chapter image in fallback mode');
+  assert.ok(markup.includes('picsum.photos/seed/silicon'), 'Image must use visualSeed or chapter title');
+  assert.ok(markup.includes('silicon wafer layout'), 'Visual seed badge must be rendered');
 }
 
 console.log('snippetOnlyPagination tests passed');

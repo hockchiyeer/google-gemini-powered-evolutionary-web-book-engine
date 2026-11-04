@@ -62,8 +62,9 @@ export function containsPoisonBoilerplate(...texts: Array<string | null | undefi
 const CJK_SENTENCE_END_PATTERN = /[。！？][”’」』）)]*$/;
 export const MIN_CHAPTER_TEXT_PAGES = 3;
 const TARGET_WORDS_PER_TEXT_PAGE = 250;
+export const CHAPTER_NUMBER_PREFIX = /^\s*(?:(?:chapter|ch\.?|part|section)\s*\d+\s*[:.\-–—)]?\s*|第\s*[0-9一二三四五六七八九十百]+\s*[章节節部分]\s*[:：.\-–—]?\s*|\d+\s*[:.)\-–—]\s*)+/i;
 const STRUCTURED_EXPORT_HEADING_PATTERN = /^(?:VISUAL CONCEPT|CORE CONCEPTS|SUB-TOPICS|SOURCES|DEFINITIONS|GLOSSARY|TECHNICAL GLOSSARY)\s*:/i;
-const EXPORT_METADATA_LINE_PATTERN = /^(?:Generated on:|CHAPTER\s+\d+\s*:)/i;
+const EXPORT_METADATA_LINE_PATTERN = /^(?:Generated on:\s*.*|CHAPTER\s+\d+\s*(?::\s*)?)$/i;
 const JSONISH_KEY_PATTERN = /"(?:url|title|content|definitions|subTopics|summary|term|description|sourceUrl|priorityScore|informativeScore|authorityScore)"\s*:/i;
 const DOMAINISH_PATTERN = /\b(?:https?:\/\/|www\.|(?:[a-z0-9-]+\.)+(?:com|org|net|edu|gov|io|co(?:\.[a-z]{2})?|ac\.uk|co\.uk))\S*/gi;
 const URLISH_INLINE_PATTERN = /\b(?:https?:\/\/|www\.|(?:[a-z0-9-]+\.)+(?:com|org|net|edu|gov|[a-z]{2})(?:\.[a-z]{2})?\/)\S*/gi;
@@ -285,7 +286,11 @@ export function sanitizeStructuredLabel(text?: string | null, fallback = ""): st
 function sanitizeChapterForPresentation(chapter: Chapter, index: number, topic = ""): Chapter {
   const fallbackTitle = `Chapter ${index + 1}`;
   const safeTopic = sanitizeStructuredLabel(topic, "knowledge") || "knowledge";
-  const title = sanitizeStructuredLabel(chapter?.title, fallbackTitle) || fallbackTitle;
+  const rawTitle = sanitizeStructuredLabel(chapter?.title, fallbackTitle) || fallbackTitle;
+  const strippedTitle = rawTitle
+    .replace(/^(?:Chapter\s+\d+|第\s*[0-9一二三四五六七八九十百]+\s*[章节節部分]|\d+)\s*[:：\-–—]\s*/i, "")
+    .trim();
+  const title = strippedTitle || fallbackTitle;
   const content = sanitizeNarrativeText(chapter?.content || "");
   const visualSeed = sanitizeStructuredLabel(chapter?.visualSeed, title || safeTopic) || safeTopic;
   const definitions = Array.isArray(chapter?.definitions)

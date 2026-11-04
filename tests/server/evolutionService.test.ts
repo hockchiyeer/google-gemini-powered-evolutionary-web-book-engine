@@ -166,6 +166,27 @@ assert.equal(
   'A single bracket must never survive as a chapter title.'
 );
 
+assert.equal(
+  sanitizeStructuredLabel('Chapter 1: 成立渊源与创会宗旨', 'Chapter 1'),
+  'Chapter 1: 成立渊源与创会宗旨',
+  'A chapter title prefixed with Chapter 1: must not be discarded as metadata.'
+);
+assert.equal(
+  sanitizeStructuredLabel('CHAPTER 1: Origins and History', 'Chapter 1'),
+  'CHAPTER 1: Origins and History',
+  'An English chapter title prefixed with CHAPTER 1: must not be discarded.'
+);
+assert.equal(
+  sanitizeStructuredLabel('CHAPTER 1:', 'Chapter 1'),
+  'Chapter 1',
+  'A bare chapter header without title text must fall back to the fallback title.'
+);
+assert.equal(
+  sanitizeStructuredLabel('CHAPTER 1', 'Chapter 1'),
+  'Chapter 1',
+  'A bare chapter label without title text must fall back to the fallback title.'
+);
+
 const contaminatedNarrative = `[ { "url": "https://example.com/raw-source", "title": "Raw Source", "content": "Structured blob that should not survive into chapter prose." } ]
 
 VISUAL CONCEPT: Raw Source
@@ -283,6 +304,39 @@ assert.equal(
   'https://example.com/raw-source',
   'Malformed source titles should fall back to the URL instead of leaking bracket artifacts.'
 );
+
+const prefixedChaptersBook = sanitizeWebBookForPresentation({
+  id: 'book-prefix-test',
+  topic: '马来亚大学新青年学会',
+  timestamp: Date.now(),
+  chapters: [
+    {
+      title: 'Chapter 1: 成立渊源与创会宗旨',
+      content: '马来亚大学新青年学会的创会历史与早期学术自由斗争背景。',
+      definitions: [],
+      subTopics: [],
+      sourceUrls: [],
+    },
+    {
+      title: 'Chapter 10: 未来挑战与新世代青年愿景',
+      content: '面向未来发展的战略展望与社会责任实践分析。',
+      definitions: [],
+      subTopics: [],
+      sourceUrls: [],
+    },
+    {
+      title: 'Chapter 3',
+      content: '无副标题的纯序号章节保留原序号。',
+      definitions: [],
+      subTopics: [],
+      sourceUrls: [],
+    },
+  ],
+});
+
+assert.equal(prefixedChaptersBook.chapters[0].title, '成立渊源与创会宗旨', 'Redundant Chapter 1: prefix is cleanly stripped to leave real title');
+assert.equal(prefixedChaptersBook.chapters[1].title, '未来挑战与新世代青年愿景', 'Redundant Chapter 10: prefix is cleanly stripped to leave real title');
+assert.equal(prefixedChaptersBook.chapters[2].title, 'Chapter 3', 'Bare Chapter 3 retains chapter number when no subtitle exists');
 
 assert.equal(
   normalizeSourceLink({

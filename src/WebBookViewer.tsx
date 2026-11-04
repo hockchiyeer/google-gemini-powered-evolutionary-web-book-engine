@@ -74,7 +74,7 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
         <div className="space-y-8 flex-1 print:space-y-0">
           {chapterRenderPlan.map(({ chapter, titlePageNumber }, index) => (
             <a key={chapter.title + index} href={`#chapter-${index}`} target="_self" data-pdf-target-page={titlePageNumber} title={L.navigateTo(index + 1)} className="flex items-end gap-4 md:gap-6 group">
-              <span className="font-mono text-base opacity-40">0{index + 1}</span>
+              <span className="font-mono text-base opacity-40">{String(index + 1).padStart(2, '0')}</span>
               <span className="text-lg md:text-xl font-medium group-hover:underline underline-offset-8 decoration-1 break-words">{chapter.title}</span>
               <div className="flex-1 border-b border-dotted border-[#141414] opacity-20 mb-2" />
               <span className="font-mono text-base opacity-40">{L.locale === 'en' ? `P.${titlePageNumber}` : L.pageRef(titlePageNumber)}</span>
@@ -134,18 +134,13 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                       <>
                         <div id={`chapter-${index}`} className="flex items-center justify-between gap-4 mb-12 border-b border-[#141414]/10 pb-6">
                           <div className="flex items-center gap-4 min-w-0">
-                            <span className="w-10 h-10 bg-[#141414] text-white flex items-center justify-center font-mono text-sm">0{index + 1}</span>
+                            <span className="w-10 h-10 bg-[#141414] text-white flex items-center justify-center font-mono text-sm">{String(index + 1).padStart(2, '0')}</span>
                             <h3 className="text-3xl md:text-4xl font-serif italic font-bold tracking-tight break-words">{chapter.title}</h3>
                           </div>
                           <div className="text-[10px] uppercase font-bold opacity-30 tracking-widest">{L.chapterSlash(index + 1, chapterRenderPlan.length)}</div>
                         </div>
 
                         <div className="mb-10 relative group">
-                          {snippetOnly ? (
-                            <div className="h-24 w-full border border-[#141414] bg-[#F5F5F5] flex items-center justify-center">
-                              <span className="text-[10px] uppercase font-bold tracking-[0.3em] text-[#141414]/40">{chapter.title}</span>
-                            </div>
-                          ) : (
                           <div className="aspect-[16/9] w-full overflow-hidden border border-[#141414] bg-[#F5F5F5] shadow-inner">
                             <img
                               src={`https://picsum.photos/seed/${chapter.visualSeed || chapter.title}/1200/800`}
@@ -155,10 +150,9 @@ export function WebBookViewer({ webBook }: WebBookViewerProps) {
                               className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all duration-1000 scale-105 group-hover:scale-100"
                             />
                           </div>
-                          )}
-                          {!snippetOnly && <div className="absolute -bottom-4 right-8 max-w-[75%] bg-white border border-[#141414] px-4 py-2 text-[10px] uppercase font-bold tracking-widest flex items-center gap-3 shadow-md break-words">
+                          <div className="absolute -bottom-4 right-8 max-w-[75%] bg-white border border-[#141414] px-4 py-2 text-[10px] uppercase font-bold tracking-widest flex items-center gap-3 shadow-md break-words">
                             <ImageIcon size={12} /> {chapter.visualSeed}
-                          </div>}
+                          </div>
                         </div>
                       </>
                     ) : (

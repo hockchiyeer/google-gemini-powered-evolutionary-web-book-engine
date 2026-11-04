@@ -25,6 +25,7 @@ import {
   isValidConceptDefinition,
 } from "./searchFallbackShared";
 import {
+  CHAPTER_NUMBER_PREFIX,
   MIN_CHAPTER_TEXT_PAGES,
   containsPoisonBoilerplate,
   getRenderableDefinitions,
@@ -1289,8 +1290,6 @@ function isSearchEnginePage(url: URL): boolean {
 }
 
 // Model-written chapter titles often start with their own numbering ("Chapter 3:", "第三章：", "3."); it is noise in a search.
-const CHAPTER_NUMBER_PREFIX = /^\s*(?:(?:chapter|ch\.?|part|section)\s*\d+\s*[:.\-–—)]?\s*|第\s*[0-9一二三四五六七八九十百]+\s*[章节節部分]\s*[:：.\-–—]?\s*|\d+\s*[:.)\-–—]\s*)+/i;
-
 function buildReferenceQuery(topic: string, chapterTitle: string): string {
   const title = String(chapterTitle || '').replace(CHAPTER_NUMBER_PREFIX, '').replace(/\s+/g, ' ').trim();
   const shortTopic = summarizeTitle(topic, REFERENCE_QUERY_TOPIC_UNITS).replace(/…$/, '').trim();
@@ -1590,8 +1589,14 @@ async function assembleWebBookCore(
           : [];
         const primaryUrl = chapterSources[0]?.url || (verifiedSourcesPool[0]?.url || '');
 
+        const rawChapterTitle = String(chapterOutline?.title || '').trim();
+        const cleanChapterTitle = rawChapterTitle
+          .replace(CHAPTER_NUMBER_PREFIX, '')
+          .replace(/^[:：\-–—.\s]+|[:：\-–—.\s]+$/g, '')
+          .trim() || rawChapterTitle || `Chapter ${chapterIndex + 1}`;
+
         return {
-          title: chapterOutline.title,
+          title: cleanChapterTitle,
           content: chapterContent,
           definitions: (chapterData?.definitions || [])
             .filter((d: any) => isMeaningful(d.term, d.description))
@@ -1600,7 +1605,7 @@ async function assembleWebBookCore(
             .filter((s: any) => isMeaningful(s.title, s.summary))
             .map((s: any) => ({ ...s, sourceUrl: primaryUrl })),
           sourceUrls: chapterSources.length > 0 ? chapterSources : verifiedSourcesPool.slice(0, 3),
-          visualSeed: chapterOutline.visualSeed || `${topic} ${chapterOutline.title}`,
+          visualSeed: chapterOutline.visualSeed || `${topic} ${cleanChapterTitle}`,
         } as Chapter;
       };
 
