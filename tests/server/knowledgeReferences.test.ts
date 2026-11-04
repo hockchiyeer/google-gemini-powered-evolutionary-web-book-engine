@@ -53,6 +53,20 @@ const payload = (urls: string[], extra: Partial<SearchFallbackPayload> = {}): Se
   assert.ok(buildReferenceSearchLinks('台北市長選舉', '第一章')[0].url.startsWith('https://zh.wikipedia.org/'));
 }
 
+// 1b. Numbering the model put in the title is dropped, and a descriptive title is searched on its own
+{
+  const decoded = (title: string) => decodeURIComponent(buildReferenceSearchLinks(TOPIC, title)[0].url.split('search=')[1]);
+  assert.equal(decoded('Chapter 1: Cloud Infrastructure and Datacenter Dynamics'), 'Cloud Infrastructure and Datacenter Dynamics');
+  assert.equal(decoded('CHAPTER 12 - Semiconductor Fab Capacity and Memory Constraints'), 'Semiconductor Fab Capacity and Memory Constraints');
+  assert.equal(decoded('3. Hyperscale Cloud Infrastructure: The New Utility'), 'Hyperscale Cloud Infrastructure: The New Utility');
+  assert.equal(decoded('第一章：浴室里的冷笑与荒诞序幕'), '浴室里的冷笑与荒诞序幕');
+  const generic = decoded('Chapter 6: Future Outlook');
+  assert.ok(generic.endsWith('Future Outlook') && generic.length > 'Future Outlook'.length, 'a generic title keeps topic context');
+  assert.equal(generic, 'AI\'s biggest drivers and sources of revenue are cloud infrastructure, cloud services Future Outlook', 'topic context ends on a clause, not mid-phrase');
+  assert.ok(generic.length <= 120, 'topic context is short');
+  assert.ok(!/chapter\s*\d/i.test(generic));
+}
+
 // 2. Live results are attached per chapter, deduplicated across chapters, capped, and never search-engine pages
 {
   const queries: string[] = [];

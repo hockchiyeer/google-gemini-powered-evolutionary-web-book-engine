@@ -1275,7 +1275,7 @@ function parseJsonObject(text: string | undefined): any {
 export const KNOWLEDGE_REFERENCES_PER_CHAPTER = 3;
 const KNOWLEDGE_REFERENCE_LOOKUP_TIMEOUT_MS = 15_000;
 const KNOWLEDGE_REFERENCE_CONCURRENCY = 3;
-const REFERENCE_QUERY_TOPIC_UNITS = 60;
+const REFERENCE_QUERY_TOPIC_UNITS = 90;
 const CJK_ANY = /[ᄀ-ᇿ⺀-꓏가-힯豈-﫿＀-￯]/;
 
 type ReferenceLookup = (query: string, options: EngineOptions) => Promise<SearchFallbackPayload>;
@@ -1288,11 +1288,17 @@ function isSearchEnginePage(url: URL): boolean {
   );
 }
 
+// Model-written chapter titles often start with their own numbering ("Chapter 3:", "第三章：", "3."); it is noise in a search.
+const CHAPTER_NUMBER_PREFIX = /^\s*(?:(?:chapter|ch\.?|part|section)\s*\d+\s*[:.\-–—)]?\s*|第\s*[0-9一二三四五六七八九十百]+\s*[章节節部分]\s*[:：.\-–—]?\s*|\d+\s*[:.)\-–—]\s*)+/i;
+
 function buildReferenceQuery(topic: string, chapterTitle: string): string {
+  const title = String(chapterTitle || '').replace(CHAPTER_NUMBER_PREFIX, '').replace(/\s+/g, ' ').trim();
   const shortTopic = summarizeTitle(topic, REFERENCE_QUERY_TOPIC_UNITS).replace(/…$/, '').trim();
-  const title = String(chapterTitle || '').trim();
   if (!title) return shortTopic;
-  if (!shortTopic || title.toLowerCase().includes(shortTopic.toLowerCase())) return title;
+  // A descriptive title is a better search than the same title buried in a clipped topic; a generic one ("Future Outlook")
+  // needs the topic to mean anything.
+  const specific = CJK_ANY.test(title) ? [...title].length >= 8 : title.split(/\s+/).length >= 4;
+  if (specific || !shortTopic || title.toLowerCase().includes(shortTopic.toLowerCase())) return title;
   return `${shortTopic} ${title}`.trim();
 }
 
