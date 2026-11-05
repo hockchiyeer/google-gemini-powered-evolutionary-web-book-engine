@@ -28,7 +28,9 @@ import {
 } from './searchStrategies/shared.ts';
 import { collectGoogleSearchEvidence } from './searchStrategies/googleStrategy.ts';
 import { collectDuckDuckGoEvidence } from './searchStrategies/duckDuckGoStrategy.ts';
+import { enrichResultsWithPageExcerpts, type PageExcerptOptions } from './searchStrategies/pageExcerpt.ts';
 import { buildSyntheticFallbackPayload } from '../src/services/evolutionService.ts';
+import { SYNTHETIC_FALLBACK_DIAGNOSTIC } from '../src/services/searchFallbackShared.ts';
 
 const SEARCH_ROUTE = '/api/search';
 const EVOLVE_ROUTE = '/api/evolve';
@@ -200,9 +202,35 @@ function normalizeFallbackMode(candidate: unknown): SearchFallbackMode | null {
   return isSearchFallbackMode(candidate) ? candidate : null;
 }
 
+export interface BuildPayloadOptions {
+  /** Read the result pages for body text (default). Without it a Web-book only has snippet-sized evidence. */
+  readPages?: boolean;
+  pageFetch?: PageExcerptOptions;
+}
+
 export async function buildGoogleSearchFallbackPayload(
   query: string,
-  mode: SearchFallbackMode = 'google_duckduckgo'
+  mode: SearchFallbackMode = 'google_duckduckgo',
+  options: BuildPayloadOptions = {}
+): Promise<SearchFallbackPayload> {
+  const payload = await collectSearchFallbackPayload(query, mode);
+  const readPages = options.readPages ?? process.env.WEBBOOK_READ_PAGES !== 'off';
+  if (!readPages || payload.results.length === 0 || payload.diagnostics?.includes(SYNTHETIC_FALLBACK_DIAGNOSTIC)) {
+    return payload;
+  }
+
+  const results = await enrichResultsWithPageExcerpts(payload.results, query, options.pageFetch);
+  const readCount = results.filter((result, index) => result.excerpt && result.excerpt !== payload.results[index].excerpt).length;
+  return {
+    ...payload,
+    results,
+    diagnostics: [...(payload.diagnostics || []), `page-excerpts:${readCount}/${results.length}`],
+  };
+}
+
+async function collectSearchFallbackPayload(
+  query: string,
+  mode: SearchFallbackMode
 ): Promise<SearchFallbackPayload> {
   if (mode === 'off') {
     throw new Error('Fallback search is disabled for this request.');

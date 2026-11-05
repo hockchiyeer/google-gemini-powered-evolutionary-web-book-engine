@@ -30,6 +30,7 @@ import {
   containsPoisonBoilerplate,
   getRenderableDefinitions,
   getRenderableSubTopics,
+  isPageChromeText,
   joinSentences,
   looksLikeAssemblyCode,
   sanitizeNarrativeText,
@@ -932,29 +933,17 @@ export async function searchAndExtract(
   const fallbackPopulation: WebPageGenotype[] = fallbackPayload.results.map((res, index) => {
     const rawContent = [res.snippet, res.excerpt].filter(Boolean).join(' ');
     // Strip URL artifacts first and split on sentence boundaries: splitting on every "." also cut URLs, decimals and
-    // abbreviations into fragments that were then shown as definitions.
-    const sentences = splitIntoSentences(sanitizeNarrativeText(rawContent)).filter(s => s.length > 20);
-
-    // Only sentences that really state "term: description" / "term is defined as / refers to / represents" become definitions.
-    const definitions: Definition[] = [];
-    for (const sent of sentences) {
-      const match = sent.match(/^([^:\n]{3,40}):\s+(.+)$/) ||
-        sent.match(/^([A-Z][a-zA-Z0-9\s\-]{2,35})\s+(?:is defined as|refers to|represents)\s+(.+)$/i);
-      if (match) {
-        const term = match[1].trim(), desc = match[2].trim();
-        if (isValidConceptDefinition(term, desc) && isMeaningful(term, desc)) {
-          definitions.push({ term, description: desc, sourceUrl: res.url });
-          break;
-        }
-      }
-    }
+    // abbreviations into fragments that were then shown as definitions. Interface text that came along with the page
+    // ("13,677 followers", "Cite this / Export Record ...") is not something the source says and is dropped here.
+    const readable = splitIntoSentences(sanitizeNarrativeText(rawContent)).filter(sentence => !isPageChromeText(sentence));
+    const sentences = readable.filter(s => s.length > 20);
 
     return {
       id: `fallback-${index}-${Date.now()}`,
       url: res.url,
       title: res.title,
-      content: rawContent || res.title,
-      definitions,
+      content: readable.length > 0 ? joinSentences(readable) : (rawContent || res.title),
+      definitions: extractDefinitionsFromSentences(sentences, res.url),
       // Search snippets have no sub-topic structure; restating their sentences under "Key Area N" titles only duplicated them.
       subTopics: [],
       informativeScore: 0.85,
@@ -974,6 +963,37 @@ export async function searchAndExtract(
     fallbackSource: fallbackEvidence.source,
     fallbackReason: GEMINI_SEARCH_CAUSE_TO_FALLBACK_REASON[geminiCause],
   };
+}
+
+const MAX_DEFINITIONS_PER_PAGE = 3;
+// "term: description", "X is defined as / refers to / represents Y", Malay "X ialah / adalah / merupakan Y", Chinese "X是 / 指 / 乃 Y".
+const DEFINITION_PATTERNS: RegExp[] = [
+  /^([^:\n]{3,40}):\s+(.+)$/,
+  /^([A-Z][a-zA-Z0-9\s\-]{2,35})\s+(?:is defined as|refers to|represents|is a|is an)\s+(.+)$/i,
+  /^([A-Z][\p{L}0-9\s\-]{2,45}?)\s+(?:ialah|adalah|merupakan|ditakrifkan sebagai)\s+(.+)$/iu,
+  /^([\u3400-\u9fff][\u3400-\u9fffA-Za-z0-9·（）() ]{1,18}?)(?:是|指的是|即|乃|为)([\u3400-\u9fff].{9,})$/u,
+];
+
+export function extractDefinitionsFromSentences(sentences: string[], sourceUrl: string, max = MAX_DEFINITIONS_PER_PAGE): Definition[] {
+  const definitions: Definition[] = [];
+  for (const sentence of sentences) {
+    if (definitions.length >= max) break;
+    for (const pattern of DEFINITION_PATTERNS) {
+      const match = sentence.match(pattern);
+      if (!match) continue;
+      const term = match[1].trim();
+      const description = match[2].trim();
+      if (
+        isValidConceptDefinition(term, description)
+        && isMeaningful(term, description)
+        && !definitions.some(existing => existing.term.toLowerCase() === term.toLowerCase())
+      ) {
+        definitions.push({ term, description, sourceUrl });
+        break;
+      }
+    }
+  }
+  return definitions;
 }
 
 export function calculateFitness(
@@ -1087,6 +1107,9 @@ export async function evolve(
   };
 }
 
+// Least evidence a chapter of an offline book is written from: a one-sentence chapter is a heading with a caption.
+const FALLBACK_MIN_SENTENCES_PER_CHAPTER = 2;
+
 export function synthesizeFallbackWebBook(
   topic: string,
   sources: WebPageGenotype[],
@@ -1111,6 +1134,7 @@ export function synthesizeFallbackWebBook(
   const evidence: Array<{ text: string; url: string }> = [];
   pool.forEach(page => {
     splitIntoSentences(sanitizeNarrativeText(page.content)).forEach(text => {
+      if (isPageChromeText(text)) return;
       if (!evidence.some(kept => calculateTextSimilarity(kept.text, text) >= 0.88)) {
         evidence.push({ text, url: page.url });
       }
@@ -1144,13 +1168,22 @@ export function synthesizeFallbackWebBook(
     { title: "Future Outlook, Challenges & Horizons", seed: "frontiers and future" }
   ];
 
+  // Chapter count follows the amount of evidence: six chapters made of one sentence each only look like a book. With little
+  // text fewer, fuller chapters are written, taking the blueprint titles spread across the arc (opening ... outlook).
+  const chapterCount = Math.max(1, Math.min(
+    chapterBlueprints.length,
+    Math.floor(evidence.length / FALLBACK_MIN_SENTENCES_PER_CHAPTER)
+  ));
+  const chosenBlueprints = Array.from({ length: chapterCount }, (_, i) =>
+    chapterBlueprints[chapterCount === 1 ? 0 : Math.round((i * (chapterBlueprints.length - 1)) / (chapterCount - 1))]
+  );
+
   const chapters: Chapter[] = [];
-  chapterBlueprints.forEach((bp, idx) => {
-    // Spread the evidence evenly over the chapter arc. With little evidence a chapter is left out rather than padded
-    // with generic wording.
+  chosenBlueprints.forEach((bp, idx) => {
+    // Spread the evidence evenly over the chapters. With no evidence a chapter is left out rather than padded with generic wording.
     const units = evidence.slice(
-      Math.floor((idx * evidence.length) / chapterBlueprints.length),
-      Math.floor(((idx + 1) * evidence.length) / chapterBlueprints.length)
+      Math.floor((idx * evidence.length) / chosenBlueprints.length),
+      Math.floor(((idx + 1) * evidence.length) / chosenBlueprints.length)
     );
     if (units.length === 0) return;
 

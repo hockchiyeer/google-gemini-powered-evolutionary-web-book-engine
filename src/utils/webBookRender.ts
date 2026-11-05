@@ -59,6 +59,32 @@ export function containsPoisonBoilerplate(...texts: Array<string | null | undefi
     return POISON_KEYWORDS.some((word) => lowered.includes(word)) || COPYRIGHT_NOTICE_PATTERN.test(text || "");
   });
 }
+// Interface text that search snippets and scraped pages carry along with the real content: social-media counters,
+// library-catalogue export menus, cookie/share/login prompts, contact blocks. None of it is something a source "says".
+const PAGE_CHROME_PATTERNS = [
+  /^[\d,.\s]+(?:[kKmM]\s+)?(?:followers?|likes?|subscribers?|views?|members?|shares?|comments?|talking about this|粉丝|关注者|人关注|人赞|次观看)\b/i,
+  /\b[\d,.]+\s*(?:[kKmM]\s+)?(?:followers?|likes?|subscribers?)\s*[·•|-]/i,
+  /\b(?:cite this|export record|export to (?:refworks|endnote\w*|bibtex|ris)|staff view|save to list|email this|text this|print this page|add to (?:cart|basket|favou?rites))\b/i,
+  /^(?:skip to (?:main )?content|log ?in|sign ?(?:in|up)|subscribe|follow us|share (?:on|this)|read more|learn more|click here|view (?:all|more)|back to top|related (?:posts|articles)|leave a (?:reply|comment)|menu|search for:?|home\s*[»>|])\b/i,
+  /\b(?:this link opens in a new window|opens in a new (?:window|tab)|we use cookies|accept (?:all )?cookies|enable javascript|javascript is (?:disabled|required)|您的浏览器|请开启|点击(?:这里|此处|查看))/i,
+  /\b(?:tel|fax|phone|telefon|电话|传真)\s*[:：]\s*\(?\+?\d/i,
+  /\bcontact info(?:rmation)?\b.{0,60}\b(?:tel|email|e-mail|fax)\b/i,
+  /\b(?:posted|published|updated|last modified)\s+(?:on|by)\b.{0,40}$/i,
+];
+
+/** True when the text is website interface or navigation chrome rather than content a source states. */
+export function isPageChromeText(text?: string | null): boolean {
+  const value = (text || "").replace(/\s+/g, " ").trim();
+  if (!value) return false;
+  if (PAGE_CHROME_PATTERNS.some((pattern) => pattern.test(value))) return true;
+  // A run of Title Case / capitalised fragments with no verb-like connective is a menu, not a sentence.
+  const words = value.split(" ");
+  if (words.length >= 8 && !/[.!?。！？;；]/.test(value)) {
+    const capitalised = words.filter((word) => /^[A-Z][a-z]*$/.test(word)).length;
+    return capitalised / words.length >= 0.7;
+  }
+  return false;
+}
 const CJK_SENTENCE_END_PATTERN = /[。！？][”’」』）)]*$/;
 export const MIN_CHAPTER_TEXT_PAGES = 3;
 const TARGET_WORDS_PER_TEXT_PAGE = 250;

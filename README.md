@@ -21,7 +21,7 @@ Searching a topic returns many pages that repeat each other, and asking an LLM f
 - **Multi-Tier Search Fallback Resilience**:
   - Graceful degradation when Gemini API quotas or rate limits are reached.
   - Configurable fallback routing: `Google + DuckDuckGo`, `Google only`, `DuckDuckGo only`, or `Off (Gemini only)`.
-  - Offline evolutionary synthesis fallback ensuring books are generated even during upstream API outages.
+  - Offline evolutionary synthesis fallback ensuring books are generated even during upstream API outages. Without a Gemini key the search server also reads the result pages themselves (public pages only, `server/searchStrategies/pageExcerpt.ts`: body paragraphs, no menus/cookie/share/catalogue chrome, one page per host, hard time budget) so chapters are written from page text rather than 1–3-sentence snippets; set `WEBBOOK_READ_PAGES=off` to use snippets only. Offline chapters hold at least two real sentences, so thin evidence yields fewer chapters instead of one-line ones.
 - **Content Sanitization & Anti-Poisoning Heuristics**:
   - Heuristic screening for machine-code artifacts, hex bytes, and digit noise.
   - Automatic filtering of copyright disclaimers, scraper warnings, and promotional boilerplate.
@@ -112,6 +112,7 @@ The same route handlers run in two hosts: Vite plugins during `npm run dev` / `n
 │   ├── server.ts                        # Standalone full-stack server entry (`npm start`)
 │   └── searchStrategies/
 │       ├── duckDuckGoStrategy.ts        # DuckDuckGo fallback scraper strategy
+│       ├── pageExcerpt.ts               # Reads result pages for body text (offline book depth)
 │       ├── googleStrategy.ts            # Google Search fallback strategy
 │       ├── shared.ts                    # Search deduplication & ranking utilities
 │       └── types.ts                     # Strategy typing definitions
@@ -285,7 +286,7 @@ The table below clarifies whether each `npm` / `npm run` command manages the loc
 | `npm run test:e2e`<br>*(or `npm run cy:run:local`)* | **Requires Running Server**<br>*(Run `npm run dev` first)* | Runs the full BDD test suite headlessly and compiles the HTML report against an already running local server. |
 | `npm run cy:run` | **Requires Running Server**<br>*(Run `npm run dev` first)* | Runs Cypress headlessly against an already running server without re-generating HTML report. |
 | `npm run cy:open` | **Requires Running Server**<br>*(Run `npm run dev` first)* | Opens the interactive Cypress GUI for visual step-by-step browser testing. |
-| `npm run test:server` | **Not Required** *(Standalone)* | Runs the 17 `tsx` unit/regression tests in `tests/server/`: Gemini error classification and retry, search fallback routing and client, fallback notices, evolution and chapter assembly, knowledge references, snippet-only pagination, content filters, document titles and boundary summarization, hyperlinked/CJK/print-friendly exports, CJK font, and export label localisation. |
+| `npm run test:server` | **Not Required** *(Standalone)* | Runs the 18 `tsx` unit/regression tests in `tests/server/`: Gemini error classification and retry, search fallback routing and client, fallback notices, evolution and chapter assembly, knowledge references, snippet-only pagination, offline book depth (page excerpts, chrome filtering), content filters, document titles and boundary summarization, hyperlinked/CJK/print-friendly exports, CJK font, and export label localisation. |
 | `npm run report:generate` | **Not Required** *(Standalone)* | Compiles the visual HTML report from existing Cucumber JSON test result artifacts. |
 
 ### 6a. Troubleshooting Gemini connectivity
