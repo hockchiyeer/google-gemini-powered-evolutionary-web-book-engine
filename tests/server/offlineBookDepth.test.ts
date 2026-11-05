@@ -7,7 +7,7 @@ import {
   isFetchablePageUrl,
 } from '../../server/searchStrategies/pageExcerpt.ts';
 import { buildGoogleSearchFallbackPayload } from '../../server/googleSearchFallback.ts';
-import { extractDefinitionsFromSentences, synthesizeFallbackWebBook } from '../../src/services/evolutionService.ts';
+import { chooseChapterCuts, cleanSourceTitle, extractDefinitionsFromSentences, synthesizeFallbackWebBook } from '../../src/services/evolutionService.ts';
 import { isPageChromeText } from '../../src/utils/webBookRender.ts';
 import { countWords } from '../../src/services/searchFallbackShared.ts';
 import type { SearchFallbackResult } from '../../src/types.ts';
@@ -190,6 +190,45 @@ const ARTICLE = `<html><head><title>Persatuan Bahasa Cina Universiti Malaya</tit
   }
   const allSentences = rich.chapters.flatMap((c) => c.content.split(/(?<=[.!?])\s+/));
   assert.equal(new Set(allSentences).size, allSentences.length, 'no sentence repeats across chapters');
+}
+
+// 10. Chapter titles come from the sources, not from a fixed outline.
+{
+  assert.equal(cleanSourceTitle('Persatuan Bahasa Cina Universiti Malaya - Wikipedia, the free encyclopedia', 'https://en.wikipedia.org/wiki/X'), 'Persatuan Bahasa Cina Universiti Malaya');
+  assert.equal(cleanSourceTitle('Wikipedia - History of the society', 'https://en.wikipedia.org/wiki/X'), 'History of the society');
+  assert.equal(cleanSourceTitle('Sejarah Persatuan | PBCUM', 'https://pbcum.com/sejarah'), 'Sejarah Persatuan');
+  assert.equal(cleanSourceTitle('PBCUM | Sejarah Persatuan', 'https://pbcum.com/sejarah'), 'Sejarah Persatuan');
+  assert.equal(cleanSourceTitle('1. Chapter 3: 学会简史 - 马大华文学会', 'https://pbcum.com/a'), '学会简史');
+  assert.equal(cleanSourceTitle('Facebook', 'https://www.facebook.com/pbcum'), '');
+  assert.equal(cleanSourceTitle('pbcum.com', 'https://pbcum.com'), '');
+  assert.ok(cleanSourceTitle('A'.repeat(40) + ' ' + 'word '.repeat(40), 'https://x.org').length <= 81);
+
+  const sentences = (n: number, tag: string) => Array.from({ length: n }, (_, i) => `${tag} fact number ${i + 1} describes a different programme, committee decision or event of the society in detail.`).join(' ');
+  const pg = (n: number, title: string, url: string, tag: string, count = 4) => ({ id: `t-${n}`, title, url, content: sentences(count, tag), definitions: [], subTopics: [], informativeScore: 0.9, authorityScore: 0.9, fitness: 0 });
+  const topic = 'Persatuan Bahasa Cina Universiti Malaya';
+  const book = synthesizeFallbackWebBook(topic, [
+    pg(1, `${topic} - Wikipedia`, 'https://en.wikipedia.org/wiki/PBCUM', 'Alpha'),
+    pg(2, 'Sejarah Persatuan | PBCUM', 'https://pbcum.com/sejarah', 'Bravo'),
+    pg(3, 'Facebook', 'https://www.facebook.com/pbcum', 'Charlie'),
+    pg(4, 'Sejarah Persatuan | Other', 'https://other.example.org/sejarah', 'Delta'),
+  ] as any);
+  const titles = book.chapters.map((c) => c.title);
+  assert.equal(new Set(titles).size, titles.length, `titles must be unique: ${titles.join(' / ')}`);
+  assert.ok(!titles.some((x) => /Foundations|Core Architecture|Future Outlook|Key Principles/.test(x)), 'no fixed outline titles');
+  assert.ok(!titles.includes(topic), 'a chapter is not titled with just the topic');
+  assert.ok(titles.includes('Sejarah Persatuan'), titles.join(' / '));
+  assert.ok(!titles.some((x) => /facebook/i.test(x)), 'site names are not chapter titles');
+  // The Facebook text still reaches a chapter, titled from its own first sentence.
+  assert.ok(book.chapters.some((c) => /Charlie fact number 1/.test(c.content)));
+  assert.ok(book.chapters.some((c) => /^Charlie fact number 1/.test(c.title)), titles.join(' / '));
+  assert.ok(book.chapters.every((c) => c.visualSeed.includes(c.title)));
+
+  // Cuts land on source changes when that is near an even split, and keep two sentences per chapter.
+  const urls = ['a', 'a', 'a', 'b', 'b', 'b', 'b', 'c', 'c', 'c'];
+  const cuts = chooseChapterCuts(urls, 3);
+  assert.deepEqual(cuts, [0, 3, 7, 10]);
+  assert.deepEqual(chooseChapterCuts(['a', 'b', 'c', 'd'], 2), [0, 2, 4]);
+  assert.deepEqual(chooseChapterCuts(['a', 'a', 'a'], 1), [0, 3]);
 }
 
 console.log('offlineBookDepth tests passed');

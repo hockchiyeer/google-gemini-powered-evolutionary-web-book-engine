@@ -13,7 +13,7 @@ import {
   WebPageGenotype,
 } from "../types";
 import { fetchGoogleSearchFallback } from "./googleSearchFallbackClient";
-import { summarizeTitle } from "./documentTitle";
+import { clipLabelAtWordBoundary, summarizeTitle } from "./documentTitle";
 import { buildGeminiUserFacingErrorMessage, GeminiFailureReason, NON_RECOVERABLE_GEMINI_REASONS } from "./geminiUserFacingErrors";
 import { isNonJsonResponseText } from "./safeResponse";
 import {
@@ -1107,6 +1107,92 @@ export async function evolve(
   };
 }
 
+const FALLBACK_MAX_CHAPTERS = 6;
+const CHAPTER_TITLE_MAX_CHARS = 80;
+// Titles that name a website or a page type, not what the page is about.
+const GENERIC_TITLE_PATTERN = /^(?:home(?:page)?|index|untitled|welcome|main page|about(?: us)?|contact(?: us)?|login|sign in|facebook|instagram|twitter|youtube|scribd|wikipedia|search results?|page \d+|无标题|首页|主页|欢迎)$/i;
+const TITLE_SEPARATOR = /\s+(?:[-|–—·•:]{1,2}|::)\s+|\s*[|｜]\s*/;
+
+function normalizeTitleKey(title: string): string {
+  return title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+}
+
+/** The page's own heading without the site name, counters or truncation marks ("Foo - Wikipedia" -> "Foo"). */
+export function cleanSourceTitle(rawTitle: string, url = ''): string {
+  const host = (() => { try { return new URL(url).hostname.replace(/^www\./, '').toLowerCase(); } catch { return ''; } })();
+  const hostLabel = host.split('.')[0] || '';
+  const segments = sanitizeNarrativeText(rawTitle)
+    .replace(/\s+/g, ' ')
+    .replace(CHAPTER_NUMBER_PREFIX, '')
+    .replace(/\s*(?:\.{3}|…)\s*$/, '')
+    .split(TITLE_SEPARATOR)
+    .map(segment => segment.trim())
+    .filter(Boolean);
+  const isSiteName = (segment: string) => {
+    const key = normalizeTitleKey(segment).replace(/ /g, '');
+    return GENERIC_TITLE_PATTERN.test(segment.trim()) || (hostLabel.length > 2 && (key === hostLabel || key === host.replace(/\./g, '')));
+  };
+  const chosen = segments.find(segment => !isSiteName(segment) && /[\p{L}\p{N}]/u.test(segment)) || '';
+  if (!chosen || /^[a-z0-9_-]+\.[a-z]{2,}$/i.test(chosen)) return '';
+  return clipLabelAtWordBoundary(chosen, CHAPTER_TITLE_MAX_CHARS).replace(/[\s,;:，；：、-]+$/, '').trim();
+}
+
+/**
+ * Chapter titles come from the evidence: the page most of the chapter's sentences were taken from supplies the heading,
+ * then the next source in the chapter, and finally the chapter's own first sentence. A title is never repeated and never
+ * just the book's topic, so the table of contents tells the sources apart.
+ */
+export function deriveChapterTitle(
+  units: Array<{ text: string; url: string }>,
+  titleByUrl: Map<string, string>,
+  topic: string,
+  usedTitles: Set<string>,
+  index: number
+): string {
+  const counts = new Map<string, number>();
+  units.forEach(unit => counts.set(unit.url, (counts.get(unit.url) || 0) + 1));
+  const ranked = [...counts.entries()].sort((x, y) => y[1] - x[1]).map(([url]) => url);
+  const topicKey = normalizeTitleKey(topic);
+  const acceptable = (title: string) => {
+    const key = normalizeTitleKey(title);
+    return Boolean(key) && !usedTitles.has(key) && key !== topicKey && calculateTextSimilarity(key, topicKey) < 0.9;
+  };
+
+  for (const url of ranked) {
+    const title = cleanSourceTitle(titleByUrl.get(url) || '', url);
+    if (title && acceptable(title)) return title;
+  }
+
+  const lead = clipLabelAtWordBoundary(units[0].text.replace(/[\s.。!?！？]+$/, ''), 60).replace(/…$/, '').trim();
+  if (lead && acceptable(lead)) return lead;
+  return `${clipLabelAtWordBoundary(topic, 60)} · ${index + 1}`;
+}
+
+/**
+ * Chapter boundaries (start indices plus the end) over evidence sentences: as even as possible, moved to the nearest point
+ * where the source changes (within a third of a chapter) so a source is not split across chapters needlessly, and never
+ * leaving a chapter with fewer than FALLBACK_MIN_SENTENCES_PER_CHAPTER sentences.
+ */
+export function chooseChapterCuts(urls: string[], chapterCount: number): number[] {
+  const total = urls.length;
+  const minSize = Math.min(FALLBACK_MIN_SENTENCES_PER_CHAPTER, Math.max(1, Math.floor(total / chapterCount)));
+  const slack = Math.floor(total / chapterCount / 3);
+  const cuts = [0];
+  for (let k = 1; k < chapterCount; k += 1) {
+    const ideal = Math.round((k * total) / chapterCount);
+    let best = ideal;
+    for (let d = 0; d <= slack; d += 1) {
+      const hit = [ideal - d, ideal + d].find(i => i > 0 && i < total && urls[i] !== urls[i - 1]);
+      if (hit !== undefined) { best = hit; break; }
+    }
+    const lo = cuts[cuts.length - 1] + minSize;
+    const hi = total - minSize * (chapterCount - k);
+    cuts.push(Math.max(lo, Math.min(best, hi)));
+  }
+  cuts.push(total);
+  return cuts;
+}
+
 // Least evidence a chapter of an offline book is written from: a one-sentence chapter is a heading with a caption.
 const FALLBACK_MIN_SENTENCES_PER_CHAPTER = 2;
 
@@ -1150,42 +1236,25 @@ export function synthesizeFallbackWebBook(
     return claimed;
   };
 
-  const isCjkTopic = /[\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/.test(topic);
-
-  const chapterBlueprints = isCjkTopic ? [
-    { title: "基础与历史演进", seed: "起源与背景" },
-    { title: "核心架构与概念框架", seed: "结构蓝图" },
-    { title: "关键原则、机制与方法", seed: "机制与过程" },
-    { title: "运行动态与现实执行", seed: "现实实施" },
-    { title: "对比评估与系统分析", seed: "分析与范式" },
-    { title: "未来展望、挑战与前景", seed: "前沿与未来" }
-  ] : [
-    { title: "Foundations & Historical Perspective", seed: "origins and emergence" },
-    { title: "Core Architecture & Conceptual Framework", seed: "structural blueprint" },
-    { title: "Key Principles, Mechanics & Methodologies", seed: "mechanics and processes" },
-    { title: "Operational Dynamics & Real-World Execution", seed: "practical implementation" },
-    { title: "Comparative Evaluation & Systemic Analysis", seed: "analysis and paradigms" },
-    { title: "Future Outlook, Challenges & Horizons", seed: "frontiers and future" }
-  ];
-
-  // Chapter count follows the amount of evidence: six chapters made of one sentence each only look like a book. With little
-  // text fewer, fuller chapters are written, taking the blueprint titles spread across the arc (opening ... outlook).
+  // Chapter count follows the amount of evidence: six chapters made of one sentence each only look like a book.
   const chapterCount = Math.max(1, Math.min(
-    chapterBlueprints.length,
+    FALLBACK_MAX_CHAPTERS,
     Math.floor(evidence.length / FALLBACK_MIN_SENTENCES_PER_CHAPTER)
   ));
-  const chosenBlueprints = Array.from({ length: chapterCount }, (_, i) =>
-    chapterBlueprints[chapterCount === 1 ? 0 : Math.round((i * (chapterBlueprints.length - 1)) / (chapterCount - 1))]
-  );
+  const cuts = chooseChapterCuts(evidence.map(unit => unit.url), chapterCount);
+  const titleByUrl = new Map<string, string>();
+  pool.forEach(page => { if (page.url && !titleByUrl.has(page.url)) titleByUrl.set(page.url, page.title); });
+  const usedTitles = new Set<string>();
 
   const chapters: Chapter[] = [];
-  chosenBlueprints.forEach((bp, idx) => {
-    // Spread the evidence evenly over the chapters. With no evidence a chapter is left out rather than padded with generic wording.
-    const units = evidence.slice(
-      Math.floor((idx * evidence.length) / chosenBlueprints.length),
-      Math.floor(((idx + 1) * evidence.length) / chosenBlueprints.length)
-    );
+  cuts.slice(0, -1).forEach((start, idx) => {
+    // Chapters follow the sources: a cut lands where one source ends and the next begins whenever that is close to an even
+    // split. With no evidence a chapter is left out rather than padded with generic wording.
+    const units = evidence.slice(start, cuts[idx + 1]);
     if (units.length === 0) return;
+
+    const title = deriveChapterTitle(units, titleByUrl, topic, usedTitles, idx);
+    usedTitles.add(normalizeTitleKey(title));
 
     // Same paragraph count the renderer paginates a chapter into, so no paragraph is cut mid-sentence.
     const paragraphCount = Math.min(MIN_CHAPTER_TEXT_PAGES, units.length);
@@ -1199,12 +1268,12 @@ export function synthesizeFallbackWebBook(
     const chapterSources = validSources.filter(source => unitUrls.has(source.url));
 
     chapters.push({
-      title: bp.title,
+      title,
       content: narrative,
       definitions: claimFor(unplacedDefinitions, unitUrls, 3),
       subTopics: claimFor(unplacedSubTopics, unitUrls, 2),
       sourceUrls: chapterSources.length > 0 ? chapterSources : validSources.slice(0, 3),
-      visualSeed: `${topic} ${bp.seed}`,
+      visualSeed: `${topic} ${title}`,
     });
   });
 
