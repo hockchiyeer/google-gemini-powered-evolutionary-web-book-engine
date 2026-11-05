@@ -1137,6 +1137,19 @@ export function cleanSourceTitle(rawTitle: string, url = ''): string {
   return clipLabelAtWordBoundary(chosen, CHAPTER_TITLE_MAX_CHARS).replace(/[\s,;:，；：、-]+$/, '').trim();
 }
 
+// Sentence-opening connectives that make a clipped sentence read as the middle of a thought.
+const LEADING_CONNECTIVE = /^(?:与此同时|同时|此外|另外|此後|此后|然而|但是|因此|所以|而且|另一方面|however|meanwhile|moreover|furthermore|in addition|additionally|also|and|but|so|dengan itu|selain itu|manakala|namun)\s*[,，、]?\s*/i;
+
+/** A chapter's own first sentence as a heading: connective dropped, cut at the first clause, short. */
+export function leadSentenceTitle(sentence: string): string {
+  const text = sentence.replace(/[\s.。!?！？]+$/, '').replace(LEADING_CONNECTIVE, '').trim();
+  const cjk = /[\u3400-\u9fff]/.test(text);
+  const minClause = cjk ? 8 : 20;
+  const clause = text.split(/[,;，；、:：]/)[0].trim();
+  const base = clause.length >= minClause ? clause : text;
+  return clipLabelAtWordBoundary(base, cjk ? 24 : 60).replace(/…$/, '').replace(/[\s,;:，；：、-]+$/, '').trim();
+}
+
 /**
  * Chapter titles come from the evidence: the page most of the chapter's sentences were taken from supplies the heading,
  * then the next source in the chapter, and finally the chapter's own first sentence. A title is never repeated and never
@@ -1163,7 +1176,15 @@ export function deriveChapterTitle(
     if (title && acceptable(title)) return title;
   }
 
-  const lead = clipLabelAtWordBoundary(units[0].text.replace(/[\s.。!?！？]+$/, ''), 60).replace(/…$/, '').trim();
+  // A source titled exactly like the book ("<Topic> - Wikipedia") is told apart by where it comes from.
+  for (const url of ranked) {
+    const title = cleanSourceTitle(titleByUrl.get(url) || '', url);
+    const host = (() => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; } })();
+    const qualified = title && host ? `${title} (${host})` : '';
+    if (qualified && title && normalizeTitleKey(title) === topicKey && !usedTitles.has(normalizeTitleKey(qualified))) return qualified;
+  }
+
+  const lead = leadSentenceTitle(units[0].text);
   if (lead && acceptable(lead)) return lead;
   return `${clipLabelAtWordBoundary(topic, 60)} · ${index + 1}`;
 }

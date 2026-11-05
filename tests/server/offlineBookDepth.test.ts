@@ -7,7 +7,7 @@ import {
   isFetchablePageUrl,
 } from '../../server/searchStrategies/pageExcerpt.ts';
 import { buildGoogleSearchFallbackPayload } from '../../server/googleSearchFallback.ts';
-import { chooseChapterCuts, cleanSourceTitle, extractDefinitionsFromSentences, synthesizeFallbackWebBook } from '../../src/services/evolutionService.ts';
+import { chooseChapterCuts, cleanSourceTitle, extractDefinitionsFromSentences, leadSentenceTitle, synthesizeFallbackWebBook } from '../../src/services/evolutionService.ts';
 import { isPageChromeText } from '../../src/utils/webBookRender.ts';
 import { countWords } from '../../src/services/searchFallbackShared.ts';
 import type { SearchFallbackResult } from '../../src/types.ts';
@@ -229,6 +229,39 @@ const ARTICLE = `<html><head><title>Persatuan Bahasa Cina Universiti Malaya</tit
   assert.deepEqual(cuts, [0, 3, 7, 10]);
   assert.deepEqual(chooseChapterCuts(['a', 'b', 'c', 'd'], 2), [0, 2, 4]);
   assert.deepEqual(chooseChapterCuts(['a', 'a', 'a'], 1), [0, 3]);
+}
+
+// 11. Pages without <p> paragraphs still yield text; the topic-titled source is told apart by host; lead-sentence titles are short.
+{
+  const wix = '<html><body><div id="app"><div class="x">Persatuan Bahasa Cina Universiti Malaya was founded by students who wanted a home for Chinese language and culture on campus.</div><div class="y">The committee meets every month to plan debates, publications and community service projects for members.</div><div>Menu</div></div></body></html>';
+  const leaf = extractReadableText(wix, ['Persatuan Bahasa Cina Universiti Malaya']);
+  assert.match(leaf, /founded by students/);
+  assert.match(leaf, /meets every month/);
+  assert.doesNotMatch(leaf, /Menu/);
+
+  const shell = '<html><head><meta name="description" content="Persatuan Bahasa Cina Universiti Malaya is the official Chinese language society of the university, running talks and festivals."></head><body><div id="root"></div><script>window.app=1</script></body></html>';
+  assert.match(extractReadableText(shell, ['Persatuan Bahasa Cina Universiti Malaya']), /official Chinese language society/);
+  assert.equal(extractReadableText('<html><body><div id="root"></div></body></html>', ['anything']), '');
+
+  assert.equal(leadSentenceTitle('与此同时，吉隆坡的心理健康问题在全国范围内最高，主要原因是高生活成本和城市贫困带来的巨大压力。'), '吉隆坡的心理健康问题在全国范围内最高');
+  assert.equal(leadSentenceTitle('However, the society was founded in 1962 by a group of students, and it grew quickly.'), 'the society was founded in 1962 by a group of students');
+  assert.ok(leadSentenceTitle('学会于1962年创立于马来亚大学这一年份来自学会内部一份成立史讲稿为目前所掌握资料中唯一明确记载创立年份的来源。').length <= 25);
+
+  const topic = 'Persatuan Bahasa Cina Universiti Malaya';
+  const texts: Record<string, string> = {
+    Alpha: 'The Malay encyclopedia entry describes the society as the largest Chinese student body at the university. It lists the debate competition among its best known annual events. Former presidents are recorded together with the years of their terms.',
+    Bravo: 'The history page recounts how a small circle of undergraduates registered the first committee. Early activities focused on calligraphy classes and a hand-printed literary magazine. Later decades added charity drives for rare disease patients.',
+  };
+  const sent = (tag: string) => texts[tag];
+  const mk = (n: number, title: string, url: string, tag: string) => ({ id: `q-${n}`, title, url, content: sent(tag), definitions: [], subTopics: [], informativeScore: 0.9, authorityScore: 0.9, fitness: 0 });
+  const book = synthesizeFallbackWebBook(topic, [
+    mk(1, `${topic} - Wikipedia`, 'https://ms.wikipedia.org/wiki/PBCUM', 'Alpha'),
+    mk(2, 'Sejarah Persatuan', 'https://pbcum.com/sejarah', 'Bravo'),
+  ] as any);
+  const qualifiedTitles = book.chapters.map((c) => c.title);
+  assert.equal(qualifiedTitles[0], `${topic} (ms.wikipedia.org)`);
+  assert.ok(qualifiedTitles.includes('Sejarah Persatuan'), qualifiedTitles.join(' / '));
+  assert.equal(new Set(qualifiedTitles).size, qualifiedTitles.length);
 }
 
 console.log('offlineBookDepth tests passed');

@@ -90,11 +90,30 @@ function pickMainRegion(html: string): string {
   return region ? region[0] : stripped;
 }
 
+function cleanBlockText(block: string): string {
+  return collapseWhitespace(decodeHtmlEntities(block.replace(/<[^>]+>/g, ' ')))
+    .replace(/\[\s*(?:\d+|edit|citation needed|note \d+)\s*\]/gi, '')
+    .replace(/\s+([,.;:!?，。；：！？])/g, '$1')
+    .trim();
+}
+
 function paragraphsOf(region: string): string[] {
-  const blocks = [...region.matchAll(/<(p|li|blockquote)\b[^>]*>([\s\S]*?)<\/\1>/gi)].map((match) => match[2]);
-  return blocks
-    .map((block) => collapseWhitespace(decodeHtmlEntities(block.replace(/<[^>]+>/g, ' '))))
-    .map((text) => text.replace(/\[\s*(?:\d+|edit|citation needed|note \d+)\s*\]/gi, '').replace(/\s+([,.;:!?，。；：！？])/g, '$1').trim());
+  return [...region.matchAll(/<(p|li|blockquote)\b[^>]*>([\s\S]*?)<\/\1>/gi)].map((match) => cleanBlockText(match[2]));
+}
+
+/**
+ * Many site builders (Wix, Elementor, hand-made pages) put text in <div>/<span>/<td>/<h*> instead of <p>. Leaf blocks
+ * (no nested tags) of that kind are used when the page has too few <p> paragraphs.
+ */
+function leafBlocksOf(region: string): string[] {
+  return [...region.matchAll(/<(div|span|td|section|h[1-6])\b[^>]*>([^<]{40,})<\/\1>/gi)].map((match) => cleanBlockText(match[2]));
+}
+
+/** The page's own summary (meta / Open Graph description): a readable few sentences even when the body is script-rendered. */
+function metaDescriptionOf(html: string): string {
+  const tag = html.match(/<meta\b[^>]*(?:name|property)=["'](?:description|og:description)["'][^>]*>/i)?.[0] || '';
+  const content = tag.match(/content=["']([^"']+)["']/i)?.[1] || '';
+  return cleanBlockText(content);
 }
 
 function queryTerms(...texts: string[]): { words: string[]; bigrams: string[] } {
@@ -134,7 +153,11 @@ export function extractReadableText(html: string, relevantTo: string[] = [], max
     return terms.words.some((word) => lowered.includes(word)) || terms.bigrams.some((pair) => paragraph.includes(pair));
   };
 
-  const readable = paragraphsOf(pickMainRegion(html)).filter(isReadableParagraph);
+  const region = pickMainRegion(html);
+  let candidates = paragraphsOf(region);
+  if (candidates.filter(isReadableParagraph).length < 2) candidates = [...candidates, ...leafBlocksOf(region)];
+  if (candidates.filter(isReadableParagraph).length === 0) candidates = [metaDescriptionOf(html)];
+  const readable = candidates.filter(isReadableParagraph);
   const start = hasTerms ? readable.findIndex(isRelevant) : 0;
   if (start < 0) return '';
 
