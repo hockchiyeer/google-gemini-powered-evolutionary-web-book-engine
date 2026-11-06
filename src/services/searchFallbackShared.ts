@@ -327,3 +327,51 @@ export function mapFallbackArtifacts(payload: SearchFallbackPayload): SearchArti
     snippet: result.snippet,
   }));
 }
+
+// ---------------------------------------------------------------------------
+// Clean-up of text that was scraped or assembled from search-result snippets
+// ---------------------------------------------------------------------------
+
+const CJK_AND_FULLWIDTH = '\\u3400-\\u9fff\\u3000-\\u303f\\uff00-\\uffef';
+const CJK_GAP_PATTERN = new RegExp(`([${CJK_AND_FULLWIDTH}])[ \\t]+(?=[${CJK_AND_FULLWIDTH}])`, 'g');
+
+/** Bold / link markup leaves blanks between Chinese characters ("团结政府 同床异梦"): they are not word spaces. */
+export function normalizeCjkSpacing(text: string): string {
+  return text.replace(CJK_GAP_PATTERN, '$1');
+}
+
+// A snippet join: " ... " between two excerpts (the blank before it may already be gone after Chinese sentence-final
+// punctuation), or a leading / trailing "..." where an excerpt was cut off. "He said... nothing" is prose, not a join.
+const SNIPPET_SPLICE = /(?:\s+|(?<=[。！？]))(?:\.{3,}|…|⋯)(?:\s+|$)|^\s*(?:\.{3,}|…|⋯)\s+/;
+const SENTENCE_END = /(?:[!?。！？]|\.(?=\s|$))["'”’）)」』]*/g;
+
+/**
+ * Search snippets are excerpts joined with "...". The text on either side of a join is cut mid-sentence ("…大选后，没 ... 为了组成
+ * 政府…"), so a sentence that runs into a join is dropped back to its last complete sentence, and the tail that follows a join
+ * is dropped up to its first sentence end. Complete sentences are kept untouched; text without a join is returned as is.
+ */
+export function stripSnippetSplices(text: string): string {
+  if (!SNIPPET_SPLICE.test(text)) return text;
+  const parts = text.split(new RegExp(SNIPPET_SPLICE.source, 'g')).map((part) => part.trim());
+  const kept = parts.map((part, index) => {
+    if (!part) return '';
+    let result = part;
+    if (index > 0) {
+      // Starts mid-sentence: drop through the first sentence end.
+      SENTENCE_END.lastIndex = 0;
+      const first = SENTENCE_END.exec(result);
+      result = first ? result.slice(first.index + first[0].length).trim() : '';
+    }
+    if (result && index < parts.length - 1) {
+      // Ends mid-sentence: keep up to the last sentence end.
+      let end = -1;
+      SENTENCE_END.lastIndex = 0;
+      for (let match = SENTENCE_END.exec(result); match; match = SENTENCE_END.exec(result)) {
+        end = match.index + match[0].length;
+      }
+      result = end > 0 ? result.slice(0, end).trim() : '';
+    }
+    return result;
+  });
+  return kept.filter(Boolean).join(' ');
+}

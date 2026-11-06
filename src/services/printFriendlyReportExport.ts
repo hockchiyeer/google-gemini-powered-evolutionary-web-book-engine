@@ -27,12 +27,18 @@ function escapeHtml(text: string): string {
     .replace(/'/g, '&#039;');
 }
 
-// The chapter sections below carry the complete text, so the brief deliberately does not repeat chapter 1.
-function getExecutiveOverview(webBook: WebBook): string {
-  if (webBook.generationNote) {
-    return webBook.generationNote;
-  }
-  return getExportLabels(webBook).overviewFallback(webBook.topic);
+// The chapter sections below carry the complete text, so the brief deliberately does not repeat chapter 1. The engine's
+// generation note is an English diagnostic ("Selected Gemini model … unavailable …"): it is shown as is only in an English
+// book. Any other book gets a sentence in its own language, built from the offline compilation figures when there are any.
+export function getExecutiveOverview(webBook: WebBook): string {
+  const labels = getExportLabels(webBook);
+  const note = webBook.generationNote;
+  if (!note) return labels.overviewFallback(webBook.topic);
+  if (labels.locale === 'en') return note;
+  const stats = note.match(/Compiled offline from (\d+) sources? \((\d+) sentences?, (\d+) words?\)/);
+  return stats
+    ? labels.offlineOverview(webBook.topic, Number(stats[1]), Number(stats[2]), Number(stats[3]))
+    : labels.overviewFallback(webBook.topic);
 }
 
 // ---------------------------------------------------------------------------

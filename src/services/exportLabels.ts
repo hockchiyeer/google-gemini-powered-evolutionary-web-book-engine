@@ -72,6 +72,7 @@ export interface ExportLabels {
   chapterCount: (n: number) => string;
   /** One-sentence overview used when a book has no generation note. */
   overviewFallback: (topic: string) => string;
+  offlineOverview: (topic: string, sources: number, sentences: number, words: number) => string;
   /** "CHAPTER 3" */
   chapter: (n: number) => string;
   /** "CHAPTER 3 OF 10" */
@@ -153,6 +154,7 @@ interface Dictionary {
   modelKnowledge: string;
   chapterCount: (n: number) => string;
   overviewFallback: (topic: string) => string;
+  offlineOverview: (topic: string, sources: number, sentences: number, words: number) => string;
   chapter: (n: number) => string;
   chapterOf: (n, total: number) => string;
   chapterSlash: (n: number, total: number) => string;
@@ -221,6 +223,7 @@ const EN: Dictionary = {
   modelKnowledge: 'Model knowledge (not verified against live sources)',
   chapterCount: (n) => `${n} ${n === 1 ? 'chapter' : 'chapters'}`,
   overviewFallback: (topic) => `Comprehensive evolutionary synthesis covering foundations, core mechanisms, and future horizons for "${topic}".`,
+  offlineOverview: (topic, sources, sentences, words) => `Compiled offline, without an AI model, from ${sources} web sources (${sentences} sentences, ${words} words) on \"${topic}\".`,
   chapter: (n) => `Chapter ${n}`,
   chapterOf: (n, total) => `Chapter ${n} of ${total}`,
   chapterSlash: (n, total) => `Chapter ${n} / ${total}`,
@@ -289,6 +292,7 @@ const ZH_HANS: Dictionary = {
   modelKnowledge: '模型知识（未经实时来源验证）',
   chapterCount: (n) => `${n} 章`,
   overviewFallback: (topic) => `围绕“${topic}”的基础、核心机制与未来展望的综合性演化综合分析。`,
+  offlineOverview: (topic, sources, sentences, words) => `在没有可用 AI 模型的情况下，依据 ${sources} 个网络来源（${sentences} 句，约 ${words} 字）离线整理的“${topic}”综合报告。`,
   chapter: (n) => `第${n}章`,
   chapterOf: (n, total) => `第 ${n} 章 / 共 ${total} 章`,
   chapterSlash: (n, total) => `第 ${n} 章 / ${total}`,
@@ -357,6 +361,7 @@ const ZH_HANT: Dictionary = {
   modelKnowledge: '模型知識（未經即時來源驗證）',
   chapterCount: (n) => `${n} 章`,
   overviewFallback: (topic) => `圍繞「${topic}」的基礎、核心機制與未來展望的綜合性演化綜合分析。`,
+  offlineOverview: (topic, sources, sentences, words) => `在沒有可用 AI 模型的情況下，依據 ${sources} 個網路來源（${sentences} 句，約 ${words} 字）離線整理的「${topic}」綜合報告。`,
   chapter: (n) => `第${n}章`,
   chapterOf: (n, total) => `第 ${n} 章 / 共 ${total} 章`,
   chapterSlash: (n, total) => `第 ${n} 章 / ${total}`,
@@ -425,6 +430,7 @@ const JA: Dictionary = {
   modelKnowledge: 'モデルの知識（ライブの情報源では未検証）',
   chapterCount: (n) => `${n} 章`,
   overviewFallback: (topic) => `「${topic}」の基礎、中核となる仕組み、将来の展望を網羅する包括的な進化的統合。`,
+  offlineOverview: (topic, sources, sentences, words) => `AI モデルを利用できない状況で、${sources} 件のウェブ情報源（${sentences} 文、約 ${words} 語）からオフラインでまとめた「${topic}」の統合レポートです。`,
   chapter: (n) => `第${n}章`,
   chapterOf: (n, total) => `第${n}章 / 全${total}章`,
   chapterSlash: (n, total) => `第${n}章 / ${total}`,
@@ -493,6 +499,7 @@ const KO: Dictionary = {
   modelKnowledge: '모델 지식(실시간 출처로 검증되지 않음)',
   chapterCount: (n) => `${n}개 장`,
   overviewFallback: (topic) => `"${topic}"의 기초, 핵심 메커니즘, 미래 전망을 아우르는 종합적인 진화적 종합 분석입니다.`,
+  offlineOverview: (topic, sources, sentences, words) => `AI 모델을 사용할 수 없는 상태에서 ${sources}개의 웹 출처(${sentences}문장, 약 ${words}단어)를 바탕으로 오프라인으로 정리한 \"${topic}\" 종합 보고서입니다.`,
   chapter: (n) => `제${n}장`,
   chapterOf: (n, total) => `제${n}장 / 총 ${total}장`,
   chapterSlash: (n, total) => `제${n}장 / ${total}`,
@@ -561,6 +568,7 @@ const MS: Dictionary = {
   modelKnowledge: 'Pengetahuan model (tidak disahkan dengan sumber langsung)',
   chapterCount: (n) => `${n} bab`,
   overviewFallback: (topic) => `Sintesis evolusi menyeluruh yang merangkumi asas, mekanisme teras dan ufuk masa depan bagi "${topic}".`,
+  offlineOverview: (topic, sources, sentences, words) => `Laporan sintesis \"${topic}\" yang disusun luar talian, tanpa model AI, daripada ${sources} sumber web (${sentences} ayat, ${words} perkataan).`,
   chapter: (n) => `Bab ${n}`,
   chapterOf: (n, total) => `Bab ${n} daripada ${total}`,
   chapterSlash: (n, total) => `Bab ${n} / ${total}`,
@@ -629,6 +637,7 @@ const ES: Dictionary = {
   modelKnowledge: 'Conocimiento del modelo (no verificado con fuentes en vivo)',
   chapterCount: (n) => `${n} ${n === 1 ? 'capítulo' : 'capítulos'}`,
   overviewFallback: (topic) => `Síntesis evolutiva integral que abarca los fundamentos, los mecanismos centrales y los horizontes futuros de "${topic}".`,
+  offlineOverview: (topic, sources, sentences, words) => `Informe de síntesis sobre \"${topic}\" elaborado sin conexión, sin modelo de IA, a partir de ${sources} fuentes web (${sentences} frases, ${words} palabras).`,
   chapter: (n) => `Capítulo ${n}`,
   chapterOf: (n, total) => `Capítulo ${n} de ${total}`,
   chapterSlash: (n, total) => `Capítulo ${n} / ${total}`,
@@ -697,6 +706,7 @@ const FR: Dictionary = {
   modelKnowledge: 'Connaissances du modèle (non vérifiées auprès de sources en direct)',
   chapterCount: (n) => `${n} ${n > 1 ? 'chapitres' : 'chapitre'}`,
   overviewFallback: (topic) => `Synthèse évolutive complète couvrant les fondements, les mécanismes essentiels et les perspectives d'avenir de « ${topic} ».`,
+  offlineOverview: (topic, sources, sentences, words) => `Synthèse sur « ${topic} » compilée hors ligne, sans modèle d'IA, à partir de ${sources} sources web (${sentences} phrases, ${words} mots).`,
   chapter: (n) => `Chapitre ${n}`,
   chapterOf: (n, total) => `Chapitre ${n} sur ${total}`,
   chapterSlash: (n, total) => `Chapitre ${n} / ${total}`,
@@ -765,6 +775,7 @@ const DE: Dictionary = {
   modelKnowledge: 'Modellwissen (nicht anhand aktueller Quellen verifiziert)',
   chapterCount: (n) => `${n} Kapitel`,
   overviewFallback: (topic) => `Umfassende evolutionäre Synthese zu Grundlagen, Kernmechanismen und Zukunftsperspektiven von „${topic}“.`,
+  offlineOverview: (topic, sources, sentences, words) => `Zusammenfassender Bericht zu „${topic}“, ohne KI-Modell offline aus ${sources} Webquellen erstellt (${sentences} Sätze, ${words} Wörter).`,
   chapter: (n) => `Kapitel ${n}`,
   chapterOf: (n, total) => `Kapitel ${n} von ${total}`,
   chapterSlash: (n, total) => `Kapitel ${n} / ${total}`,

@@ -24,6 +24,8 @@ import {
   describeFallbackEvidence,
   isSyntheticFallbackPayload,
   isValidConceptDefinition,
+  normalizeCjkSpacing,
+  stripSnippetSplices,
 } from "./searchFallbackShared";
 import {
   CHAPTER_NUMBER_PREFIX,
@@ -975,6 +977,18 @@ const DEFINITION_PATTERNS: RegExp[] = [
   /^([\u3400-\u9fff][\u3400-\u9fffA-Za-z0-9·（）() ]{1,18}?)(?:是|指的是|即|乃|为)([\u3400-\u9fff].{9,})$/u,
 ];
 
+// "这不仅是…", "本期文章将为…", "马来西亚的石油储存并不是…": splitting a sentence at its first 是 / 为 yields a clause opening, not a term.
+const CJK_CLAUSE_START = /^(?:这|那|其|它|他|她|我|你|您|该|此|本期|本文|本篇|本次|因此|所以|但|而|并|同时|此外|如果|由于|虽然)/;
+// Only tails that never end a noun: 会 / 才 / 就 / 都 / 能 / 应 are left out because 学会, 人才, 成就, 首都, 功能, 供应 are terms.
+const CJK_CLAUSE_END = /(?:不|仅|将|并|当时|同时|已|曾|主要|最|很|非常|也|还)$/;
+// Verbal particles only count inside a longer term, where a clause is likelier than a word such as 了解 or 将军.
+const CJK_CLAUSE_PARTICLE = /[了将被把]/;
+
+export function isPlausibleChineseTerm(term: string): boolean {
+  const length = term.replace(/\s/g, '').length;
+  return length >= 2 && length <= 12 && !CJK_CLAUSE_START.test(term) && !CJK_CLAUSE_END.test(term) && !(length >= 6 && CJK_CLAUSE_PARTICLE.test(term));
+}
+
 export function extractDefinitionsFromSentences(sentences: string[], sourceUrl: string, max = MAX_DEFINITIONS_PER_PAGE): Definition[] {
   const definitions: Definition[] = [];
   for (const sentence of sentences) {
@@ -984,6 +998,7 @@ export function extractDefinitionsFromSentences(sentences: string[], sourceUrl: 
       if (!match) continue;
       const term = match[1].trim();
       const description = match[2].trim();
+      if (pattern === DEFINITION_PATTERNS[3] && !isPlausibleChineseTerm(term)) continue;
       if (
         isValidConceptDefinition(term, description)
         && isMeaningful(term, description)
@@ -1111,7 +1126,7 @@ export async function evolve(
 const FALLBACK_MAX_CHAPTERS = 6;
 const CHAPTER_TITLE_MAX_CHARS = 80;
 // Titles that name a website or a page type, not what the page is about.
-const GENERIC_TITLE_PATTERN = /^(?:home(?:page)?|index|untitled|welcome|main page|about(?: us)?|contact(?: us)?|login|sign in|facebook|instagram|twitter|youtube|scribd|wikipedia|search results?|page \d+|overview|introduction|menu|navigation|sitemap|gallery|downloads?|news|events?|无标题|首页|主页|欢迎|联系我们|联络我们|聯繫我們|联系方式|关于我们|關於我們|关于|简介|概述|新闻|最新消息|活动|hubungi kami|tentang kami|laman utama|utama)$/i;
+const GENERIC_TITLE_PATTERN = /^(?:home(?:page)?|index|untitled|welcome|main page|about(?: us)?|contact(?: us)?|login|sign in|facebook|instagram|twitter|youtube|scribd|wikipedia|search results?|page \d+|overview|introduction|menu|navigation|sitemap|gallery|downloads?|news|events?|焦点|文告|专题|头条|要闻|评论|社论|特写|专栏|访谈|focus|opinion|editorial|无标题|首页|主页|欢迎|联系我们|联络我们|聯繫我們|联系方式|关于我们|關於我們|关于|简介|概述|新闻|最新消息|活动|hubungi kami|tentang kami|laman utama|utama)$/i;
 const TITLE_SEPARATOR = /\s+(?:[-|–—·•:]{1,2}|::)\s+|\s*[|｜]\s*/;
 
 function normalizeTitleKey(title: string): string {
@@ -1125,6 +1140,7 @@ export function cleanSourceTitle(rawTitle: string, url = ''): string {
   const segments = sanitizeNarrativeText(rawTitle)
     .replace(/\s+/g, ' ')
     .replace(CHAPTER_NUMBER_PREFIX, '')
+    .replace(/^\s*[\[(【]?\s*(?:PDF|DOCX?|PPTX?|XLSX?)\s*[\])】]?[:：-]?\s+/i, '')
     .replace(/\s*(?:\.{3}|…)\s*$/, '')
     .split(TITLE_SEPARATOR)
     .map(segment => segment.trim())
@@ -1133,17 +1149,23 @@ export function cleanSourceTitle(rawTitle: string, url = ''): string {
     const key = normalizeTitleKey(segment).replace(/ /g, '');
     return GENERIC_TITLE_PATTERN.test(segment.trim()) || (hostLabel.length > 2 && (key === hostLabel || key === host.replace(/\./g, '')));
   };
-  const chosen = segments.find(segment => !isSiteName(segment) && /[\p{L}\p{N}]/u.test(segment)) || '';
+  const candidates = segments.filter(segment => !isSiteName(segment) && /[\p{L}\p{N}]/u.test(segment));
+  const first = candidates[0] || '';
+  const longest = candidates.reduce((best, segment) => (segment.length > best.length ? segment : best), '');
+  // "文告 | <headline>": a short section label in front of the real headline is not the title.
+  const shortLimit = /[\u3400-\u9fff]/.test(first) ? 6 : 14;
+  const chosen = first && first.length < shortLimit && longest.length >= first.length * 2 ? longest : first;
   if (!chosen || /^[a-z0-9_-]+\.[a-z]{2,}$/i.test(chosen)) return '';
   return clipLabelAtWordBoundary(chosen, CHAPTER_TITLE_MAX_CHARS).replace(/[\s,;:，；：、-]+$/, '').trim();
 }
 
 // Sentence-opening connectives that make a clipped sentence read as the middle of a thought.
-const LEADING_CONNECTIVE = /^(?:与此同时|同时|此外|另外|此後|此后|然而|但是|因此|所以|而且|另一方面|however|meanwhile|moreover|furthermore|in addition|additionally|also|and|but|so|dengan itu|selain itu|manakala|namun)\s*[,，、]?\s*/i;
+const LEADING_CONNECTIVE = /^(?:与此同时|同时|此外|另外|此後|此后|然而|但是|不过|可是|于是|接着|其次|最后|并且|但|而|因此|所以|而且|另一方面|however|meanwhile|moreover|furthermore|in addition|additionally|also|and|but|so|dengan itu|selain itu|manakala|namun)\s*[,，、]?\s*/i;
 
 /** A chapter's own first sentence as a heading: connective dropped, cut at the first clause, short. */
 export function leadSentenceTitle(sentence: string): string {
-  const text = sentence.replace(/[\s.。!?！？]+$/, '').replace(LEADING_CONNECTIVE, '').trim();
+  // A leading "（来源：…）" / "[1]" group is a citation, not the subject of the sentence.
+  const text = sentence.replace(/[\s.。!?！？]+$/, '').replace(/^\s*[（(\[【][^）)\]】]{0,80}[）)\]】]\s*/, '').replace(LEADING_CONNECTIVE, '').trim();
   const cjk = /[\u3400-\u9fff]/.test(text);
   const minClause = cjk ? 8 : 20;
   const clause = text.split(/[,;，；、:：]/)[0].trim();
@@ -1283,7 +1305,7 @@ export function synthesizeFallbackWebBook(
 
   const gatheredEvidence: FallbackEvidenceUnit[] = [];
   rankedPool.forEach(({ page, tier }) => {
-    splitIntoSentences(sanitizeNarrativeText(page.content)).forEach(text => {
+    splitIntoSentences(normalizeCjkSpacing(stripSnippetSplices(sanitizeNarrativeText(page.content)))).forEach(text => {
       if (isPageChromeText(text)) return;
       if (!gatheredEvidence.some(kept => calculateTextSimilarity(kept.text, text) >= 0.88)) {
         gatheredEvidence.push({ text, url: page.url, tier });
