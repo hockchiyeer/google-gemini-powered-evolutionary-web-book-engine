@@ -455,7 +455,9 @@ const samplePages = topics.map((t, i) => ({
   id: `page-${i + 1}`,
   title: `Analysis Page ${i + 1}`,
   url: `https://news-outlet-${i + 1}.org/article-${i + 1}`,
-  content: `Analysts say ${t} will shape political debates across parliamentary constituencies in Malaysia. Observers expect ${topics[(i + 5) % 12]} to remain a central economic topic before elections.`,
+  // Four genuinely different sentences per page: six chapters need real substance (four or more sentences each), and the
+  // engine rightly drops sentences that only swap one topic word.
+  content: `Analysts say ${t} will shape political debates across parliamentary constituencies in Malaysia. Observers expect ${topics[(i + 5) % 12]} to remain a central economic topic before elections. ${['Treasury officials','Opposition strategists','Regional governors','Union leaders','Campus organisers','Farm cooperatives','City planners','Donor committees','Senior judges','State secretaries','Petroleum executives','Revenue inspectors'][i]} published a ${['detailed schedule','twelve-page memo','joint statement','costed proposal','survey summary','voter guide','spending review','audit report','legal opinion','budget annex','pricing study','compliance note'][i]} on ${t} that circulated widely during ${['March','April','May','June','July','August','September','October','November','December','January','February'][i]}. Reporters in ${['Penang','Johor','Sabah','Sarawak','Kelantan','Perak','Selangor','Kedah','Melaka','Pahang','Terengganu','Perlis'][i]} compared those figures with ${['last decade','the previous term','pre-pandemic levels','neighbouring states','regional averages','census data','central bank forecasts','university research','independent polling','ministry estimates','industry filings','parliamentary answers'][i]} before drawing conclusions.`,
   definitions: [
     {
       term: `Concept ${t}`,
@@ -528,8 +530,8 @@ assert.equal(
 
 assert.equal(
   totalSentencesCount,
-  24,
-  `Synthesized webbook should yield exactly 24 distinct sentences across 6 chapters (got ${totalSentencesCount}).`
+  48,
+  `Synthesized webbook should yield exactly 48 distinct sentences (12 pages x 4) across 6 chapters (got ${totalSentencesCount}).`
 );
 
 const citedUrls = new Set(
@@ -578,15 +580,16 @@ const multiSourcePages = multiSourceSentences.map((sentence, i) => ({
 }));
 
 const multiSourceBook = synthesizeFallbackWebBook('Malaysia Governance Overview', multiSourcePages as any);
-assert.equal(multiSourceBook.chapters.length, 6, 'Multi-source synthesis must generate 6 chapters.');
+// 24 one-line sentences are about 220 words: enough for two substantial chapters (80+ words each), not six thin ones.
+assert.equal(multiSourceBook.chapters.length, 2, 'Multi-source synthesis must size chapters to the evidence (2 chapters of 12 sentences).');
 const maxListedSources = Math.max(...multiSourceBook.chapters.map((c) => c.sourceUrls.length));
 assert.ok(
   maxListedSources > 3,
   `A chapter drawing on >3 sources must list all contributing sources without an artificial 3-source cap (max listed was ${maxListedSources}).`
 );
 assert.ok(
-  multiSourceBook.chapters.every((c) => c.sourceUrls.length === 4),
-  'Every chapter in 24-sentence multi-source synthesis must list all 4 of its contributing sources.'
+  multiSourceBook.chapters.every((c) => c.sourceUrls.length === 12),
+  'Every chapter in the 24-sentence multi-source synthesis must list all 12 of its contributing sources.'
 );
 
 // Verify duplicate ordering precedence: earlier page in source pool is retained, later duplicate is dropped

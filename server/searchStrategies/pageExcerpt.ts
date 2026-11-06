@@ -1,6 +1,6 @@
 import type { SearchFallbackResult } from '../../src/types.ts';
 import { containsPoisonBoilerplate, isPageChromeText } from '../../src/utils/webBookRender.ts';
-import { CJK_CHAR_GLOBAL_PATTERN, calculateTextSimilarity } from '../../src/services/searchFallbackShared.ts';
+import { CJK_CHAR_GLOBAL_PATTERN, calculateTextSimilarity, classifySourceReliability, type SourceReliabilityTier } from '../../src/services/searchFallbackShared.ts';
 import { collapseWhitespace, decodeHtmlEntities } from './shared.ts';
 
 /**
@@ -12,10 +12,13 @@ import { collapseWhitespace, decodeHtmlEntities } from './shared.ts';
 export const PAGE_FETCH_MAX_PAGES = 10;
 export const PAGE_FETCH_CONCURRENCY = 4;
 export const PAGE_FETCH_TIMEOUT_MS = 6000;
-export const PAGE_FETCH_TOTAL_BUDGET_MS = 14000;
+export const PAGE_FETCH_TOTAL_BUDGET_MS = 18000;
 export const PAGE_FETCH_MAX_BYTES = 1_500_000;
-export const PAGE_EXCERPT_MAX_CHARS = 3200;
-const MAX_PARAGRAPHS_PER_PAGE = 8;
+export const PAGE_EXCERPT_MAX_CHARS = 4800;
+/** Same-site pages (history / about / overview) read from the best result pages, on top of the search results themselves. */
+export const PAGE_FOLLOW_MAX_SOURCES = 3;
+export const PAGE_FOLLOW_MAX_LINKS = 4;
+const MAX_PARAGRAPHS_PER_PAGE = 12;
 const MIN_PARAGRAPH_LATIN_CHARS = 70;
 const MIN_PARAGRAPH_CJK_CHARS = 28;
 
@@ -178,14 +181,21 @@ async function readBounded(response: Response, maxBytes: number): Promise<Uint8A
   return bytes.length > maxBytes ? bytes.subarray(0, maxBytes) : bytes;
 }
 
-async function fetchExcerpt(result: SearchFallbackResult, query: string, options: Required<PageExcerptOptions>, deadline: number): Promise<string> {
+const EMPTY_PAGE = { excerpt: '', html: '' };
+
+async function fetchPage(
+  url: string,
+  relevantTo: string[],
+  options: Required<PageExcerptOptions>,
+  deadline: number
+): Promise<{ excerpt: string; html: string }> {
   const remaining = deadline - Date.now();
-  if (remaining <= 250) return '';
+  if (remaining <= 250) return EMPTY_PAGE;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), Math.min(options.timeoutMs, remaining));
   try {
-    const response = await options.fetchImpl(result.url, {
+    const response = await options.fetchImpl(url, {
       headers: {
         accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.5',
         'accept-language': 'en-US,en;q=0.9,zh-CN;q=0.8,ms;q=0.7',
@@ -193,17 +203,52 @@ async function fetchExcerpt(result: SearchFallbackResult, query: string, options
       },
       signal: controller.signal,
     });
-    if (!response.ok) return '';
+    if (!response.ok) return EMPTY_PAGE;
     const contentType = response.headers.get('content-type');
-    if (contentType && !/html|xml|text\/plain/i.test(contentType)) return '';
+    if (contentType && !/html|xml|text\/plain/i.test(contentType)) return EMPTY_PAGE;
     const html = decodeHtmlBytes(await readBounded(response, options.maxBytes), contentType);
-    return extractReadableText(html, [query, result.title]);
+    return { excerpt: extractReadableText(html, relevantTo), html };
   } catch {
-    return '';
+    return EMPTY_PAGE;
   } finally {
     clearTimeout(timer);
   }
 }
+
+// Paths and link texts of pages that usually hold a society's / organisation's / subject's own account of itself.
+const FOLLOW_LINK_HINT = /(?:about|history|histor|background|overview|introduction|profile|who-we-are|mission|activit|committee|sejarah|tentang|latar|pengenalan|关于|關於|历史|歷史|简介|簡介|沿革|介绍|介紹|概况|概況|学会|學會)/i;
+
+/** Same-site links whose text or path says "about / history / overview": where a site keeps its substantive text. */
+export function extractFollowLinks(html: string, baseUrl: string, limit = PAGE_FOLLOW_MAX_LINKS): Array<{ url: string; title: string }> {
+  let base: URL;
+  try { base = new URL(baseUrl); } catch { return []; }
+  const baseHost = base.hostname.replace(/^www\./, '');
+  const found = new Map<string, { url: string; title: string; score: number; order: number }>();
+
+  for (const match of html.matchAll(/<a\b[^>]*\bhref=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
+    let target: URL;
+    try { target = new URL(decodeHtmlEntities(match[1]), base); } catch { continue; }
+    target.hash = '';
+    if (!/^https?:$/.test(target.protocol) || target.hostname.replace(/^www\./, '') !== baseHost) continue;
+    if (target.href === base.href || target.pathname === base.pathname || target.pathname === '/' || !isFetchablePageUrl(target.href)) continue;
+
+    const text = cleanBlockText(match[2]);
+    let path = target.pathname;
+    try { path = decodeURIComponent(path); } catch { /* keep the raw path */ }
+    const textHit = text.length >= 2 && text.length <= 80 && FOLLOW_LINK_HINT.test(text);
+    const pathHit = FOLLOW_LINK_HINT.test(path);
+    if (!textHit && !pathHit) continue;
+
+    const score = (textHit ? 2 : 0) + (pathHit ? 1 : 0) - (target.search ? 1 : 0);
+    const key = target.href;
+    if (!found.has(key) || score > found.get(key)!.score) {
+      found.set(key, { url: key, title: text.length >= 2 && text.length <= 80 ? text : '', score, order: found.get(key)?.order ?? found.size });
+    }
+  }
+  return [...found.values()].sort((a, b) => b.score - a.score || a.order - b.order).slice(0, limit).map(({ url, title }) => ({ url, title }));
+}
+
+const TIER_RANK: Record<SourceReliabilityTier, number> = { high: 0, medium: 1, low: 2 };
 
 /**
  * Adds the readable body text of the first result pages as `excerpt`. Never throws and never drops a result: a page that
@@ -227,19 +272,62 @@ export async function enrichResultsWithPageExcerpts(
   const targets = enriched
     .map((result, index) => ({ result, index }))
     .filter(({ result }) => !result.excerpt && isFetchablePageUrl(result.url))
+    // The most reliable hosts are read first, so the page allowance goes to the best sources, not the first ones listed.
+    .sort((a, b) => TIER_RANK[classifySourceReliability(a.result.url)] - TIER_RANK[classifySourceReliability(b.result.url)] || a.index - b.index)
     // One page per host first, so a single site's many results cannot use up the whole fetch allowance.
     .filter(({ result }, position, all) => all.findIndex((other) => new URL(other.result.url).hostname === new URL(result.url).hostname) === position)
     .slice(0, options.maxPages);
 
   const deadline = Date.now() + options.totalBudgetMs;
-  let next = 0;
-  const worker = async () => {
-    while (next < targets.length) {
-      const { result } = targets[next++];
-      const excerpt = await fetchExcerpt(result, query, options, deadline);
-      if (excerpt) result.excerpt = excerpt;
-    }
+  const htmlByUrl = new Map<string, string>();
+  const runPool = async <T,>(items: T[], task: (item: T) => Promise<void>) => {
+    let next = 0;
+    const worker = async () => { while (next < items.length) await task(items[next++]); };
+    await Promise.all(Array.from({ length: Math.min(options.concurrency, items.length) }, worker));
   };
-  await Promise.all(Array.from({ length: Math.min(options.concurrency, targets.length) }, worker));
-  return enriched;
+
+  await runPool(targets, async ({ result }) => {
+    const page = await fetchPage(result.url, [query, result.title], options, deadline);
+    if (page.excerpt) {
+      result.excerpt = page.excerpt;
+      htmlByUrl.set(result.url, page.html);
+    }
+  });
+
+  // Second pass: the best readable pages usually link to their own history / about pages, which hold far more substance than
+  // a landing page. They are added as extra results (never replacing one) and are read without a topic filter, since a
+  // same-site "About" page often says "the society" instead of repeating the name.
+  const known = new Set(enriched.map((result) => result.url));
+  const followTargets: Array<{ url: string; title: string }> = [];
+  enriched
+    .filter((result) => result.excerpt && htmlByUrl.has(result.url) && classifySourceReliability(result.url) !== 'low')
+    .sort((a, b) => TIER_RANK[classifySourceReliability(a.url)] - TIER_RANK[classifySourceReliability(b.url)])
+    .slice(0, PAGE_FOLLOW_MAX_SOURCES)
+    .forEach((result) => {
+      for (const link of extractFollowLinks(htmlByUrl.get(result.url) || '', result.url, 2)) {
+        if (followTargets.length < PAGE_FOLLOW_MAX_LINKS && !known.has(link.url)) {
+          known.add(link.url);
+          followTargets.push(link);
+        }
+      }
+    });
+
+  const followed: SearchFallbackResult[] = [];
+  await runPool(followTargets, async (link) => {
+    const page = await fetchPage(link.url, [], options, deadline);
+    if (!page.excerpt) return;
+    const host = new URL(link.url).hostname.replace(/^www\./, '');
+    followed.push({
+      title: link.title || `${host} ${new URL(link.url).pathname}`,
+      url: link.url,
+      snippet: page.excerpt.split('\n\n')[0].slice(0, 240),
+      domain: host,
+      excerpt: page.excerpt,
+      source: results[0]?.source,
+    });
+  });
+  // Completion order is network order; the book must not depend on it.
+  followed.sort((a, b) => followTargets.findIndex((t) => t.url === a.url) - followTargets.findIndex((t) => t.url === b.url));
+
+  return [...enriched, ...followed];
 }

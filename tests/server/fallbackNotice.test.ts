@@ -216,8 +216,8 @@ async function stopMessage(next: Scenario, mode: SearchFallbackMode = 'google_du
   scenario = { google: 'ok', ddg: 'ok', gemini: 429 };
   const fallbackRes = await searchAndExtract(QUERY, { mode: 'google_duckduckgo', geminiModel: MODEL });
   const book = await assembleWebBook(fallbackRes.results, QUERY, fallbackRes, { mode: 'google_duckduckgo', geminiModel: MODEL });
-  // Four one-sentence snippets: chapters need at least two sentences each, so two chapters (not four captions) are written.
-  assert.ok(book.chapters.length >= 2);
+  // Four one-sentence snippets are too little for several chapters: they make one chapter (chapters need four or more sentences), not four captions.
+  assert.equal(book.chapters.length, 1);
 
   const seenTitles = new Set<string>();
   const seenContent = new Set<string>();

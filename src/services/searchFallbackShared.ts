@@ -262,14 +262,50 @@ export function deriveConceptLabel(title: string, fallbackQuery: string): string
   return fallbackQuery;
 }
 
+export type SourceReliabilityTier = 'high' | 'medium' | 'low';
+
+// Sites whose pages are user-generated, login-walled, social or storefront content: fine as a lead to follow, not as evidence.
+// Matched on the registered name, so regional variants (shopee.com.my, amazon.co.uk, m.facebook.com) are covered too.
+const LOW_RELIABILITY_NAMES = new Set([
+  'facebook', 'fb', 'instagram', 'twitter', 'linkedin', 'tiktok', 'youtube', 'youtu', 'pinterest', 'reddit', 'quora', 'threads',
+  'weibo', 'zhihu', 'xiaohongshu', 'scribd', 'slideshare', 'amazon', 'shopee', 'lazada', 'aliexpress', 'taobao',
+]);
+const LOW_RELIABILITY_HOSTS = ['x.com', 'tieba.baidu.com', 'answers.yahoo.com'];
+
+const hostMatches = (hostname: string, domain: string): boolean => hostname === domain || hostname.endsWith(`.${domain}`);
+
+/** The registered name of a host: "shopee" for www.shopee.com.my, "bbc" for news.bbc.co.uk. */
+function registeredName(hostname: string): string {
+  const labels = hostname.split('.');
+  const n = labels.length;
+  const secondLevel = n >= 3 && labels[n - 1].length === 2 && /^(?:com|co|org|net|gov|edu|ac)$/.test(labels[n - 2]);
+  return labels[secondLevel ? n - 3 : n - 2] || '';
+}
+
+export function classifySourceReliability(url: string): SourceReliabilityTier {
+  try {
+    const hostname = new URL(url).hostname.toLowerCase().replace(/^www\./, '');
+    if (LOW_RELIABILITY_NAMES.has(registeredName(hostname)) || LOW_RELIABILITY_HOSTS.some((domain) => hostMatches(hostname, domain))) return 'low';
+    if (/(^|\.)(gov|edu|mil)(\.[a-z]{2})?$/.test(hostname) || /\.(ac|edu|gov)\.[a-z]{2}$/.test(hostname)) return 'high';
+    if (hostMatches(hostname, 'wikipedia.org') || hostMatches(hostname, 'britannica.com')) return 'high';
+    if (['reuters.com', 'apnews.com', 'bbc.com', 'bbc.co.uk', 'thestar.com.my', 'nst.com.my', 'straitstimes.com'].some((domain) => hostMatches(hostname, domain))) return 'high';
+    if (hostname.endsWith('.org') || hostname.endsWith('.org.my')) return 'medium';
+    return 'medium';
+  } catch {
+    return 'low';
+  }
+}
+
 export function scoreDomainAuthority(url: string): number {
   try {
     const hostname = new URL(url).hostname.replace(/^www\./, '');
+    const tier = classifySourceReliability(url);
+    if (tier === 'low') return 0.4;
     if (hostname.endsWith('.gov')) return 0.96;
     if (hostname.endsWith('.edu')) return 0.92;
     if (hostname.includes('wikipedia.org')) return 0.88;
     if (hostname.endsWith('.org')) return 0.82;
-    if (hostname.includes('reuters.com') || hostname.includes('apnews.com') || hostname.includes('bbc.com')) return 0.84;
+    if (tier === 'high') return 0.86;
     return 0.72;
   } catch {
     return 0.65;

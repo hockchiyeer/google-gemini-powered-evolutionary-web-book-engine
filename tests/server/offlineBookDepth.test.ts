@@ -172,11 +172,10 @@ const ARTICLE = `<html><head><title>Persatuan Bahasa Cina Universiti Malaya</tit
   ] as any);
   const thinText = thin.chapters.map((c) => c.content).join('\n');
   assert.doesNotMatch(thinText, /followers|Staff View|Export Record|talking about this/i);
-  assert.equal(thin.chapters.length, 2, 'four real sentences make two two-sentence chapters, not four one-line ones');
+  assert.equal(thin.chapters.length, 1, 'four real sentences are one chapter, not several captions');
   for (const chapter of thin.chapters) {
-    assert.ok(chapter.content.split(/(?<=[.!?])\s+/).length >= 2, `chapter "${chapter.title}" must hold at least two sentences`);
+    assert.ok(chapter.content.split(/(?<=[.!?])\s+/).length >= 4, `chapter \"${chapter.title}\" must hold at least four sentences`);
   }
-  assert.notEqual(thin.chapters[0].title, thin.chapters[1].title);
 
   // 8 sources x 12 genuinely different sentences (the engine drops near-identical ones, as it should).
   const subjects = ['The calligraphy workshop', 'The debate team', 'The alumni network', 'The annual dinner', 'The lion dance troupe', 'The newsletter', 'The library collection', 'The charity drive', 'The orientation camp', 'The scholarship fund', 'The drama production', 'The language clinic'];
@@ -203,14 +202,17 @@ const ARTICLE = `<html><head><title>Persatuan Bahasa Cina Universiti Malaya</tit
   assert.equal(cleanSourceTitle('pbcum.com', 'https://pbcum.com'), '');
   assert.ok(cleanSourceTitle('A'.repeat(40) + ' ' + 'word '.repeat(40), 'https://x.org').length <= 81);
 
-  const sentences = (n: number, tag: string) => Array.from({ length: n }, (_, i) => `${tag} fact number ${i + 1} describes a different programme, committee decision or event of the society in detail.`).join(' ');
-  const pg = (n: number, title: string, url: string, tag: string, count = 4) => ({ id: `t-${n}`, title, url, content: sentences(count, tag), definitions: [], subTopics: [], informativeScore: 0.9, authorityScore: 0.9, fitness: 0 });
+  // Genuinely different sentences (the engine drops near-identical ones): each page gets its own subjects and clauses.
+  const subjectPool = ['the calligraphy workshop', 'the debate league', 'the alumni dinner', 'the lion dance troupe', 'the newsletter archive', 'the library collection', 'the charity drive', 'the orientation camp', 'the scholarship fund', 'the drama production', 'the language clinic', 'the media team'];
+  const clausePool = ['was reorganised after a long committee discussion about volunteers', 'attracts first-year students from several faculties each semester', 'keeps printed records in the society office for reference', 'raised money that was shared with local community groups', 'trains new members through weekly sessions with senior mentors', 'partners with lecturers from the department of Chinese studies', 'collects feedback through surveys reviewed every term', 'depends on sponsors who renew their support every year'];
+  const sentences = (n: number, tag: string, page: number) => Array.from({ length: n }, (_, i) => `${tag} fact number ${i + 1} covers ${subjectPool[(i * 3 + page) % 12]}, which ${clausePool[(i + page * 3) % 8]}.`).join(' ');
+  const pg = (n: number, title: string, url: string, tag: string, count = 4) => ({ id: `t-${n}`, title, url, content: sentences(count, tag, n), definitions: [], subTopics: [], informativeScore: 0.9, authorityScore: 0.9, fitness: 0 });
   const topic = 'Persatuan Bahasa Cina Universiti Malaya';
   const book = synthesizeFallbackWebBook(topic, [
-    pg(1, `${topic} - Wikipedia`, 'https://en.wikipedia.org/wiki/PBCUM', 'Alpha'),
-    pg(2, 'Sejarah Persatuan | PBCUM', 'https://pbcum.com/sejarah', 'Bravo'),
-    pg(3, 'Facebook', 'https://www.facebook.com/pbcum', 'Charlie'),
-    pg(4, 'Sejarah Persatuan | Other', 'https://other.example.org/sejarah', 'Delta'),
+    pg(1, `${topic} - Wikipedia`, 'https://en.wikipedia.org/wiki/PBCUM', 'Alpha', 8),
+    pg(2, 'Sejarah Persatuan | PBCUM', 'https://pbcum.com/sejarah', 'Bravo', 8),
+    pg(3, 'Facebook', 'https://www.facebook.com/pbcum', 'Charlie', 8),
+    pg(4, 'Sejarah Persatuan | Other', 'https://other.example.org/sejarah', 'Delta', 8),
   ] as any);
   const titles = book.chapters.map((c) => c.title);
   assert.equal(new Set(titles).size, titles.length, `titles must be unique: ${titles.join(' / ')}`);
@@ -218,10 +220,18 @@ const ARTICLE = `<html><head><title>Persatuan Bahasa Cina Universiti Malaya</tit
   assert.ok(!titles.includes(topic), 'a chapter is not titled with just the topic');
   assert.ok(titles.includes('Sejarah Persatuan'), titles.join(' / '));
   assert.ok(!titles.some((x) => /facebook/i.test(x)), 'site names are not chapter titles');
-  // The Facebook text still reaches a chapter, titled from its own first sentence.
-  assert.ok(book.chapters.some((c) => /Charlie fact number 1/.test(c.content)));
-  assert.ok(book.chapters.some((c) => /^Charlie fact number 1/.test(c.title)), titles.join(' / '));
+  // Social-media text is left out while the reliable sources hold enough evidence (and the book says so).
+  assert.ok(!book.chapters.some((c) => /Charlie fact number/.test(c.content)), 'low-reliability text must not enter a book that has enough reliable evidence');
+  assert.match(book.generationNote || '', /low-reliability/);
   assert.ok(book.chapters.every((c) => c.visualSeed.includes(c.title)));
+
+  // When it is the only evidence there is, the Facebook text is still used, titled from its own first sentence.
+  const lastResort = synthesizeFallbackWebBook(topic, [
+    pg(5, 'Facebook', 'https://www.facebook.com/pbcum', 'Charlie', 8),
+  ] as any);
+  assert.ok(lastResort.chapters.some((c) => /Charlie fact number 1/.test(c.content)));
+  assert.ok(lastResort.chapters.some((c) => /^Charlie fact number 1/.test(c.title)), lastResort.chapters.map((c) => c.title).join(' / '));
+  assert.ok(!/low-reliability sites were left out/.test(lastResort.generationNote || ''));
 
   // Cuts land on source changes when that is near an even split, and keep two sentences per chapter.
   const urls = ['a', 'a', 'a', 'b', 'b', 'b', 'b', 'c', 'c', 'c'];
@@ -249,8 +259,8 @@ const ARTICLE = `<html><head><title>Persatuan Bahasa Cina Universiti Malaya</tit
 
   const topic = 'Persatuan Bahasa Cina Universiti Malaya';
   const texts: Record<string, string> = {
-    Alpha: 'The Malay encyclopedia entry describes the society as the largest Chinese student body at the university. It lists the debate competition among its best known annual events. Former presidents are recorded together with the years of their terms.',
-    Bravo: 'The history page recounts how a small circle of undergraduates registered the first committee. Early activities focused on calligraphy classes and a hand-printed literary magazine. Later decades added charity drives for rare disease patients.',
+    Alpha: 'The Malay encyclopedia entry describes the society as the largest Chinese student body at the university. It lists the debate competition among its best known annual events. Former presidents are recorded together with the years of their terms. The entry also notes that the society publishes a bilingual journal and hosts public lectures on Chinese literature every year. Several of its alumni later became teachers, journalists and community leaders across the country. Universities elsewhere in the region have modelled their own Chinese language societies on its structure of elected officers and standing sub-committees.',
+    Bravo: 'The history page recounts how a small circle of undergraduates registered the first committee. Early activities focused on calligraphy classes and a hand-printed literary magazine. Later decades added charity drives for rare disease patients. A rotating committee of volunteers still plans the calendar of events during the first weeks of each academic year. Members describe the annual cultural festival as the occasion that brings the widest range of faculties together. Photographs and programme booklets from earlier years are stored by the committee so that new members can learn how past events were organised.',
   };
   const sent = (tag: string) => texts[tag];
   const mk = (n: number, title: string, url: string, tag: string) => ({ id: `q-${n}`, title, url, content: sent(tag), definitions: [], subTopics: [], informativeScore: 0.9, authorityScore: 0.9, fitness: 0 });

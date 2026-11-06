@@ -19,6 +19,7 @@ import { isNonJsonResponseText } from "./safeResponse";
 import {
   SYNTHETIC_FALLBACK_DIAGNOSTIC,
   calculateTextSimilarity,
+  classifySourceReliability,
   countWords,
   describeFallbackEvidence,
   isSyntheticFallbackPayload,
@@ -1214,8 +1215,43 @@ export function chooseChapterCuts(urls: string[], chapterCount: number): number[
   return cuts;
 }
 
-// Least evidence a chapter of an offline book is written from: a one-sentence chapter is a heading with a caption.
-const FALLBACK_MIN_SENTENCES_PER_CHAPTER = 2;
+// Least evidence a chapter of an offline book is written from. Fewer, fuller chapters beat many thin ones: below this a
+// "chapter" is a heading with a caption, not something with real reading substance.
+const FALLBACK_MIN_SENTENCES_PER_CHAPTER = 4;
+const FALLBACK_MIN_WORDS_PER_CHAPTER = 80;
+const FALLBACK_MAX_SENTENCES_PER_PARAGRAPH = 5;
+// Text from social / forum / storefront hosts is evidence of last resort: it is only used while the reliable sources
+// together have fewer distinct sentences than this.
+const FALLBACK_MIN_RELIABLE_SENTENCES = 12;
+
+type FallbackEvidenceUnit = { text: string; url: string; tier: ReturnType<typeof classifySourceReliability> };
+
+/** Source paragraphs stay together: runs of one source's sentences, at most a few long, with stray one-liners folded in. */
+function buildChapterParagraphs(units: FallbackEvidenceUnit[]): string[] {
+  const runs: Array<{ url: string; sentences: string[] }> = [];
+  units.forEach(unit => {
+    const last = runs[runs.length - 1];
+    if (last && last.url === unit.url && last.sentences.length < FALLBACK_MAX_SENTENCES_PER_PARAGRAPH) {
+      last.sentences.push(unit.text);
+    } else {
+      runs.push({ url: unit.url, sentences: [unit.text] });
+    }
+  });
+
+  const merged: Array<{ url: string; sentences: string[] }> = [];
+  runs.forEach(run => {
+    if (run.sentences.length < 2 && merged.length > 0) {
+      merged[merged.length - 1].sentences.push(...run.sentences);
+    } else {
+      merged.push(run);
+    }
+  });
+  if (merged.length > 1 && merged[0].sentences.length < 2) {
+    merged[1].sentences.unshift(...merged[0].sentences);
+    merged.shift();
+  }
+  return merged.map(run => joinSentences(run.sentences));
+}
 
 export function synthesizeFallbackWebBook(
   topic: string,
@@ -1237,16 +1273,26 @@ export function synthesizeFallbackWebBook(
     .map(s => ({ title: s.title, url: s.url }))
     .filter((source, index, all) => all.findIndex(other => other.url === source.url) === index);
 
-  // Every distinct sentence of gathered evidence is used once across the whole book, in source order.
-  const evidence: Array<{ text: string; url: string }> = [];
-  pool.forEach(page => {
+  // Every distinct sentence of gathered evidence is used once across the whole book. The most reliable sources lead (the
+  // sort is stable, so search order still decides within a reliability tier), and when two sources say the same thing
+  // the more reliable one is the one that is kept.
+  const tierRank = { high: 0, medium: 1, low: 2 } as const;
+  const rankedPool = pool
+    .map((page, order) => ({ page, order, tier: classifySourceReliability(page.url) }))
+    .sort((a, b) => tierRank[a.tier] - tierRank[b.tier] || a.order - b.order);
+
+  const gatheredEvidence: FallbackEvidenceUnit[] = [];
+  rankedPool.forEach(({ page, tier }) => {
     splitIntoSentences(sanitizeNarrativeText(page.content)).forEach(text => {
       if (isPageChromeText(text)) return;
-      if (!evidence.some(kept => calculateTextSimilarity(kept.text, text) >= 0.88)) {
-        evidence.push({ text, url: page.url });
+      if (!gatheredEvidence.some(kept => calculateTextSimilarity(kept.text, text) >= 0.88)) {
+        gatheredEvidence.push({ text, url: page.url, tier });
       }
     });
   });
+  const reliableEvidence = gatheredEvidence.filter(unit => unit.tier !== 'low');
+  const evidence = reliableEvidence.length >= FALLBACK_MIN_RELIABLE_SENTENCES ? reliableEvidence : gatheredEvidence;
+  const droppedLowReliability = gatheredEvidence.length - evidence.length;
 
   // Definitions and sub-topics go to the chapter that uses their own source, and each is placed once.
   const unplacedDefinitions = new Set(getRenderableDefinitions(pool.flatMap(page => page.definitions || [])));
@@ -1258,9 +1304,11 @@ export function synthesizeFallbackWebBook(
   };
 
   // Chapter count follows the amount of evidence: six chapters made of one sentence each only look like a book.
+  const evidenceWords = evidence.reduce((sum, unit) => sum + countWords(unit.text), 0);
   const chapterCount = Math.max(1, Math.min(
     FALLBACK_MAX_CHAPTERS,
-    Math.floor(evidence.length / FALLBACK_MIN_SENTENCES_PER_CHAPTER)
+    Math.floor(evidence.length / FALLBACK_MIN_SENTENCES_PER_CHAPTER),
+    Math.floor(evidenceWords / FALLBACK_MIN_WORDS_PER_CHAPTER)
   ));
   const cuts = chooseChapterCuts(evidence.map(unit => unit.url), chapterCount);
   const titleByUrl = new Map<string, string>();
@@ -1268,22 +1316,28 @@ export function synthesizeFallbackWebBook(
   const usedTitles = new Set<string>();
 
   const chapters: Chapter[] = [];
-  cuts.slice(0, -1).forEach((start, idx) => {
-    // Chapters follow the sources: a cut lands where one source ends and the next begins whenever that is close to an even
-    // split. With no evidence a chapter is left out rather than padded with generic wording.
-    const units = evidence.slice(start, cuts[idx + 1]);
+  // Chapters follow the sources: a cut lands where one source ends and the next begins whenever that is close to an even
+  // split. Cuts are by sentence count, so a chapter of short sentences can still come out thin: such a chapter is folded
+  // into its shorter neighbour until every chapter has real reading substance (or only one chapter is left).
+  const groupWords = (group: FallbackEvidenceUnit[]) => group.reduce((sum, unit) => sum + countWords(unit.text), 0);
+  const groups: FallbackEvidenceUnit[][] = cuts.slice(0, -1).map((start, idx) => evidence.slice(start, cuts[idx + 1])).filter(group => group.length > 0);
+  for (;;) {
+    const thinIndex = groups.findIndex(group => groupWords(group) < FALLBACK_MIN_WORDS_PER_CHAPTER);
+    if (thinIndex < 0 || groups.length <= 1) break;
+    const neighbours = [thinIndex - 1, thinIndex + 1].filter(i => i >= 0 && i < groups.length);
+    const into = neighbours.reduce((best, i) => (groupWords(groups[i]) < groupWords(groups[best]) ? i : best), neighbours[0]);
+    const [first, second] = into < thinIndex ? [into, thinIndex] : [thinIndex, into];
+    groups.splice(first, 2, [...groups[first], ...groups[second]]);
+  }
+
+  groups.forEach((units, idx) => {
+    // With no evidence a chapter is left out rather than padded with generic wording.
     if (units.length === 0) return;
 
     const title = deriveChapterTitle(units, titleByUrl, topic, usedTitles, idx);
     usedTitles.add(normalizeTitleKey(title));
 
-    // Same paragraph count the renderer paginates a chapter into, so no paragraph is cut mid-sentence.
-    const paragraphCount = Math.min(MIN_CHAPTER_TEXT_PAGES, units.length);
-    const narrative = Array.from({ length: paragraphCount }, (_, p) => joinSentences(
-      units
-        .slice(Math.floor((p * units.length) / paragraphCount), Math.floor(((p + 1) * units.length) / paragraphCount))
-        .map(unit => unit.text)
-    )).join('\n\n');
+    const narrative = buildChapterParagraphs(units).join('\n\n');
 
     const unitUrls = new Set(units.map(unit => unit.url));
     const chapterSources = validSources.filter(source => unitUrls.has(source.url));
@@ -1309,7 +1363,11 @@ export function synthesizeFallbackWebBook(
     timestamp: Date.now(),
     chapters,
     sourceMode: searchResult?.sourceMode || 'fallback_search',
-    generationNote: searchResult?.generationNote || 'Synthesized via resilient multi-source evolutionary engine.',
+    generationNote: [
+      searchResult?.generationNote || 'Synthesized via resilient multi-source evolutionary engine.',
+      `Compiled offline from ${new Set(evidence.map(unit => unit.url)).size} sources (${evidence.length} sentences, ${evidenceWords} words)` +
+        `${droppedLowReliability > 0 ? `; ${droppedLowReliability} sentences from low-reliability sites were left out` : ''}.`,
+    ].join(' '),
     fallbackSource: searchResult?.fallbackSource,
     fallbackReason: searchResult?.fallbackReason,
   };

@@ -220,7 +220,8 @@ export async function buildGoogleSearchFallbackPayload(
   }
 
   const results = await enrichResultsWithPageExcerpts(payload.results, query, options.pageFetch);
-  const readCount = results.filter((result, index) => result.excerpt && result.excerpt !== payload.results[index].excerpt).length;
+  const originalByUrl = new Map(payload.results.map((result) => [result.url, result]));
+  const readCount = results.filter((result) => result.excerpt && result.excerpt !== originalByUrl.get(result.url)?.excerpt).length;
   return {
     ...payload,
     results,
