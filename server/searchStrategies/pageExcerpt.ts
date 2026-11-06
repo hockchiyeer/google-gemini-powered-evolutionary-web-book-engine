@@ -18,6 +18,15 @@ export const PAGE_EXCERPT_MAX_CHARS = 4800;
 /** Same-site pages (history / about / overview) read from the best result pages, on top of the search results themselves. */
 export const PAGE_FOLLOW_MAX_SOURCES = 3;
 export const PAGE_FOLLOW_MAX_LINKS = 4;
+/**
+ * A page's links are only followed when the page itself is clearly about the topic (this share of the topic's words / Chinese
+ * character pairs appear in it). "Universiti Malaya" alone is on every faculty page of the university: matching it must not
+ * be enough to follow that faculty's own "overview" link into text about something else.
+ */
+export const PAGE_FOLLOW_MIN_TOPIC_COVERAGE = 0.6;
+/** A followed page that yields less readable text than this is navigation or a stub, not a source. */
+const FOLLOW_MIN_EXCERPT_CHARS = 400;
+const FOLLOW_MIN_EXCERPT_CJK_CHARS = 150;
 const MAX_PARAGRAPHS_PER_PAGE = 12;
 const MIN_PARAGRAPH_LATIN_CHARS = 70;
 const MIN_PARAGRAPH_CJK_CHARS = 28;
@@ -218,6 +227,26 @@ async function fetchPage(
 // Paths and link texts of pages that usually hold a society's / organisation's / subject's own account of itself.
 const FOLLOW_LINK_HINT = /(?:about|history|histor|background|overview|introduction|profile|who-we-are|mission|activit|committee|sejarah|tentang|latar|pengenalan|关于|關於|历史|歷史|简介|簡介|沿革|介绍|介紹|概况|概況|学会|學會)/i;
 
+/**
+ * Wiki revision histories, special pages, talk / user pages, feeds and login endpoints: they say "history" or "about" without
+ * being an account of the subject, and their text is edit logs and chrome.
+ */
+function isSystemUrl(url: URL): boolean {
+  if (/(?:^|&)(?:action|oldid|diff|veaction|printable|feed)=/i.test(url.search.replace(/^\?/, ''))) return true;
+  let path = url.pathname;
+  try { path = decodeURIComponent(path); } catch { /* keep the raw path */ }
+  return /\/w\/index\.php|\/wp-(?:login|admin|json)|\/feed\/?$|\/(?:Special|Talk|User|User_talk|Help|Category|Template|Portal|File|Wikipedia|Istimewa|Perbincangan|Pengguna|Bantuan|Kategori|Fail):/i.test(path);
+}
+
+/** Share of the topic's words and Chinese character pairs found in `text` (1 when the topic has none to look for). */
+function topicCoverage(text: string, terms: { words: string[]; bigrams: string[] }): number {
+  const total = terms.words.length + terms.bigrams.length;
+  if (total === 0) return 1;
+  const lowered = text.toLowerCase();
+  const hits = terms.words.filter((word) => lowered.includes(word)).length + terms.bigrams.filter((pair) => text.includes(pair)).length;
+  return hits / total;
+}
+
 /** Same-site links whose text or path says "about / history / overview": where a site keeps its substantive text. */
 export function extractFollowLinks(html: string, baseUrl: string, limit = PAGE_FOLLOW_MAX_LINKS): Array<{ url: string; title: string }> {
   let base: URL;
@@ -231,6 +260,7 @@ export function extractFollowLinks(html: string, baseUrl: string, limit = PAGE_F
     target.hash = '';
     if (!/^https?:$/.test(target.protocol) || target.hostname.replace(/^www\./, '') !== baseHost) continue;
     if (target.href === base.href || target.pathname === base.pathname || target.pathname === '/' || !isFetchablePageUrl(target.href)) continue;
+    if (isSystemUrl(target)) continue;
 
     const text = cleanBlockText(match[2]);
     let path = target.pathname;
@@ -298,9 +328,11 @@ export async function enrichResultsWithPageExcerpts(
   // a landing page. They are added as extra results (never replacing one) and are read without a topic filter, since a
   // same-site "About" page often says "the society" instead of repeating the name.
   const known = new Set(enriched.map((result) => result.url));
+  const topic = queryTerms(query);
   const followTargets: Array<{ url: string; title: string }> = [];
   enriched
     .filter((result) => result.excerpt && htmlByUrl.has(result.url) && classifySourceReliability(result.url) !== 'low')
+    .filter((result) => topicCoverage(`${result.title} ${result.excerpt}`, topic) >= PAGE_FOLLOW_MIN_TOPIC_COVERAGE)
     .sort((a, b) => TIER_RANK[classifySourceReliability(a.url)] - TIER_RANK[classifySourceReliability(b.url)])
     .slice(0, PAGE_FOLLOW_MAX_SOURCES)
     .forEach((result) => {
@@ -315,7 +347,8 @@ export async function enrichResultsWithPageExcerpts(
   const followed: SearchFallbackResult[] = [];
   await runPool(followTargets, async (link) => {
     const page = await fetchPage(link.url, [], options, deadline);
-    if (!page.excerpt) return;
+    const cjkChars = (page.excerpt.match(CJK_CHAR_GLOBAL_PATTERN) || []).length;
+    if (page.excerpt.length < FOLLOW_MIN_EXCERPT_CHARS && cjkChars < FOLLOW_MIN_EXCERPT_CJK_CHARS) return;
     const host = new URL(link.url).hostname.replace(/^www\./, '');
     followed.push({
       title: link.title || `${host} ${new URL(link.url).pathname}`,

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { enrichResultsWithPageExcerpts, extractFollowLinks, PAGE_FOLLOW_MAX_LINKS } from '../../server/searchStrategies/pageExcerpt.ts';
 import { classifySourceReliability, countWords, scoreDomainAuthority } from '../../src/services/searchFallbackShared.ts';
-import { synthesizeFallbackWebBook } from '../../src/services/evolutionService.ts';
+import { cleanSourceTitle, synthesizeFallbackWebBook } from '../../src/services/evolutionService.ts';
 import type { SearchFallbackResult } from '../../src/types.ts';
 
 // Offline (no Gemini key) books are compiled from web pages. These tests pin how reliable sources are preferred and how
@@ -88,7 +88,8 @@ const result = (url: string, title = 'Result'): SearchFallbackResult => ({ title
   );
   const history = page(
     para('The society was registered by a small circle of undergraduates who wanted a home for Chinese language and culture on campus.')
-    + para('Over the following decades it added calligraphy classes, a literary journal and annual charity drives for rare disease patients.'),
+    + para('Over the following decades it added calligraphy classes, a literary journal and annual charity drives for rare disease patients.')
+    + para('A rotating committee of volunteers still plans the calendar of events during the first weeks of each academic year, and members describe the annual cultural festival as the occasion that brings the widest range of faculties together.'),
   );
   const fetched: string[] = [];
   const out = await enrichResultsWithPageExcerpts([result('https://pbcum.org/', 'Home')], TOPIC, {
@@ -160,6 +161,69 @@ const result = (url: string, title = 'Result'): SearchFallbackResult => ({ title
   // Too little text for a real chapter is one chapter, not several captions.
   const tiny = synthesizeFallbackWebBook(TOPIC, [mk(6, 'Encyclo', 'https://en.wikipedia.org/wiki/PBCUM', 5)] as any);
   assert.equal(tiny.chapters.length, 1);
+}
+
+// 7. Live-run regressions: wiki revision pages, off-topic parents, stub pages, menu-label titles, three-sentence chapters.
+{
+  // Wikipedia / MediaWiki system pages are not an account of the subject.
+  const wikiHtml = page(
+    para('x'.repeat(10)),
+    [
+      '<a href="/w/index.php?title=PBCUM&amp;action=history">Lihat sejarah</a>',
+      '<a href="/w/index.php?title=PBCUM&amp;oldid=123">History revision</a>',
+      '<a href="/wiki/Special:History/PBCUM">View history</a>',
+      '<a href="/wiki/Perbincangan:PBCUM">Talk history</a>',
+      '<a href="/wiki/History_of_the_society">History of the society</a>',
+    ].join(''),
+  );
+  const wikiLinks = extractFollowLinks(wikiHtml, 'https://ms.wikipedia.org/wiki/PBCUM').map((l) => l.url);
+  assert.deepEqual(wikiLinks, ['https://ms.wikipedia.org/wiki/History_of_the_society'], 'only the real article link survives');
+
+  // A page that only shares "Universiti Malaya" with the topic (a faculty page) must not have its links followed.
+  const facultyHtml = page(
+    para('The Faculty of Arts and Social Sciences at Universiti Malaya offers programmes in languages, history and the social sciences to undergraduates.'),
+    '<a href="/overview">Overview</a>',
+  );
+  const fetchedFaculty: string[] = [];
+  await enrichResultsWithPageExcerpts([result('https://fass.example.edu.my/chinese-studies', 'Department of Chinese Studies')], TOPIC, {
+    fetchImpl: async (url) => { fetchedFaculty.push(url); return htmlResponse(facultyHtml); },
+  });
+  assert.deepEqual(fetchedFaculty, ['https://fass.example.edu.my/chinese-studies'], 'off-topic parent: no link following');
+
+  // A followed page that is only a stub is not added.
+  const parent = page(para(`${TOPIC} is the Chinese language society of Universiti Malaya and this is its official site for members.`), '<a href="/about/history">History</a>');
+  const stub = page(para('Founded in 1962 by a small circle of students on campus.'));
+  const out = await enrichResultsWithPageExcerpts([result('https://pbcum.org/', 'Home')], TOPIC, {
+    fetchImpl: async (url) => htmlResponse(url.endsWith('/about/history') ? stub : parent),
+  });
+  assert.equal(out.length, 1, 'a stub page is not added as a source');
+}
+
+{
+  // Menu labels are never chapter titles (English, Chinese and Malay).
+  for (const title of ['联系我们', 'Contact Us', 'Overview', 'Hubungi Kami', '关于我们', 'Menu']) {
+    assert.equal(cleanSourceTitle(title, 'https://example.wordpress.com/x'), '', title);
+  }
+  assert.equal(cleanSourceTitle('学会简史', 'https://example.wordpress.com/x'), '学会简史');
+
+  // Chapters never fall below four sentences even when each sentence is long enough to reach the word floor.
+  const subjects = ['书法工作坊', '辩论联赛', '校友联谊晚宴', '舞狮训练团', '会讯编辑小组', '图书角藏书', '慈善义卖活动', '迎新营队', '奖学金基金', '戏剧演出组', '语文辅导班', '媒体宣传组'];
+  const actions = ['在多位资深成员的协助下完成了全年的课程规划，并把每次课堂的出席情况记录在册以便日后查阅', '吸引了来自不同学院的新生报名参加，筹备委员会因此额外增加了两次说明会来解答大家的疑问', '依靠志愿者分工合作安排场地与器材，整个过程由一位副主席负责统筹并向理事会提交书面总结', '把筹得的款项分别捐给了数个社区团体，并邀请受助单位代表出席年度汇报会向会员说明用途', '每学期都会向参与者收集意见调查，委员会逐项讨论后决定下一阶段需要改进的具体环节'];
+  const longSentence = (tag: string, i: number) => `${tag}${subjects[i % 12]}${actions[(i * 2 + tag.length) % 5]}。`;
+  const source = (n: number, tag: string, url: string, count: number) => ({
+    id: `c-${n}`, title: `${tag}`, url, content: Array.from({ length: count }, (_, i) => longSentence(`${tag}${'甲乙丙丁戊己庚辛'[(i + n) % 8]}`, i + n * 7)).join(''),
+    definitions: [], subTopics: [], informativeScore: 0.9, authorityScore: 0.9, fitness: 0,
+  });
+  const book = synthesizeFallbackWebBook('马来亚大学华文学会', [
+    source(1, '甲站', 'https://en.wikipedia.org/wiki/A', 9),
+    source(2, '乙站', 'https://pbcum.org/b', 9),
+    source(3, '丙站', 'https://example.edu.my/c', 3),
+  ] as any);
+  assert.ok(book.chapters.length >= 1);
+  for (const chapter of book.chapters) {
+    const sentenceCount = chapter.content.split(/(?<=[。！？.!?])/).filter((x) => x.trim()).length;
+    assert.ok(sentenceCount >= 4, `chapter "${chapter.title}" has only ${sentenceCount} sentences`);
+  }
 }
 
 console.log('offlineReliability tests passed');

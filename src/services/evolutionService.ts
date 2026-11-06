@@ -1111,7 +1111,7 @@ export async function evolve(
 const FALLBACK_MAX_CHAPTERS = 6;
 const CHAPTER_TITLE_MAX_CHARS = 80;
 // Titles that name a website or a page type, not what the page is about.
-const GENERIC_TITLE_PATTERN = /^(?:home(?:page)?|index|untitled|welcome|main page|about(?: us)?|contact(?: us)?|login|sign in|facebook|instagram|twitter|youtube|scribd|wikipedia|search results?|page \d+|无标题|首页|主页|欢迎)$/i;
+const GENERIC_TITLE_PATTERN = /^(?:home(?:page)?|index|untitled|welcome|main page|about(?: us)?|contact(?: us)?|login|sign in|facebook|instagram|twitter|youtube|scribd|wikipedia|search results?|page \d+|overview|introduction|menu|navigation|sitemap|gallery|downloads?|news|events?|无标题|首页|主页|欢迎|联系我们|联络我们|聯繫我們|联系方式|关于我们|關於我們|关于|简介|概述|新闻|最新消息|活动|hubungi kami|tentang kami|laman utama|utama)$/i;
 const TITLE_SEPARATOR = /\s+(?:[-|–—·•:]{1,2}|::)\s+|\s*[|｜]\s*/;
 
 function normalizeTitleKey(title: string): string {
@@ -1320,9 +1320,11 @@ export function synthesizeFallbackWebBook(
   // split. Cuts are by sentence count, so a chapter of short sentences can still come out thin: such a chapter is folded
   // into its shorter neighbour until every chapter has real reading substance (or only one chapter is left).
   const groupWords = (group: FallbackEvidenceUnit[]) => group.reduce((sum, unit) => sum + countWords(unit.text), 0);
+  // Long sentences (Chinese especially) can reach the word floor in three sentences, so both floors apply.
+  const isThin = (group: FallbackEvidenceUnit[]) => groupWords(group) < FALLBACK_MIN_WORDS_PER_CHAPTER || group.length < FALLBACK_MIN_SENTENCES_PER_CHAPTER;
   const groups: FallbackEvidenceUnit[][] = cuts.slice(0, -1).map((start, idx) => evidence.slice(start, cuts[idx + 1])).filter(group => group.length > 0);
   for (;;) {
-    const thinIndex = groups.findIndex(group => groupWords(group) < FALLBACK_MIN_WORDS_PER_CHAPTER);
+    const thinIndex = groups.findIndex(isThin);
     if (thinIndex < 0 || groups.length <= 1) break;
     const neighbours = [thinIndex - 1, thinIndex + 1].filter(i => i >= 0 && i < groups.length);
     const into = neighbours.reduce((best, i) => (groupWords(groups[i]) < groupWords(groups[best]) ? i : best), neighbours[0]);
