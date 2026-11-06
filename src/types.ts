@@ -75,6 +75,7 @@ export interface SearchFallbackPayload {
   diagnostics?: string[];
   source?: string;
   aiOverview?: any[];
+  mode?: SearchFallbackMode;
 }
 
 export interface EngineOptions {

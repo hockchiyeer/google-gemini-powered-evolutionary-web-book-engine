@@ -450,7 +450,7 @@ export function setupGeminiLiveWebSocket(server: HttpServer): WebSocketServer {
         return;
       }
 
-      session = await getAi().live.connect({
+      session = await (getAi().live as any).connect({
         model: "gemini-3.8-live",
         config: {
           responseModalities: [Modality.AUDIO],

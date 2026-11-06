@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
+    "lint:tests": "tsc --project tsconfig.tests.json --noEmit",
     "diagnose": "tsx scripts/diagnose-gemini.ts",
     "package:aistudio": "node scripts/package-google-ai-studio.mjs",
     "test": "node tests/scripts/run-local-cypress.cjs",

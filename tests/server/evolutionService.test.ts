@@ -316,6 +316,7 @@ const prefixedChaptersBook = sanitizeWebBookForPresentation({
       definitions: [],
       subTopics: [],
       sourceUrls: [],
+      visualSeed: '成立渊源与创会宗旨',
     },
     {
       title: 'Chapter 10: 未来挑战与新世代青年愿景',
@@ -323,6 +324,7 @@ const prefixedChaptersBook = sanitizeWebBookForPresentation({
       definitions: [],
       subTopics: [],
       sourceUrls: [],
+      visualSeed: '未来挑战与新世代青年愿景',
     },
     {
       title: 'Chapter 3',
@@ -330,6 +332,7 @@ const prefixedChaptersBook = sanitizeWebBookForPresentation({
       definitions: [],
       subTopics: [],
       sourceUrls: [],
+      visualSeed: 'Chapter 3',
     },
   ],
 });

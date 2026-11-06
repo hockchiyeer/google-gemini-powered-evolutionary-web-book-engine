@@ -253,9 +253,9 @@ async function collectSearchFallbackPayload(
         provider: 'duckduckgo',
         summary: buildSummary(query, [], alternateResults),
         aiOverview: [],
-        results: alternateResults,
+        results: [...alternateResults],
         extractedAt: Date.now(),
-        diagnostics,
+        diagnostics: [...diagnostics],
       };
     }
 
@@ -286,7 +286,7 @@ async function collectSearchFallbackPayload(
         source: aiOverview.length > 0 ? 'google-ai-overview' : 'google-search-snippets',
         provider: 'google',
         summary: buildSummary(query, aiOverview, blendedResults),
-        aiOverview,
+        aiOverview: [...aiOverview],
         results: blendedResults,
         extractedAt: Date.now(),
         diagnostics,
@@ -304,7 +304,7 @@ async function collectSearchFallbackPayload(
         provider: 'duckduckgo',
         summary: buildSummary(query, [], alternateResults),
         aiOverview: [],
-        results: alternateResults,
+        results: [...alternateResults],
         extractedAt: Date.now(),
         diagnostics,
       };
@@ -320,8 +320,8 @@ async function collectSearchFallbackPayload(
       source: aiOverview.length > 0 ? 'google-ai-overview' : 'google-search-snippets',
       provider: 'google',
       summary: buildSummary(query, aiOverview, googleResults),
-      aiOverview,
-      results: googleResults,
+      aiOverview: [...aiOverview],
+      results: [...googleResults],
       extractedAt: Date.now(),
       diagnostics: buildDiagnostics(googleAttempts as any, googleResults.length, 'google'),
     };
@@ -331,7 +331,8 @@ async function collectSearchFallbackPayload(
 }
 
 function buildFallbackPopulation(payload: SearchFallbackPayload): WebPageGenotype[] {
-  const searchUrl = buildSearchUrl(payload.query, payload.provider);
+  const provider = payload.provider === 'duckduckgo' ? 'duckduckgo' : 'google';
+  const searchUrl = buildSearchUrl(payload.query, provider);
   const distinctResults = selectDistinctSearchResults(payload.results, MAX_RESULTS - 1);
 
   const overviewPage: WebPageGenotype = {

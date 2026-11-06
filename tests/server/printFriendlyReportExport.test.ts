@@ -167,6 +167,7 @@ const longBook: WebBook = { id: 'test-long', topic: 'Long Form Topic', timestamp
         definitions: [],
         subTopics: [],
         sourceUrls: [],
+        visualSeed: 'Single Chapter',
       },
     ],
   };
