@@ -15,12 +15,12 @@ const chineseContent = [
 ].join('');
 
 const chineseChapter: Chapter = {
-  id: 'ch-1',
   title: '2026年台北市长选举选情分析',
   content: chineseContent,
   definitions: [],
   subTopics: [],
   sourceUrls: [],
+  visualSeed: '2026年台北市长选举选情分析',
 };
 
 const chinesePlan = buildChapterRenderPlan([chineseChapter]);
@@ -65,12 +65,12 @@ const englishContent = [
 ].join('');
 
 const englishChapter: Chapter = {
-  id: 'ch-2',
   title: 'Analysis of the 2026 Taipei Mayoral Election',
   content: englishContent,
   definitions: [],
   subTopics: [],
   sourceUrls: [],
+  visualSeed: 'Analysis of the 2026 Taipei Mayoral Election',
 };
 
 const englishPlan = buildChapterRenderPlan([englishChapter]);

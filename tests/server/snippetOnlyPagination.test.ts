@@ -26,12 +26,12 @@ import type { Chapter, WebBook } from '../../src/types.ts';
   ].join(' ');
 
   const chapter: Chapter = {
-    id: 'ch-fallback-1',
     title: 'Hyperscale Infrastructure Dynamics',
     content: snippetContent,
     definitions: [],
     subTopics: [],
     sourceUrls: [{ title: 'Cloud Report', url: 'https://example.com/cloud' }],
+    visualSeed: 'Hyperscale Infrastructure Dynamics',
   };
 
   // Test both 'fallback_search' and 'search-fallback'
@@ -57,12 +57,12 @@ import type { Chapter, WebBook } from '../../src/types.ts';
   const twoPageContent = `${paragraphA}\n\n${paragraphB}`;
 
   const chapter: Chapter = {
-    id: 'ch-fallback-2',
     title: 'Medium Snippet Chapter',
     content: twoPageContent,
     definitions: [],
     subTopics: [],
     sourceUrls: [],
+    visualSeed: 'Medium Snippet Chapter',
   };
 
   const plan = buildChapterRenderPlan([chapter], { sourceMode: 'fallback_search' });
@@ -82,12 +82,12 @@ import type { Chapter, WebBook } from '../../src/types.ts';
   const richContent = `${p1}\n\n${p2}\n\n${p3}`;
 
   const chapter: Chapter = {
-    id: 'ch-gemini-1',
     title: 'Semiconductor Fab Constraints',
     content: richContent,
     definitions: [],
     subTopics: [],
     sourceUrls: [],
+    visualSeed: 'Semiconductor Fab Constraints',
   };
 
   const plan = buildChapterRenderPlan([chapter], { sourceMode: 'gemini' });
@@ -101,12 +101,12 @@ import type { Chapter, WebBook } from '../../src/types.ts';
 // 5. Empty content drops pages instead of creating duplicate filler
 {
   const emptyChapter: Chapter = {
-    id: 'ch-empty',
     title: 'Empty Chapter',
     content: '',
     definitions: [],
     subTopics: [],
     sourceUrls: [],
+    visualSeed: 'Empty Chapter',
   };
 
   const plan = buildChapterRenderPlan([emptyChapter], { sourceMode: 'fallback_search' });
